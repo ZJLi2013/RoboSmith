@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 def generate_and_catalog(
     library: AssetLibrary,
     prompt: str,
-    backend: str = "hunyuan3d",
+    backend: str = "trellis2",
     target_size_m: float = 0.1,
     mass_kg: Optional[float] = None,
     density_kg_m3: float = 800.0,
@@ -31,7 +31,7 @@ def generate_and_catalog(
     Args:
         library: AssetLibrary to register the new asset in.
         prompt: Text description for 3D generation.
-        backend: Generation backend name (e.g. "hunyuan3d", "trellis2", "triposg").
+        backend: Generation backend name (e.g. "trellis2", "hunyuan3d", "triposg").
         target_size_m: Scale mesh so longest edge equals this (meters).
         mass_kg: Override mass; None for auto-estimate from volume * density.
         density_kg_m3: Density for mass estimation.

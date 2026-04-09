@@ -279,9 +279,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "--backend", default="hunyuan3d",
-        choices=["hunyuan3d", "trellis2", "triposg"],
-        help="3D generation backend (default: hunyuan3d)",
+        "--backend", default="trellis2",
+        choices=["trellis2", "hunyuan3d", "triposg"],
+        help="3D generation backend (default: trellis2)",
     )
     parser.add_argument(
         "--prompt", default="red ceramic mug",
