@@ -17,8 +17,8 @@
   命中    未命中
    │         │
    ▼         ▼
- 返回      T2I → 参考图 → Hunyuan3D-2.1 (Shape+PBR) → URDF → 入库
- URDF      SDXL-Turbo        image → GLB mesh           │
+ 返回      T2I → 参考图 → 3D Gen (Hunyuan3D / TRELLIS.2) → URDF → 入库
+ URDF      SDXL-Turbo        image → PBR GLB mesh        │
    │         ┌────────────────────────────────────────────┘
    ▼         ▼
  仿真就绪资产 (URDF + 碰撞凸包 + PBR 纹理 + 元数据)
@@ -40,9 +40,10 @@ robotsmith list                    # 列出全部资产
 robotsmith search "cup"            # 搜索
 robotsmith scene tabletop_simple   # 解析场景预设
 
-# 生成新资产（搜索未命中的兜底，需 GPU + Hunyuan3D-2.1，≥29 GB VRAM）
-robotsmith generate "red ceramic mug" --image reference.png
-robotsmith generate "red ceramic mug"   # 无图：自动 T2I → 3D（计划中）
+# 生成新资产（需 GPU，≥24 GB VRAM）
+robotsmith generate "red ceramic mug" --image reference.png                   # 默认 Hunyuan3D
+robotsmith generate "red ceramic mug" --image reference.png --backend trellis2 # TRELLIS.2
+robotsmith generate "red ceramic mug"   # 无图：自动 T2I → 3D
 
 # 验证全部资产
 pip install pybullet
@@ -57,8 +58,8 @@ robotsmith validate
 
 | 后端 | 模型 | PBR | VRAM | ROCm | 状态 |
 |------|------|:---:|------|------|------|
-| **`hunyuan3d`** | [Hunyuan3D-2.1](https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1) | ✅ | ≥29 GB | ✅ MI300X | **默认** |
-| `trellis2` | [TRELLIS.2](https://github.com/microsoft/TRELLIS.2) 4B | ✅ | ≥24 GB | ❌ BLOCKED | stub |
+| **`hunyuan3d`** | [Hunyuan3D-2.1](https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1) | ✅ | ≥29 GB | ✅ MI300X/MI308X | **默认** |
+| **`trellis2`** | [TRELLIS.2-4B](https://github.com/microsoft/TRELLIS.2) | ✅ | ≥24 GB | ✅ MI308X ([ROCm fork](https://github.com/ZJLi2013/TRELLIS.2/tree/rocm)) | **已验证** — 纹理质量更高 |
 | `triposg` | [TripoSG](https://github.com/VAST-AI-Research/TripoSG) 1.5B | ❌ | ≥6 GB | 🔵 待验证 | stub |
 
 默认管线（Shape + PBR Paint）：
@@ -162,6 +163,7 @@ L3     视觉逼真（PBR）               ✅ Hunyuan3D PBR Paint
 - `pybullet >= 3.2` — 物理验证
 - `torch >= 2.0` — 3D 生成（ROCm / CUDA）
 - [Hunyuan3D-2.1](https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1) — 默认 3D 后端
+- [TRELLIS.2](https://github.com/ZJLi2013/TRELLIS.2/tree/rocm) — 高质量 PBR 3D 后端 (ROCm fork)
 - `genesis-world >= 0.2` — Genesis 仿真器（Part 2）
 
 ## 设计文档

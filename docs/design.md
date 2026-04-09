@@ -43,7 +43,7 @@ Part 2 ── Sim-to-Policy 管线（后续）
 | 资产库 (`AssetLibrary`) | ✅ | 10 Objaverse 策划 + N 生成，`objects/` + `generated/` 双目录扫描 |
 | 资产持久化 & 同步 | ✅ | `catalog.json` 索引，`sync_assets.py` 远端→本地同步 |
 | 场景预设 | ✅ | tabletop_simple / kitchen_counter / sorting_table |
-| 3D 生成后端 | ✅ | Hunyuan3D-2.1 Shape + PBR Paint（默认），MI300X 验证，~90-120s |
+| 3D 生成后端 | ✅ | Hunyuan3D-2.1 (默认, ~531s PBR) + TRELLIS.2-4B (~423s PBR, [ROCm fork](https://github.com/ZJLi2013/TRELLIS.2/tree/rocm))，MI308X 验证 |
 | mesh → URDF 转换 | ✅ | trimesh 凸包 + 物理属性估算 |
 | T2I 桥接 (text→image) | ✅ | SDXL-Turbo 默认，3D 友好 prompt 优化 (§1.4) |
 | 已知问题 & 路线 | 📋 | 底座 artifact、bpy 依赖绕过、sim-ready 成熟度、策划资产扩充 (§1.6) |
@@ -239,12 +239,29 @@ asset = lib.generate("red ceramic mug", image_path="mug.png")
 # → Hunyuan3D-2.1 shape gen → trimesh → mesh_to_urdf → URDF + collision
 ```
 
-### 后备后端（stub，待验证）
+### 其他后端
 
 | 后端 | 模型 | PBR | VRAM | ROCm | 状态 |
 |------|------|:---:|------|------|------|
-| `trellis2` | [TRELLIS.2](https://github.com/microsoft/TRELLIS.2) 4B | ✅ | ≥24 GB | ❌ BLOCKED | cumesh/flex_gemm CUDA-only |
+| `trellis2` | [TRELLIS.2-4B](https://github.com/microsoft/TRELLIS.2) | ✅ | ≥24 GB | **✅ 已验证** | [ROCm fork](https://github.com/ZJLi2013/TRELLIS.2/tree/rocm), MI308X, ~275s@512³ |
 | `triposg` | [TripoSG](https://github.com/VAST-AI-Research/TripoSG) 1.5B | ⚠️ | ≥6 GB | 待验证 | MoE Transformer, VRAM 低 |
+
+#### TRELLIS.2 vs Hunyuan3D E2E 对比（red ceramic mug, MI308X, 512³）
+
+| 指标 | Hunyuan3D-2.1 PBR | TRELLIS.2-4B |
+|------|------|------|
+| **总耗时** | 531s (shape 90s + paint 440s) | 423s (load 63s + gen 275s + export 85s) |
+| **Shape 顶点** | 492,749 | 5,405,042 → 652,279 (decimated) |
+| **Shape 面** | 985,500 | 10,834,068 → 992,967 (decimated) |
+| **GLB 大小** | 1.1 MB | 38.6 MB |
+| **纹理** | PBR Paint (diffuse map, 153 KB) | O-Voxel PBR (4K texture, 13.6 MB) |
+| **纹理质量** | 杯体外部尚可，内壁纹理破碎明显 | 4K 分辨率，PBR 完整 (base color + metallic + roughness) |
+| **底座 artifact** | 有（需 mesh_cleanup 裁剪） | 待确认 |
+| **bpy 依赖** | 需 lazy-import patch 绕过 | 无，o_voxel 原生 GLB 导出 |
+| **ROCm 安装** | 较简单（pip + 两个 C++ extension） | 较复杂（需 ROCm fork: cumesh, nvdiffrast, flexgemm, flash_attn） |
+
+> 初步结论：TRELLIS.2 的 mesh 质量和纹理分辨率显著优于 Hunyuan3D PBR Paint，GLB 内嵌 4K PBR 纹理无需额外 bpy 依赖。
+> 但安装链较长（需 ROCm 专用 fork），建议在已验证环境中使用 `--backend trellis2`。
 
 > 3D 生成模型全景调研（三层分类、Layer 1/2/3 详细对比、升级路径）见 [附录 A](#附录-a3d-生成模型全景调研)。
 
@@ -842,7 +859,7 @@ MVP 跑通后，pipeline 架构天然支持两个高价值扩展：
                         视觉保真  物理属性  碰撞精度  关节/铰接  直接入 sim
                         ────────  ────────  ────────  ────────  ─────────
 Layer 1: 视觉 SOTA（几何 + 纹理）
-  TRELLIS.2              ★★★★★     ❌        ❌        ❌         ❌ 需转换
+  TRELLIS.2              ★★★★★     ❌        ❌        ❌         ✅ ROCm verified
   Hunyuan3D-2.1          ★★★★☆     ❌        ❌        ❌         ❌ 需转换
   TripoSG/SF             ★★★★☆     ❌        ❌        ❌         ❌ 需转换
   Pandora3D              ★★★☆☆     ❌        ❌        ❌         ❌ 需转换
@@ -863,7 +880,7 @@ Layer 3: 历史里程碑
 
 | 模型 | 团队 | PBR | VRAM | 速度 | ROCm | 要点 |
 |------|------|:---:|------|------|------|------|
-| [TRELLIS.2](https://github.com/microsoft/TRELLIS.2) 4B | Microsoft | ✅ | ≥24 GB | ~3s (H100) | ❌ BLOCKED | Mesh 质量天花板，CVPR'25 Spotlight。CUDA 依赖重 |
+| [TRELLIS.2](https://github.com/microsoft/TRELLIS.2) 4B | Microsoft | ✅ | ≥24 GB | ~3s (H100), ~275s (MI308X) | **✅ 已验证** | Mesh 质量天花板，CVPR'25 Spotlight。[ROCm fork](https://github.com/ZJLi2013/TRELLIS.2/tree/rocm) |
 | [Hunyuan3D-2.1](https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1) | Tencent | ✅ | 10+21 GB | ~60s | **✅ 已验证** | **当前默认后端**。344K verts，AOTriton FA |
 | [TripoSG](https://github.com/VAST-AI-Research/TripoSG) 1.5B | VAST-AI | ⚠️ | ≥6 GB | 快 | 待验证 | MoE Transformer，VRAM 低，纹理非 PBR |
 | [TripoSF](https://github.com/VAST-AI-Research/TripoSF) | VAST-AI | 配合 SG | ≥12 GB | 中 | 待验证 | 1024³ 超高分辨率 mesh |
@@ -875,7 +892,7 @@ Layer 3: 历史里程碑
 | 模型 | 状态 | 备注 |
 |------|------|------|
 | **Hunyuan3D-2.1** | **✅ 已验证** | MI300X, ROCm 6.4, 60s, AOTriton FA |
-| TRELLIS.2 | ❌ BLOCKED | cumesh/flex_gemm CUDA-only |
+| **TRELLIS.2** | **✅ 已验证** | MI308X, ROCm 6.4, [ZJLi2013/TRELLIS.2@rocm](https://github.com/ZJLi2013/TRELLIS.2/tree/rocm), ~275s@512³, 5.4M verts → 993K faces GLB |
 | TripoSG | 待验证 | VRAM 低，可配合 Hunyuan3D-Paint 补 PBR |
 
 ### Layer 2 详细分析

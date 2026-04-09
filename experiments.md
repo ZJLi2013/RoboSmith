@@ -287,6 +287,69 @@ T2I_PROMPT_TEMPLATE = (
 
 ---
 
+---
+
+## RS-10: TRELLIS.2 E2E — red ceramic mug (MI308X, ROCm 6.4)
+
+**Date**: 2026-04-09
+**Goal**: Verify TRELLIS.2-4B on ROCm via [ZJLi2013/TRELLIS.2@rocm](https://github.com/ZJLi2013/TRELLIS.2/tree/rocm); compare with Hunyuan3D PBR output.
+
+### Setup
+
+- Container: `trellis2_cdna3` (rocm6.4.3_ubuntu24.04_py3.12_pytorch_release_2.6.0)
+- GPU: AMD Instinct MI308XHF
+- TRELLIS.2 dependencies: flash_attn 2.8.3 (Triton), nvdiffrast 0.4.0, cumesh, o_voxel, flexgemm, trimesh 4.11.5
+- Resolution: 512³
+
+### Pipeline
+
+```
+text prompt → SDXL-Turbo (T2I) → TRELLIS.2-4B → o_voxel GLB export → mesh_cleanup → URDF
+```
+
+### Timing Breakdown
+
+| Stage | Time |
+|-------|------|
+| T2I (SDXL-Turbo, 512×512) | 93s |
+| TRELLIS.2 pipeline load | 63s |
+| Sparse structure sampling (12 steps) | 12s |
+| Shape SLat sampling (12 steps, ×2) | 11s + 107s |
+| Texture SLat sampling | ~5s/step |
+| **Total gen** | **275s** |
+| o_voxel GLB export (remesh + simplify + xatlas UV + bake) | 85s |
+| **Total** | **423s** |
+
+### Output
+
+| Metric | Value |
+|--------|-------|
+| Raw vertices | 5,405,042 |
+| Raw faces | 10,834,068 |
+| After remesh + simplify | 652,279 verts, 992,967 faces |
+| GLB size | 38.6 MB |
+| Texture map | 4K PBR (13.6 MB) |
+| Collision mesh | 1.3 MB convex hull |
+
+### Comparison: TRELLIS.2 vs Hunyuan3D PBR
+
+| | Hunyuan3D-2.1 PBR | TRELLIS.2-4B |
+|---|---|---|
+| Total time | ~531s | ~423s |
+| GLB size | 1.1 MB | 38.6 MB |
+| Texture quality | PBR Paint (内壁纹理破碎) | O-Voxel PBR (4K, clean) |
+| bpy dependency | lazy-import patch | None |
+| Base plane artifact | Present (needs cleanup) | TBD |
+| Install complexity | Simple | Heavy (ROCm forks) |
+
+### Conclusion
+
+**PASS** — TRELLIS.2 produces significantly higher quality PBR meshes with native GLB export (no bpy dependency).
+Texture resolution and coverage far exceed Hunyuan3D Paint, which suffers from visible interior fragmentation.
+Trade-off: larger GLB file size (38.6 MB vs 1.1 MB) and heavier install chain.
+
+---
+
 ## Debug Tracking
 
 | Round | Issue | Fix | Result |

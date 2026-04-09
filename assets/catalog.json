@@ -304,5 +304,27 @@
       10.0
     ],
     "description": "Generated: red ceramic mug (SDXL-Turbo + Hunyuan3D-2.1 PBR Paint, visual.glb with embedded textures)"
+  },
+  {
+    "name": "red_ceramic_mug_trellis2",
+    "dir": "generated\\red_ceramic_mug_trellis2",
+    "tags": [
+      "mug",
+      "cup",
+      "container",
+      "red",
+      "generated",
+      "grasp",
+      "pbr",
+      "trellis2"
+    ],
+    "source": "generated",
+    "mass_kg": 0.1,
+    "size_cm": [
+      10.0,
+      10.0,
+      10.0
+    ],
+    "description": "Generated: red ceramic mug (SDXL-Turbo + TRELLIS.2-4B PBR, visual.glb with o_voxel export)"
   }
 ]
