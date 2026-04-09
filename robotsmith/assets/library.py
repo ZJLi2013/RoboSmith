@@ -126,7 +126,7 @@ class AssetLibrary:
         return [a for a in self._assets.values() if a.metadata.source == "generated"]
 
     def generate(
-        self, prompt: str, backend: str = "hunyuan3d", **kwargs
+        self, prompt: str, backend: str = "trellis2", **kwargs
     ) -> Optional[Asset]:
         """Generate a new asset via 3D gen backend, convert to URDF, and catalog it.
 

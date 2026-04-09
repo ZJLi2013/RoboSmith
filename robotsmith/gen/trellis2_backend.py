@@ -58,8 +58,8 @@ class Trellis2Backend(GenBackend):
         resolution: int = 512,
         repo_path: Optional[str | Path] = None,
         model_id: Optional[str] = None,
-        decimation_target: int = 1_000_000,
-        texture_size: int = 4096,
+        decimation_target: int = 200_000,
+        texture_size: int = 1024,
     ):
         self._device = device
         self._texture = texture
@@ -89,7 +89,8 @@ class Trellis2Backend(GenBackend):
                 "State-of-the-art 3D generation (4B params). "
                 "O-Voxel representation, handles open surfaces and non-manifold geometry. "
                 "Full PBR: base color, metallic, roughness, opacity. "
-                f"Resolution: {res}³. "
+                f"Resolution: {res}³, texture: {self._texture_size}px, "
+                f"decimation: {self._decimation_target} faces. "
                 "ROCm: verified on MI300X via ZJLi2013/TRELLIS.2@rocm."
             ),
             install_hint=(

@@ -24,6 +24,8 @@ def generate_and_catalog(
     mass_kg: Optional[float] = None,
     density_kg_m3: float = 800.0,
     texture: bool = True,
+    texture_size: Optional[int] = None,
+    decimation_target: Optional[int] = None,
     **gen_kwargs,
 ) -> Asset:
     """Full pipeline: generate mesh -> convert to URDF -> catalog -> register in library.
@@ -35,6 +37,8 @@ def generate_and_catalog(
         target_size_m: Scale mesh so longest edge equals this (meters).
         mass_kg: Override mass; None for auto-estimate from volume * density.
         density_kg_m3: Density for mass estimation.
+        texture_size: PBR texture resolution (default 1024; 512 for speed, 4096 for quality).
+        decimation_target: Target face count for mesh decimation (default 200K).
         **gen_kwargs: Extra args passed to the backend's generate() method.
 
     Returns:
@@ -51,7 +55,12 @@ def generate_and_catalog(
 
     t0 = time.time()
 
-    gen_backend = get_backend(backend, texture=texture)
+    backend_kwargs: dict = {"texture": texture}
+    if texture_size is not None:
+        backend_kwargs["texture_size"] = texture_size
+    if decimation_target is not None:
+        backend_kwargs["decimation_target"] = decimation_target
+    gen_backend = get_backend(backend, **backend_kwargs)
     backend_info = gen_backend.info
     print(f"[robotsmith] Using backend: {backend_info.model_name}")
     print(f"[robotsmith]   PBR textures: {'enabled → GLB' if backend_info.has_pbr else 'off → OBJ'}")

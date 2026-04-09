@@ -170,8 +170,25 @@ def run_demo(args):
 
     gen_kwargs["image_path"] = image_path
 
+    # Resolve quality presets → texture_size / decimation_target
+    _PRESETS = {
+        "fast":     {"texture_size": 512,  "decimation_target": 100_000},
+        "balanced": {"texture_size": 1024, "decimation_target": 200_000},
+        "high":     {"texture_size": 4096, "decimation_target": 1_000_000},
+    }
+    texture_size = getattr(args, "texture_size", None)
+    decimation_target = getattr(args, "decimation", None)
+    if args.quality is not None:
+        preset = _PRESETS[args.quality]
+        texture_size = texture_size or preset["texture_size"]
+        decimation_target = decimation_target or preset["decimation_target"]
+
     print(f"  Prompt: {prompt!r}")
     print(f"  Backend: {backend}")
+    if texture_size:
+        print(f"  Texture size: {texture_size}")
+    if decimation_target:
+        print(f"  Decimation target: {decimation_target}")
     print()
 
     t0 = time.time()
@@ -181,6 +198,8 @@ def run_demo(args):
             backend=backend,
             target_size_m=args.size,
             texture=not getattr(args, 'no_texture', False),
+            texture_size=texture_size,
+            decimation_target=decimation_target,
             **gen_kwargs,
         )
     except Exception as e:
@@ -302,6 +321,25 @@ def main():
     parser.add_argument(
         "--no-texture", action="store_true",
         help="Disable PBR textures (shape-only, faster)",
+    )
+    parser.add_argument(
+        "--texture-size", type=int, default=None,
+        choices=[512, 1024, 2048, 4096],
+        help="PBR texture resolution (default: 1024). "
+             "512 for fast sim experiments, 1024 for balanced quality, "
+             "4096 for showcase/publication",
+    )
+    parser.add_argument(
+        "--decimation", type=int, default=None,
+        help="Target face count for mesh decimation (default: 200000). "
+             "Lower values → smaller GLB, faster physics",
+    )
+    parser.add_argument(
+        "--quality", default=None,
+        choices=["fast", "balanced", "high"],
+        help="Preset: fast (512 tex, 100K faces), "
+             "balanced (1024 tex, 200K faces, default), "
+             "high (4096 tex, 1M faces)",
     )
     parser.add_argument(
         "--list-backends", action="store_true",
