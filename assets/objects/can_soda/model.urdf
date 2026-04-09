@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<robot name="can_soda">
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0 0 0.060000" rpy="0 0 0"/>
+      <mass value="0.35"/>
+      <inertia ixx="0.00051529" ixy="0" ixz="0" iyy="0.00051529" iyz="0" izz="0.00019058"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0.060000" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.033" length="0.12"/></geometry>
+      <material name="can_soda_mat">
+        <color rgba="0.85 0.1 0.1 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.060000" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.033" length="0.12"/></geometry>
+    </collision>
+  </link>
+</robot>

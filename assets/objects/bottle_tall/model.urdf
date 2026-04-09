@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<robot name="bottle_tall">
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0 0 0.110000" rpy="0 0 0"/>
+      <mass value="0.4"/>
+      <inertia ixx="0.00173583" ixy="0" ixz="0" iyy="0.00173583" iyz="0" izz="0.00024500"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0.110000" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.035" length="0.22"/></geometry>
+      <material name="bottle_tall_mat">
+        <color rgba="0.3 0.6 0.35 0.8"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.110000" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.035" length="0.22"/></geometry>
+    </collision>
+  </link>
+</robot>

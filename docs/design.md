@@ -955,8 +955,7 @@ robotsmith/
 │   ├── import_objaverse.py          # Objaverse → 10 类桌面资产导入
 │   ├── sync_assets.py               # 远端 → 本地资产同步
 │   ├── browse_assets.py             # 静态 HTML 资产画廊生成
-│   ├── render_mesh_local.py         # 本地 3D 渲染
-│   └── test_e2e_turbo_vs_base.py    # RS-9 E2E 对比实验
+│   └── render_mesh_local.py         # 本地 3D 渲染
 ├── demo/                            # 端到端复现脚本
 ├── docs/
 │   ├── design.md                    # 本文件

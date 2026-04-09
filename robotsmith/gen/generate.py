@@ -23,6 +23,7 @@ def generate_and_catalog(
     target_size_m: float = 0.1,
     mass_kg: Optional[float] = None,
     density_kg_m3: float = 800.0,
+    texture: bool = True,
     **gen_kwargs,
 ) -> Asset:
     """Full pipeline: generate mesh -> convert to URDF -> catalog -> register in library.
@@ -50,7 +51,7 @@ def generate_and_catalog(
 
     t0 = time.time()
 
-    gen_backend = get_backend(backend)
+    gen_backend = get_backend(backend, texture=texture)
     backend_info = gen_backend.info
     print(f"[robotsmith] Using backend: {backend_info.model_name}")
     print(f"[robotsmith]   PBR textures: {'enabled → GLB' if backend_info.has_pbr else 'off → OBJ'}")

@@ -180,6 +180,7 @@ def run_demo(args):
             prompt,
             backend=backend,
             target_size_m=args.size,
+            texture=not getattr(args, 'no_texture', False),
             **gen_kwargs,
         )
     except Exception as e:
@@ -297,6 +298,10 @@ def main():
     parser.add_argument(
         "--use-t2i", action="store_true",
         help="Force text-to-image generation even if sample images exist",
+    )
+    parser.add_argument(
+        "--no-texture", action="store_true",
+        help="Disable PBR textures (shape-only, faster, no bpy dependency)",
     )
     parser.add_argument(
         "--list-backends", action="store_true",

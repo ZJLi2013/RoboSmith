@@ -1,0 +1,267 @@
+[
+  {
+    "name": "block_blue",
+    "dir": "objects\\block_blue",
+    "tags": [
+      "block",
+      "cube",
+      "blue",
+      "stackable",
+      "grasp"
+    ],
+    "source": "builtin_primitive",
+    "mass_kg": 0.05,
+    "size_cm": [
+      5,
+      5,
+      5
+    ],
+    "description": "Blue wooden block"
+  },
+  {
+    "name": "block_green",
+    "dir": "objects\\block_green",
+    "tags": [
+      "block",
+      "cube",
+      "green",
+      "stackable",
+      "grasp"
+    ],
+    "source": "builtin_primitive",
+    "mass_kg": 0.05,
+    "size_cm": [
+      5,
+      5,
+      5
+    ],
+    "description": "Green wooden block"
+  },
+  {
+    "name": "block_red",
+    "dir": "objects\\block_red",
+    "tags": [
+      "block",
+      "cube",
+      "red",
+      "stackable",
+      "grasp"
+    ],
+    "source": "builtin_primitive",
+    "mass_kg": 0.05,
+    "size_cm": [
+      5,
+      5,
+      5
+    ],
+    "description": "Red wooden block"
+  },
+  {
+    "name": "bottle_tall",
+    "dir": "objects\\bottle_tall",
+    "tags": [
+      "bottle",
+      "tall",
+      "green",
+      "container",
+      "grasp",
+      "pour"
+    ],
+    "source": "builtin_primitive",
+    "mass_kg": 0.4,
+    "size_cm": [
+      7,
+      7,
+      22
+    ],
+    "description": "Tall glass bottle"
+  },
+  {
+    "name": "bowl_white",
+    "dir": "objects\\bowl_white",
+    "tags": [
+      "bowl",
+      "white",
+      "container",
+      "grasp"
+    ],
+    "source": "builtin_primitive",
+    "mass_kg": 0.3,
+    "size_cm": [
+      15,
+      15,
+      7
+    ],
+    "description": "White ceramic bowl"
+  },
+  {
+    "name": "can_soda",
+    "dir": "objects\\can_soda",
+    "tags": [
+      "can",
+      "soda",
+      "red",
+      "cylinder",
+      "grasp"
+    ],
+    "source": "builtin_primitive",
+    "mass_kg": 0.35,
+    "size_cm": [
+      6.6,
+      6.6,
+      12
+    ],
+    "description": "Red soda can"
+  },
+  {
+    "name": "fork_silver",
+    "dir": "objects\\fork_silver",
+    "tags": [
+      "fork",
+      "silver",
+      "utensil",
+      "thin",
+      "grasp"
+    ],
+    "source": "builtin_primitive",
+    "mass_kg": 0.04,
+    "size_cm": [
+      1,
+      0.5,
+      19
+    ],
+    "description": "Silver fork"
+  },
+  {
+    "name": "mug_red",
+    "dir": "objects\\mug_red",
+    "tags": [
+      "mug",
+      "cup",
+      "red",
+      "container",
+      "grasp"
+    ],
+    "source": "builtin_primitive",
+    "mass_kg": 0.25,
+    "size_cm": [
+      8,
+      8,
+      12
+    ],
+    "description": "Red ceramic mug"
+  },
+  {
+    "name": "plane",
+    "dir": "objects\\plane",
+    "tags": [
+      "plane",
+      "ground",
+      "floor",
+      "static"
+    ],
+    "source": "builtin_primitive",
+    "mass_kg": 0.0,
+    "size_cm": [
+      1000,
+      1000,
+      0.1
+    ],
+    "description": "Ground plane (10x10m)"
+  },
+  {
+    "name": "plate_round",
+    "dir": "objects\\plate_round",
+    "tags": [
+      "plate",
+      "dish",
+      "round",
+      "flat",
+      "grasp"
+    ],
+    "source": "builtin_primitive",
+    "mass_kg": 0.35,
+    "size_cm": [
+      22,
+      22,
+      2
+    ],
+    "description": "Round ceramic plate"
+  },
+  {
+    "name": "spoon_silver",
+    "dir": "objects\\spoon_silver",
+    "tags": [
+      "spoon",
+      "silver",
+      "utensil",
+      "thin",
+      "grasp"
+    ],
+    "source": "builtin_primitive",
+    "mass_kg": 0.035,
+    "size_cm": [
+      1.5,
+      0.5,
+      18
+    ],
+    "description": "Silver spoon"
+  },
+  {
+    "name": "table_simple",
+    "dir": "objects\\table_simple",
+    "tags": [
+      "table",
+      "furniture",
+      "surface"
+    ],
+    "source": "builtin_primitive",
+    "mass_kg": 15.0,
+    "size_cm": [
+      80,
+      60,
+      75
+    ],
+    "description": "Simple wooden table (80x60cm, 75cm tall)"
+  },
+  {
+    "name": "red_ceramic_mug_base",
+    "dir": "generated\\red_ceramic_mug_base",
+    "tags": [
+      "mug",
+      "cup",
+      "container",
+      "red",
+      "generated",
+      "grasp"
+    ],
+    "source": "generated",
+    "mass_kg": 0.1,
+    "size_cm": [
+      12.0,
+      12.0,
+      12.0
+    ],
+    "description": "Generated from prompt: red ceramic mug (SDXL-Base â†’ Hunyuan3D-2.1, RS-9)"
+  },
+  {
+    "name": "red_ceramic_mug_turbo",
+    "dir": "generated\\red_ceramic_mug_turbo",
+    "tags": [
+      "mug",
+      "cup",
+      "container",
+      "red",
+      "generated",
+      "grasp"
+    ],
+    "source": "generated",
+    "mass_kg": 0.1,
+    "size_cm": [
+      12.0,
+      12.0,
+      12.0
+    ],
+    "description": "Generated from prompt: red ceramic mug (SDXL-Turbo â†’ Hunyuan3D-2.1, RS-9)"
+  }
+]

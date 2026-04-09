@@ -1,0 +1,20 @@
+{
+  "mass_kg": 0.04,
+  "friction": 0.35,
+  "restitution": 0.1,
+  "density_kg_m3": 1000.0,
+  "size_cm": [
+    1,
+    0.5,
+    19
+  ],
+  "tags": [
+    "fork",
+    "silver",
+    "utensil",
+    "thin",
+    "grasp"
+  ],
+  "source": "builtin_primitive",
+  "description": "Silver fork"
+}
