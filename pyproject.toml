@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "robotsmith"
+version = "0.1.0"
+description = "Sim-ready digital asset library with 3D gen fallback for robot manipulation"
+requires-python = ">=3.10"
+dependencies = [
+    "trimesh>=4.0",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+sim = ["pybullet>=3.2"]
+gen = ["torch>=2.0"]
+viz = ["viser>=1.0"]
+genesis = ["genesis-world>=0.2"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+robotsmith = "robotsmith.cli:main"

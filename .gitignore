@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test / cache
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Assets: keep catalog.json, ignore large generated files
+assets/generated/*
+!assets/generated/.gitkeep
+!assets/catalog.json
+assets/gallery.html
+
+# Demo results: keep PNGs for README, ignore large mesh files
+demo/results/**/*.obj
+demo/results/**/*.glb
+demo/results/**/*.urdf
+demo/results/**/*.log
