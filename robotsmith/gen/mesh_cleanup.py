@@ -90,8 +90,12 @@ def cleanup_mesh(
 
     if remove_degenerate:
         n_before = len(mesh.faces)
-        mesh.remove_degenerate_faces()
-        mesh.remove_unreferenced_vertices()
+        if hasattr(mesh, 'remove_degenerate_faces'):
+            mesh.remove_degenerate_faces()
+        else:
+            mesh.update_faces(mesh.nondegenerate)
+        if hasattr(mesh, 'remove_unreferenced_vertices'):
+            mesh.remove_unreferenced_vertices()
         stats["degenerate_faces_removed"] = n_before - len(mesh.faces)
 
     if remove_base:
