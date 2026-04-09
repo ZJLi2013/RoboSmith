@@ -1,20 +1,16 @@
 """
-RoboSmith pipeline: Genesis closed-loop policy evaluation for Franka Panda.
+RoboSmith pipeline — closed-loop policy evaluation.
 
-Closed-loop BC evaluation for Franka Panda in Genesis.
-
-Adapted from 05_sim_evaluation/scripts/22_bc_act_eval.py for Franka 7-DOF.
-Supports:
-  - MLP BC (state-only, joint-position action space)
-  - E1 N-step GT action correction (--n-step-correction N)
-  - Warm-start from dataset (--warm-start-from-dataset)
+Genesis closed-loop evaluation for Franka Panda pick-cube.
+Supports: MLP BC, ACT, SmolVLA.
 
 Usage:
-  python 02_franka_eval.py \
-    --checkpoint /output/outputs/franka_bc/final.pt \
-    --dataset-id local/franka-genesis-pick \
-    --n-episodes 10 --max-steps 150 \
-    --save /output/franka_eval_bc
+  python pipeline/eval_policy.py \
+    --policy-type smolvla \
+    --checkpoint outputs/stage1/B0/final \
+    --dataset-id local/franka-pick-vision-100ep \
+    --n-episodes 10 --seed 99 \
+    --task "Pick up the red cube."
 """
 from __future__ import annotations
 

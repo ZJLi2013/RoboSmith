@@ -1,14 +1,11 @@
 """
-RoboSmith pipeline (SmolVLA post-training).
+RoboSmith pipeline — SmolVLA post-training.
 
-Phase 1 SmolVLA post-training on Genesis synthetic pick data.
-
-Loads a local LeRobot dataset (from 01_gen_pick_data.py) and fine-tunes
-lerobot/smolvla_base for N steps. Logs per-step metrics to JSON for analysis.
+Fine-tunes lerobot/smolvla_base on a local LeRobot dataset.
+Logs per-step metrics to JSON for analysis.
 
 Usage:
-  python pipeline/train_smolvla.py --dataset-id local/so101-genesis-pick --n-steps 2000
-  python pipeline/train_smolvla.py --dataset-id local/so101-genesis-pick --n-steps 100 --batch-size 2
+  python pipeline/train_smolvla.py --dataset-id local/franka-pick-vision-100ep --n-steps 2000
 """
 
 from __future__ import annotations

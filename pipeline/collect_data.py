@@ -1,5 +1,5 @@
 """
-Part of the RoboSmith pipeline (Stage 1 data collection).
+RoboSmith pipeline — open-loop data collection.
 
 Franka Panda pick-cube data generation for LeRobot.
 
@@ -7,12 +7,8 @@ Genesis scene: Franka 7-DOF + cube + 2 cameras.
 IK trajectory: home -> pre-hover -> descend -> grasp -> lift.
 Output: LeRobot dataset with observation.state (9D), action (9D), images.
 
-Based on:
-  - Genesis IK tutorial: https://genesis-world.readthedocs.io/en/latest/user_guide/getting_started/inverse_kinematics_motion_planning.html
-  - SO-101 pipeline: 03_pose_randomization/scripts/01_gen_pick_data.py
-
 Usage:
-  python collect_data.py --n-episodes 10 --repo-id local/franka-genesis-pick
+  python pipeline/collect_data.py --n-episodes 100 --repo-id local/franka-pick-vision-100ep
 """
 from __future__ import annotations
 
