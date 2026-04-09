@@ -263,5 +263,25 @@
       12.0
     ],
     "description": "Generated from prompt: red ceramic mug (SDXL-Turbo â†’ Hunyuan3D-2.1, RS-9)"
+  },
+  {
+    "name": "red_ceramic_mug_20260409_021957",
+    "dir": "generated\\\\red_ceramic_mug_20260409_021957",
+    "tags": [
+      "mug",
+      "cup",
+      "container",
+      "red",
+      "generated",
+      "grasp"
+    ],
+    "source": "generated",
+    "mass_kg": 0.1,
+    "size_cm": [
+      10.0,
+      10.0,
+      3.9
+    ],
+    "description": "Generated: red ceramic mug (SDXL-Turbo + Hunyuan3D-2.1 Shape + mesh_cleanup, base plane removed)"
   }
 ]

@@ -301,7 +301,7 @@ def main():
     )
     parser.add_argument(
         "--no-texture", action="store_true",
-        help="Disable PBR textures (shape-only, faster, no bpy dependency)",
+        help="Disable PBR textures (shape-only, faster)",
     )
     parser.add_argument(
         "--list-backends", action="store_true",

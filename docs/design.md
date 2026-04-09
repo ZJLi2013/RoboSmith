@@ -46,7 +46,7 @@ Part 2 ── Sim-to-Policy 管线（后续）
 | 3D 生成后端 | ✅ | Hunyuan3D-2.1 Shape + PBR Paint（默认），MI300X 验证，~90-120s |
 | mesh → URDF 转换 | ✅ | trimesh 凸包 + 物理属性估算 |
 | T2I 桥接 (text→image) | ✅ | SDXL-Turbo 默认，3D 友好 prompt 优化 (§1.4) |
-| 已知问题 & 路线 | 📋 | 底座 artifact、sim-ready 成熟度、策划资产扩充 (§1.6) |
+| 已知问题 & 路线 | 📋 | 底座 artifact、bpy 依赖绕过、sim-ready 成熟度、策划资产扩充 (§1.6) |
 | 静态场景可视化 | ✅ | viser SceneViewer |
 | 仿真 + 物理可视化 | 📋 | MuJoCo + mjviser 计划中 (§2.2) |
 | 轨迹采集 | 📋 | IK scripted，复用 lerobot 经验 |
@@ -540,6 +540,46 @@ L3      视觉逼真（PBR、纹理、颜色）         ✅ Hunyuan3D PBR Paint
 | P2 | Genesis 材质属性 | 接触刚度/阻尼 → URDF 或 Genesis 配置 |
 | P2 | PhysX-Anything 升级 | Layer 2 直接生成 sim-ready URDF（§附录 A） |
 
+### 1.6.4 bpy (Blender Python) 依赖与 PBR 纹理输出
+
+Hunyuan3D-2.1 PBR Paint pipeline 在最后一步调用 `convert_obj_to_glb`（位于
+`hy3dpaint/DifferentiableRenderer/mesh_utils.py`），该函数使用 Blender Python
+模块 (`bpy`) 将纹理化的 OBJ 转为 GLB。但 **`bpy` 没有 Python 3.12 的 wheel**：
+
+| bpy 版本 | 支持 Python | 状态 |
+|----------|------------|------|
+| 4.2.x ~ 4.5.x | `==3.11.*` only | ❌ ROCm 镜像均为 3.12 |
+| 5.0 ~ 5.1 | `==3.13.*` only | ❌ ROCm 镜像均为 3.12 |
+
+Blender 从 3.11 直接跳到了 3.13，完全跳过了 3.12。验证结果：
+
+- `pip install bpy==4.5.8` → pip 拒绝（no matching distribution）
+- 手动解压 cp311 wheel → C 扩展可加载，但 `__init__.so` 内有硬编码版本检查 → `ImportError`
+- `conda create python=3.11` 可行但需重装全部 deps（PyTorch ROCm 等），代价极高
+
+**关键发现**：PBR 绘制的核心（UV 展开 xatlas、多视图渲染 custom_rasterizer、
+神经纹理烘焙、inpaint）**完全不需要 bpy**。bpy 仅用于最终的 OBJ→GLB 格式转换。
+
+**解决方案（已实施）**：
+
+1. **Lazy-import patch**：将 `mesh_utils.py` 顶层 `import bpy` 移至仅 7 个
+   Blender 相关函数内部（`_setup_blender_scene`, `convert_obj_to_glb` 等）。
+   这是标准 Python 模式，零风险。
+2. **`save_glb=False`**：调用 paint pipeline 时不触发 `convert_obj_to_glb`，
+   输出纹理化 OBJ（含 MTL + diffuse/metallic/roughness/normal map）。
+3. **trimesh GLB 导出**：`mesh_to_urdf` 检测到纹理后自动导出自包含 GLB
+   （纹理内嵌），无需 bpy。
+
+```
+Paint Pipeline 内部流程（bpy 依赖仅在最后一步）：
+
+  white mesh → xatlas UV → multi-view render → diffusion enhance
+            → bake texture → inpaint → save OBJ+MTL+maps ← 我们取到这里
+                                                    │
+                                         (save_glb=True 才走↓)
+                                         convert_obj_to_glb (bpy) ← 已绕过
+```
+
 ---
 
 # Part 2：Sim-to-Policy 管线
@@ -917,6 +957,7 @@ Layer 3: 历史里程碑
 |------|---------|------|------|
 | 3D gen → 底座 artifact | Shape 模型训练偏差生成虚假底座 | Mesh trim + bbox fallback | §1.6.1 |
 | 3D gen → sim-ready | 碰撞体不精确 | 凸分解 V-HACD / CoACD | §1.6.3 |
+| PBR Paint → bpy 依赖 | Blender 无 Python 3.12 wheel | lazy-import + save_glb=False + trimesh GLB 导出 | §1.6.4 |
 | 生成物品尺寸不一致 | bbox 差异大 | 标准化尺度 + metadata 约束 | |
 | URDF 导入 MuJoCo/Genesis | 格式兼容 | MuJoCo 原生支持 URDF；先 PyBullet 验证 | |
 | 检索未命中兜底延迟 | 生成+转换耗时 | 预生成常见类目 + 缓存 | §1.6.2 |

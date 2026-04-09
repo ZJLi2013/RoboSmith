@@ -250,38 +250,79 @@ class Hunyuan3DBackend(GenBackend):
         return mesh
 
     def _apply_paint(self, mesh, image_path: str) -> "trimesh.Trimesh":
-        """Run the PBR texture painting stage on a white mesh."""
+        """Run the PBR texture painting stage on a white mesh.
+
+        Uses save_glb=False so bpy is never invoked (Blender has no Python
+        3.12 wheel).  The paint pipeline outputs a textured OBJ with PBR
+        maps (diffuse, metallic, roughness, normal).  We load the OBJ with
+        materials intact (textures read into memory), then the downstream
+        mesh_to_urdf exports a self-contained GLB with embedded textures.
+        """
+        import shutil
         import trimesh
 
-        print(f"[hunyuan3d] Painting PBR textures ...")
+        print("[hunyuan3d] Painting PBR textures ...")
 
         tmpdir = tempfile.mkdtemp(prefix="hy3d_paint_")
         shape_glb = os.path.join(tmpdir, "shape.glb")
-        output_glb = os.path.join(tmpdir, "textured.glb")
+        output_obj = os.path.join(tmpdir, "textured.obj")
         try:
             mesh.export(shape_glb, file_type="glb")
             self._paint_pipeline(
                 mesh_path=shape_glb,
                 image_path=image_path,
-                output_mesh_path=output_glb,
-                save_glb=True,
+                output_mesh_path=output_obj,
+                save_glb=False,
             )
-            if os.path.exists(output_glb):
-                textured_mesh = trimesh.load(output_glb, force="mesh")
-                print(f"[hunyuan3d] PBR textures applied")
-                return textured_mesh
-            for f in Path(tmpdir).glob("textured_mesh.*"):
-                textured_mesh = trimesh.load(str(f), force="mesh")
-                print(f"[hunyuan3d] PBR textures applied (from {f.name})")
-                return textured_mesh
-            print(f"[hunyuan3d] Paint produced no output, using untextured mesh")
+
+            textured = self._load_textured_mesh(tmpdir, output_obj)
+            if textured is not None:
+                return textured
+
+            print("[hunyuan3d] Paint produced no output, using untextured mesh")
             return mesh
         except Exception as e:
             print(f"[hunyuan3d] Paint failed ({e}), falling back to untextured mesh")
             return mesh
         finally:
-            import shutil
             shutil.rmtree(tmpdir, ignore_errors=True)
+
+    @staticmethod
+    def _load_textured_mesh(tmpdir: str, output_obj: str):
+        """Load textured OBJ preserving materials so GLB export embeds textures."""
+        import trimesh
+
+        candidates = [output_obj]
+        candidates += [
+            str(f) for f in Path(tmpdir).iterdir()
+            if f.suffix in (".obj", ".glb") and "textured" in f.stem
+        ]
+
+        for path in candidates:
+            if not os.path.exists(path):
+                continue
+            loaded = trimesh.load(path, process=False)
+            if isinstance(loaded, trimesh.Scene):
+                meshes = list(loaded.geometry.values())
+                if meshes:
+                    textured = trimesh.util.concatenate(meshes)
+                else:
+                    continue
+            else:
+                textured = loaded
+
+            tex_maps = list(Path(tmpdir).glob("textured*.jpg"))
+            has_tex = (
+                hasattr(textured, "visual")
+                and hasattr(textured.visual, "material")
+                and textured.visual.material is not None
+            )
+            print(f"[hunyuan3d] PBR textures applied "
+                  f"({len(tex_maps)} map(s), {len(textured.vertices):,} verts, "
+                  f"textured={has_tex})")
+            return textured
+
+        return None
 
     @staticmethod
     def _to_trimesh(mesh_output) -> "trimesh.Trimesh":
