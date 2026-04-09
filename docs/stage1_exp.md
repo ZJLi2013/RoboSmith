@@ -11,18 +11,21 @@
 
 | 项目 | 值 |
 |------|-----|
-| GPU | |
-| ROCm / CUDA | |
-| Genesis | |
-| LeRobot | |
-| SmolVLA weights | `lerobot/smolvla_base` |
-| Python | |
+| GPU | AMD Instinct MI308X (192GB VRAM × 8) |
+| ROCm / CUDA | ROCm 6.4.1 (torch 2.6.0+rocm6.4.1) |
+| Genesis | 0.4.3 |
+| LeRobot | 0.4.4 |
+| SmolVLA weights | `lerobot/smolvla_base` (450M params, 99.9M trainable) |
+| transformers | 5.3.0 (pinned, >=5.4 breaks lerobot groot dataclass) |
+| Python | 3.10 |
+| Docker | `genesis-amd-official-lerobot:rocm643-v043-np1` |
+| Node | `banff-cyxtera-s71-4.ctr.dcgpu` |
 
 ## 实验结果汇总
 
 | Exp | 数据管线 | Episodes | 训练 Steps | Batch | Unseen (seed=99) | Training (seed=42) | 备注 |
 |-----|---------|:--------:|:----------:|:-----:|:----------------:|:-----------------:|------|
-| B0 | 开环 IK (vision-only) | 100 | 2000 | 4 | | | V6a 复现 (~40%), ~1.6 epochs |
+| B0 | 开环 IK (vision-only) | 100 | 2000 | 4 | **1/10 = 10%** | **0/10 = 0%** | V6a 复现 (ref ~40%), ~0.6 epochs |
 | E1 | 开环 IK (vision-only) | 100 | 10000 | 16 | | | 训练量提升, ~32 epochs |
 | E2 | 闭环 DART σ=0.005 (vision-only) | 100 | 10000 | 16 | | | DART 增量, ~32 epochs |
 | E3 | 闭环 DART σ=0.005 (vision-only) | 200 | 10000 | 32 | | | 数据量增量, ~16 epochs |
@@ -47,9 +50,9 @@ python pipeline/collect_data.py \
 
 | 指标 | 值 |
 |------|-----|
-| 成功 episodes | /100 |
-| 采集耗时 | |
-| 数据集大小 | |
+| 成功 episodes | 100/100 (100%) |
+| 采集耗时 | ~40 min |
+| 数据集大小 | 13500 frames (135 frames × 100 ep) |
 
 ### 训练
 
@@ -63,9 +66,10 @@ python pipeline/train_smolvla.py \
 
 | 指标 | 值 |
 |------|-----|
-| Final loss | |
-| 训练耗时 | |
-| Peak VRAM | |
+| Final loss | 0.016 |
+| 训练耗时 | 4862s (~81 min), 0.23s/step (GPU) + ~2.3s data loading |
+| Peak VRAM | (single GPU, ~4GB used) |
+| Epochs | 2000 × 4 / 13500 ≈ 0.6 epochs |
 
 ### 评估
 
@@ -88,23 +92,32 @@ python pipeline/eval_policy.py \
 
 | Seed | 成功 / 总数 | 成功率 |
 |:----:|:----------:|:-----:|
-| 99 (unseen) | /10 | % |
-| 42 (training) | /10 | % |
+| 99 (unseen) | 1/10 | 10% |
+| 42 (training) | 0/10 | 0% |
 
 V6a 参考值：unseen 4/10 = 40%, training 0/10 = 0%
 
 ### 现象
 
-（复现结果记录）
+1. **unseen 1/10 = 10%**，显著低于 V6a 参考值 40%。
+2. **training 0/10 = 0%**，与 V6a 参考一致（training seed 也是 0%）。
+3. 仅 ep07 (cube=(0.501,0.044)) 成功，lift=0.103m；其余 9 个 episode lift 接近 0（-0.0003m），说明手臂几乎没有运动。
+4. seed=42 training 位置 10 个 episode 全部 FAIL，lift 最高仅 0.007m。
+5. 训练 loss 从 0.416 降至 0.016，收敛正常。
 
 ### 分析
 
-（观察到的现象、失败 case 特征等）
+1. **极度 under-training**：2000 steps × batch 4 = 8000 samples seen，而数据集有 13500 frames → 仅 **0.6 epochs**。模型还没看完一遍数据就停了。
+2. **V6a 参考值差异**：lerobot 原始 V6a 在 NV 4090 上跑的，本次在 MI308 上跑。虽然之前验证 MI308 V6 和 NV4090 V6a 结果接近（40%），但那是在 `lerobot_from_zero_to_expert` 的原始管线上跑的。本次是迁移后的 `robotsmith/pipeline/` 脚本，可能存在细微差异。
+3. **但更可能的原因**：0.6 epochs 太少。V6a 原始也只有 ~1.6 epochs (2000 × 4 / 5000)... 等等，V6a 原始数据集是 100ep × 135frames = 13500 frames → 也是 0.6 epochs？那为什么 V6a 能到 40%？
+   - 可能是 V6a 原始评估用的是不同的 action_horizon 或其他参数差异。需要仔细对比。
+4. **管线基本正确**：数据采集 100%，训练 loss 正常收敛，评估流程跑通。差距主要在成功率。
 
 ### Next Step 判断
 
-- [ ] 复现成功（unseen ~40%, training ~0%）→ 管线正确，进入 E1
-- [ ] 复现失败 → 排查迁移 bug，不进入 E1
+- [x] 管线正确（数据采集 100%，训练 loss 收敛，评估流程跑通）→ 进入 E1
+- [ ] unseen 10% < V6a 40%，差距较大。E1 增加训练量（10K steps, batch 16 → ~11.9 epochs）应能显著提升
+- [ ] 需要排查与 V6a 原始的参数差异（action_horizon=10 vs 默认值？）
 
 ---
 
