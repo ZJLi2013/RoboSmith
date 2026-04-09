@@ -19,6 +19,11 @@ from pathlib import Path
 
 import torch
 
+if torch.cuda.is_available():
+    torch.backends.cuda.enable_flash_sdp(False)
+    torch.backends.cuda.enable_mem_efficient_sdp(False)
+    torch.backends.cuda.enable_math_sdp(True)
+
 
 def make_delta_timestamps(delta_indices, fps: int):
     if delta_indices is None:

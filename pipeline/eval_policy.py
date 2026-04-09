@@ -27,8 +27,13 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+if torch.cuda.is_available():
+    torch.backends.cuda.enable_flash_sdp(False)
+    torch.backends.cuda.enable_mem_efficient_sdp(False)
+    torch.backends.cuda.enable_math_sdp(True)
 
-# ---- constants (must match 01_franka_pick_data.py) ----
+
+# ---- constants ----
 JOINT_NAMES = [
     "joint1", "joint2", "joint3", "joint4",
     "joint5", "joint6", "joint7",

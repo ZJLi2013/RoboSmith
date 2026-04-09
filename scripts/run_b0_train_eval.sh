@@ -16,6 +16,7 @@ pip install -q 'transformers==5.3.0' 'accelerate' 'sentencepiece' 'protobuf' 2>&
 
 export TORCH_SDPA_BACKEND=MATH
 export PYTORCH_HIP_ALLOC_CONF=expandable_segments:True
+export PYTHONUNBUFFERED=1
 echo "[${EXP_TAG}] TORCH_SDPA_BACKEND=$TORCH_SDPA_BACKEND"
 
 python -c "import transformers; print(f'transformers=={transformers.__version__}')"
