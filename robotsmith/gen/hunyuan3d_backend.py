@@ -176,14 +176,12 @@ class Hunyuan3DBackend(GenBackend):
             paint_dir = str(self._repo_path / "hy3dpaint")
             if paint_dir not in sys.path:
                 sys.path.insert(0, paint_dir)
-            from hy3dpaint.pipelines import Hunyuan3DPaintPipeline
+            from textureGenPipeline import Hunyuan3DPaintPipeline
         else:
             from hy3dgen.texgen import Hunyuan3DPaintPipeline
 
-        print(f"[hunyuan3d] Loading PBR paint pipeline from {self._model_id} ...")
-        self._paint_pipeline = Hunyuan3DPaintPipeline.from_pretrained(
-            self._model_id
-        )
+        print(f"[hunyuan3d] Loading PBR paint pipeline ...")
+        self._paint_pipeline = Hunyuan3DPaintPipeline()
         print(f"[hunyuan3d] Paint pipeline ready (PBR textures enabled)")
 
     def generate(
@@ -257,23 +255,33 @@ class Hunyuan3DBackend(GenBackend):
 
         print(f"[hunyuan3d] Painting PBR textures ...")
 
-        with tempfile.NamedTemporaryFile(suffix=".glb", delete=False) as tmp:
-            shape_glb = tmp.name
+        tmpdir = tempfile.mkdtemp(prefix="hy3d_paint_")
+        shape_glb = os.path.join(tmpdir, "shape.glb")
+        output_glb = os.path.join(tmpdir, "textured.glb")
         try:
             mesh.export(shape_glb, file_type="glb")
-            result = self._paint_pipeline(
-                mesh=shape_glb,
-                image=image_path,
+            self._paint_pipeline(
+                mesh_path=shape_glb,
+                image_path=image_path,
+                output_mesh_path=output_glb,
+                save_glb=True,
             )
-            painted = result[0] if isinstance(result, (list, tuple)) else result
-            textured_mesh = self._to_trimesh(painted)
-            print(f"[hunyuan3d] PBR textures applied")
-            return textured_mesh
+            if os.path.exists(output_glb):
+                textured_mesh = trimesh.load(output_glb, force="mesh")
+                print(f"[hunyuan3d] PBR textures applied")
+                return textured_mesh
+            for f in Path(tmpdir).glob("textured_mesh.*"):
+                textured_mesh = trimesh.load(str(f), force="mesh")
+                print(f"[hunyuan3d] PBR textures applied (from {f.name})")
+                return textured_mesh
+            print(f"[hunyuan3d] Paint produced no output, using untextured mesh")
+            return mesh
         except Exception as e:
             print(f"[hunyuan3d] Paint failed ({e}), falling back to untextured mesh")
             return mesh
         finally:
-            Path(shape_glb).unlink(missing_ok=True)
+            import shutil
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
     @staticmethod
     def _to_trimesh(mesh_output) -> "trimesh.Trimesh":
