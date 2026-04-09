@@ -45,7 +45,6 @@ robotsmith search "red block"
 
 # Resolve a scene preset
 robotsmith scene tabletop_simple
-robotsmith scene kitchen_counter --json
 
 # Generate a new asset (requires GPU + Hunyuan3D-2.1)
 robotsmith generate "red ceramic mug" --image reference.png   # with ref image
@@ -98,11 +97,9 @@ asset = lib.generate("red ceramic mug")  # auto-generates ref image via FLUX
 
 ## Scene presets
 
-3 built-in scene configurations, resolved via `ProgrammaticSceneBackend`:
+1 built-in scene configuration, resolved via `ProgrammaticSceneBackend`:
 
 - **tabletop_simple** — table + mug + bowl + 3 blocks
-- **kitchen_counter** — table + mug + plate + bottle + fork + spoon
-- **sorting_table** — table + colored blocks + plate target
 
 Scene configs are Python dataclasses with randomized object placement. An abstract `SceneBackend` interface allows future integration of AI scene generators (e.g. SceneSmith).
 
@@ -133,7 +130,6 @@ viewer.run()                            # open browser at http://localhost:8080
 ```bash
 pip install -e ".[viz]"
 robotsmith view tabletop_simple
-robotsmith view kitchen_counter --port 9090
 robotsmith view --asset mug_red
 ```
 
@@ -162,7 +158,7 @@ robotsmith/
     scenes/
       config.py          # SceneConfig + ObjectPlacement dataclasses
       backend.py         # SceneBackend ABC + ProgrammaticSceneBackend
-      presets/            # tabletop_simple, kitchen_counter, sorting_table
+      presets/            # tabletop_simple
     viz/
       scene_viewer.py    # viser-based 3D scene viewer (API + CLI)
     validate/
@@ -226,7 +222,7 @@ L3      Visually realistic (PBR, texture, color)    ❌  Not yet
 30 passed in 1.35s
   - test_library.py:     13 tests (bootstrap, search, add, get)
   - test_mesh_to_urdf.py: 7 tests (box, sphere, scaling, mass, catalog)
-  - test_scenes.py:      10 tests (presets, backend, determinism, stub)
+  - test_scenes.py:       6 tests (presets, backend, determinism, stub)
 ```
 
 Remote end-to-end test on MI300X: search hit + search miss → Hunyuan3D-2.1 gen → URDF → PyBullet validation — all PASS.

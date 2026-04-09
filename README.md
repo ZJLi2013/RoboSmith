@@ -103,8 +103,6 @@ assets/
 | 场景 | 描述 |
 |------|------|
 | `tabletop_simple` | 桌子 + 杯子 + 碗 + 3 个积木 |
-| `kitchen_counter` | 桌子 + 杯子 + 盘子 + 瓶子 + 叉子 + 勺子 |
-| `sorting_table` | 桌子 + 彩色积木 + 盘子目标区 |
 
 ## 可视化
 
@@ -154,16 +152,6 @@ L3     视觉逼真（PBR）               ✅ TRELLIS.2 PBR (1K 默认, 可选 
 
 > 缺失项详析、改进路线见 [docs/design.md § 1.6](docs/design.md#16-已知问题--计划解决方案)。
 
-## 测试
-
-```
-30 passed in 1.35s
-  - test_library.py:      13 tests
-  - test_mesh_to_urdf.py:  7 tests
-  - test_scenes.py:       10 tests
-```
-
-远端 MI300X 端到端测试全部通过。
 
 ## 依赖
 
@@ -177,6 +165,36 @@ L3     视觉逼真（PBR）               ✅ TRELLIS.2 PBR (1K 默认, 可选 
 - [Hunyuan3D-2.1](https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1) — 备选 3D 后端
 - `genesis-world >= 0.2` — Genesis 仿真器（Part 2）
 
+## 项目目标
+
+教学/PoC 项目，分阶段验证 **Synthetic Data → VLA Post-Training → Sim Evaluation** 闭环。
+
+| 阶段 | 目标 | 核心新增维度 | VLA 模型 | 状态 |
+|:---:|------|------------|---------|:----:|
+| **1** | 单物体 + 位姿泛化 (unseen 80%+) | 闭环 DART 数据 + 训练调优 | SmolVLA (450M) | 🔄 **← re-baseline** |
+| 2 | 多物体泛化 | gen2sim 物品变体 | SmolVLA (450M) | 📋 |
+| 3 | 中程多步任务 (stacking) | 多步推理 | [StarVLA](https://github.com/starVLA/starVLA) (Qwen3-VL 4B) | 📋 |
+| 4 | 长程任务 | 长序列规划 | StarVLA (Qwen3-VL 4B) | 📋 |
+
+**当前：Stage 1 re-baseline**。lerobot 项目中 V5 达到 60%（unseen），需要通过闭环 DART 数据 + 训练调优达到 **80%+** 后再进入 Stage 2。
+
+### Sim-to-Policy 管线
+
+```bash
+# 数据采集（Genesis + Franka IK）
+python pipeline/collect_data.py --n-episodes 100 --save          # 开环 baseline
+python pipeline/collect_data_dart.py --n-episodes 100 --save     # 闭环 DART
+
+# SmolVLA 后训练
+python pipeline/train_smolvla.py --dataset-id local/franka-pick-100ep --n-steps 2000
+
+# 闭环评估
+python pipeline/eval_policy.py --policy-type smolvla --checkpoint outputs/smolvla/final
+```
+
 ## 设计文档
 
-完整设计（架构、已知问题、改进路线、Part 2 规划）见 [docs/design.md](docs/design.md)。
+- [docs/design.md](docs/design.md) — 完整设计（架构、已知问题、改进路线、生态对比）
+- [docs/stage-1.md](docs/stage-1.md) — Stage 1：单物体 re-baseline 计划
+- [docs/stage1_exp.md](docs/stage1_exp.md) — Stage 1：实验记录
+- [docs/stage-2.md](docs/stage-2.md) — Stage 2：多物体泛化实验计划

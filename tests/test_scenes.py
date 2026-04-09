@@ -6,8 +6,6 @@ from robotsmith.assets.builtin import bootstrap_builtin_assets
 from robotsmith.assets.library import AssetLibrary
 from robotsmith.scenes.backend import ProgrammaticSceneBackend, SceneSmithBackend
 from robotsmith.scenes.presets.tabletop_simple import tabletop_simple
-from robotsmith.scenes.presets.kitchen_counter import kitchen_counter
-from robotsmith.scenes.presets.sorting_table import sorting_table
 import pytest
 
 
@@ -20,12 +18,6 @@ def _make_lib(tmp_path: Path) -> AssetLibrary:
 class TestScenePresets:
     def test_tabletop_has_objects(self):
         assert len(tabletop_simple.objects) >= 3
-
-    def test_kitchen_has_objects(self):
-        assert len(kitchen_counter.objects) >= 4
-
-    def test_sorting_has_objects(self):
-        assert len(sorting_table.objects) >= 3
 
     def test_config_to_dict(self):
         d = tabletop_simple.to_dict()
@@ -42,18 +34,6 @@ class TestProgrammaticBackend:
         scene = backend.resolve(tabletop_simple, lib)
         assert len(scene.placed_objects) >= 3
         assert scene.table_asset is not None
-
-    def test_resolve_kitchen(self, tmp_path):
-        lib = _make_lib(tmp_path)
-        backend = ProgrammaticSceneBackend(seed=42)
-        scene = backend.resolve(kitchen_counter, lib)
-        assert len(scene.placed_objects) >= 4
-
-    def test_resolve_sorting(self, tmp_path):
-        lib = _make_lib(tmp_path)
-        backend = ProgrammaticSceneBackend(seed=42)
-        scene = backend.resolve(sorting_table, lib)
-        assert len(scene.placed_objects) >= 4
 
     def test_deterministic_with_seed(self, tmp_path):
         lib = _make_lib(tmp_path)

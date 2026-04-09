@@ -18,7 +18,7 @@ Part 1 ── 数字资产库框架 ◀ 当前核心
 │                    └→ 未命中 → T2I (SDXL-Turbo) → TRELLIS.2-4B (默认) → mesh_cleanup → URDF → 入库
 │
 │   入库 = assets/generated/ + catalog.json（远端 sync 回本地，.gitignore 大文件）
-│   内置 10 个 Objaverse 策划资产 + 3 个场景预设 + table/plane
+│   内置 10 个 Objaverse 策划资产 + 1 个场景预设 + table/plane
 │   可视化: viser SceneViewer (静态预览)
 │
 ────────────────────────────────────────────────
@@ -42,7 +42,7 @@ Part 2 ── Sim-to-Policy 管线（后续）
 |------|:----:|------|
 | 资产库 (`AssetLibrary`) | ✅ | 10 Objaverse 策划 + N 生成，`objects/` + `generated/` 双目录扫描 |
 | 资产持久化 & 同步 | ✅ | `catalog.json` 索引，`sync_assets.py` 远端→本地同步 |
-| 场景预设 | ✅ | tabletop_simple / kitchen_counter / sorting_table |
+| 场景预设 | ✅ | tabletop_simple |
 | 3D 生成后端 | ✅ | **TRELLIS.2-4B (默认, 1K PBR balanced, 可选 512/4K)** + Hunyuan3D-2.1 (备选)，MI308X 验证 |
 | mesh → URDF 转换 | ✅ | trimesh 凸包 + 物理属性估算 |
 | T2I 桥接 (text→image) | ✅ | SDXL-Turbo 默认，3D 友好 prompt 优化 (§1.4) |
@@ -197,13 +197,14 @@ python scripts/import_objaverse.py --dry-run       # 仅预览候选
 
 **Sim-ready 标准**: `model.urdf` + `visual.glb` + `visual.obj` + `collision.obj` + `metadata.json` + `provenance.json`
 
-### 场景预设 — 3 个室内场景
+### 场景预设
+
+固定臂（Franka）短/中程任务（3~8 step）场景泛化意义有限，物品泛化更关键。
+保留单一场景预设，泛化重心放在 object variation（见 §2.7 数据多样性策略）。
 
 | 场景 | 描述 | 包含物品 |
 |------|------|---------|
 | tabletop_simple | 1 桌 + 3-5 物品随机摆放 | 杯、碗、积木 |
-| kitchen_counter | 台面 + 厨具 | 杯、叉、勺、瓶 |
-| sorting_table | 桌 + 分类托盘 + 多色积木 | 积木、盘子、罐子 |
 
 ```python
 scene_config = {
@@ -832,6 +833,8 @@ python lerobot/.../01_train_smolvla.py \
 > 2025-2026 年多个项目已验证"纯合成数据 → VLA 训练"路线可行。
 > RoboSmith Part 2 定位在 post-training 规模。
 
+### 合成数据 → VLA 训练
+
 | 项目 | 数据规模 | 训练方式 | 核心发现 |
 |------|---------|---------|---------|
 | [GraspVLA](https://github.com/PKU-EPIC/GraspVLA) CoRL'25 | 10亿帧，240类 | pre-train | 纯合成零样本迁移真机抓取 |
@@ -839,14 +842,127 @@ python lerobot/.../01_train_smolvla.py \
 | [EmbodiChain](https://github.com/DexForce/EmbodiChain) | 平台级 | 全流程 | 资产→仿真→数据→VLA 端到端 |
 | [ET-VLA](https://arxiv.org/abs/2511.01224) | 少量合成 | SCP warm-up | 合成 warm-up + 真机 fine-tune +53% |
 
+### 端到端仿真平台：Genie Sim 3.0 (AgiBot)
+
+[Genie Sim 3.0](https://github.com/AgibotTech/genie_sim) (智元机器人, [arXiv 2601.02078](https://arxiv.org/abs/2601.02078))
+是当前开源最完整的 real2sim → SDG → VLA 平台，覆盖从真实场景重建到合成数据生成的全链路。
+
+| 模块 | 内容 | 规模 |
+|------|------|------|
+| **Sim-Ready Assets** | 5,140 个验证 3D 资产（零售/工业/餐饮/家居/办公） | 5 大领域 |
+| **3DGS 重建管线** | 真实场景扫描 → 3D Gaussian Splatting → 高精度 mesh → USD | real2sim 核心 |
+| **Genie Sim World** | 多模态空间世界模型，多种输入 → 逼真 3D 世界 | 分钟级生成 |
+| **LLM 驱动场景生成** | 自然语言 → 仿真场景 + 任务指令 + 评估配置 | 多维泛化 |
+| **合成数据集** | 10,000+ 小时，200+ 任务，多传感器流 | 开源 |
+| **Benchmark** | 100,000+ 场景，VLM 自动评估 | π0.5 / GR00T-N1.6 / π0 |
+| **Sim2Real** | 合成数据 zero-shot 迁移 ≥ 真实数据效果 | 8 任务验证 |
+
+**与 RoboSmith 的关键区别**：
+
+| 维度 | Genie Sim 3.0 | RoboSmith |
+|------|--------------|-----------|
+| **资产来源** | **real2sim** — 3DGS 扫描真实物品/场景重建 | **gen2sim** — T2I + 3D 生成模型（TRELLIS.2） |
+| 资产规模 | 5,140 个（人工策划 + 扫描） | 10 Objaverse 策划 + 按需生成 |
+| 仿真引擎 | Isaac Sim (NVIDIA 绑定) | MuJoCo / Genesis (AMD 兼容) |
+| 机器人 | Genie G2 人形机器人 | Franka 固定臂 |
+| **泛化轴** | **场景泛化** — 人形需跨房间/环境导航 | **物品泛化** — 固定臂只关心桌面物品多样性 |
+| 数据规模 | 10,000+ 小时 (pre-train 级) | 5k-10k 轨迹 (post-train 级) |
+| GPU 生态 | NVIDIA (Isaac Sim) | **AMD ROCm** |
+
+**为什么泛化轴不同？**
+
+人形机器人（Genie G2）在不同房间、厨房、仓库间移动，场景理解（"我在哪、周围有什么"）
+是任务的一部分 → 场景泛化是刚需，LLM 驱动多场景生成有明确价值。
+
+固定臂（Franka）的工作空间是半径 ~85cm 的半球，3~8 step 的桌面操作任务中，
+"场景"始终是一张桌子 → 场景泛化 ROI 低，真正影响 policy 泛化的是**物品形态/外观/尺寸的多样性**。
+
+> **启示**：Genie Sim 证明 real2sim（扫描重建）是当前 sim-ready 资产质量最高的路线，
+> 但依赖 NVIDIA 生态 (Isaac Sim) 且扫描成本高。
+> RoboSmith 的 gen2sim 路线（文本 → 生成 3D → URDF）在定制性和 AMD 兼容性上互补。
+> 两条路线未来可能融合：扫描获取高精度几何 + 生成模型补全纹理/变体。
+
 **RoboSmith 定位**：
 
 ```
-GraspVLA              240类 / 10亿帧      pre-train
-InternVLA-A1          70任务 / 63万轨迹   pre-train
-RoboSmith (计划)      10-30类 / 5k-10k    post-train  ←
-lerobot (已验证)       1类 / 100轨迹       fine-tune
+Genie Sim 3.0         5140资产 / 10000h+   pre-train (real2sim, 场景泛化, NVIDIA)
+GraspVLA              240类 / 10亿帧       pre-train (Objaverse, 物品泛化)
+InternVLA-A1          70任务 / 63万轨迹    pre-train
+RoboSmith (计划)      10-30类 / 5k-10k     post-train (gen2sim, 物品泛化, AMD ROCm) ←
+lerobot (已验证)       1类 / 100轨迹        fine-tune
 ```
+
+### RoboSmith 的差异化价值与继续方向
+
+在 Genie Sim 3.0 等重量级平台已存在的前提下，RoboSmith 不应试图复制其全栈路线，
+而应聚焦自身独特优势。以下是值得继续推进的方向：
+
+**Insight 1：Gen2Sim 的长尾物品覆盖能力是 Real2Sim 的天然补充**
+
+Genie Sim 的 5,140 资产虽然覆盖 5 大领域，但仍是有限集合 — 遇到不在库里的物品
+（如特定形状的工具、定制容器）就无法处理。RoboSmith 的"文本描述 → 3D 生成"能力
+天然覆盖长尾：任何可以用语言描述的物品，都可以即时生成 sim-ready 资产。
+
+→ **方向：做好 per-category object variation pool**（同一类物品的形态/外观/尺寸变体），
+  这是 pre-train 数据集无法覆盖的 post-training 差异化数据。
+
+**Insight 2：AMD ROCm 全栈是唯一性卖点**
+
+目前所有主流仿真平台（Isaac Sim、Genie Sim、OmniGibson）都绑定 NVIDIA。
+RoboSmith 是极少数在 AMD GPU 上验证 3D 生成 + 仿真全链路的项目：
+TRELLIS.2 (MI308X) → URDF → MuJoCo/Genesis → LeRobot 训练。
+这对 AMD 数据中心用户（高校、企业自建集群）有不可替代的价值。
+
+→ **方向：保持 AMD ROCm 全栈可用性作为核心差异化**，
+  Part 2 选型（MuJoCo + Genesis）天然 AMD 兼容，不要引入 NVIDIA 绑定依赖。
+
+**Insight 3：轻量 Post-Training 数据 Toolkit 比全栈平台更实用**
+
+Genie Sim 是 pre-train 级平台（10,000+ 小时数据），部署成本高（Isaac Sim + NVIDIA GPU）。
+多数研究者/小团队的真实需求是：拿一个现有 VLA（π0.5、SmolVLA）→ 在特定任务上
+fine-tune/post-train → 部署。RoboSmith 可以做这个环节的 **"数据定制工坊"**：
+
+```
+用户指定: "我要训练 Franka 抓取 5 种不同形状的杯子"
+         │
+         ▼
+RoboSmith: 生成 5 种杯子变体 (TRELLIS.2)
+         → 桌面场景 + 位置随机化
+         → IK scripted 轨迹 (1000 ep)
+         → LeRobot v3.0 数据集
+         → 直接喂给 SmolVLA / π0.5 fine-tune
+```
+
+→ **方向：Part 2 的核心价值不是做"又一个仿真平台"，而是做"VLA post-training 数据生成器"**，
+  一条命令从文本描述到可训练数据集。
+
+**Insight 4：Genie Sim Sim2Real 数据验证了合成数据 ≥ 真实数据**
+
+Genie Sim Benchmark 的 Sim2Real 实验（8 任务）显示：
+纯合成数据训练的 policy 在真机上的成功率（82.8%）**超过**真实数据训练的 policy（75.2%）。
+这从工业级实验彻底验证了合成数据路线的可行性，RoboSmith 的方向是正确的。
+
+→ **方向：不需要怀疑合成数据路线本身**，关键是数据多样性和质量，而非数量。
+
+**Insight 5：Object Variation > Scene Variation > Data Volume**
+
+综合 Genie Sim、GraspVLA、InternVLA-A1 的经验，对固定臂桌面操作的优先级排序：
+
+```
+物品变体多样性 (形态/外观/尺寸)     >>> 最关键，直接决定 policy 泛化能力
+  │
+  ├── 同类别内变体 (10种不同的 mug)   >>> RoboSmith gen2sim 的核心优势
+  ├── 跨类别覆盖 (mug + bottle + can)  >>> Objaverse 策划 + 生成兜底
+  └── 物理属性多样性 (质量/摩擦)       >>> 需实现 material-aware 物理 (§1.6.3)
+      │
+位置/朝向随机化                       >> 已在 ProgrammaticSceneBackend 实现
+任务类型广度                           >> pick/place/stack/push 覆盖
+      │
+光照/纹理/相机视角                     > P1，渲染层面 domain randomization
+场景布局                               > 固定臂几乎不需要
+```
+
+→ **方向：RoboSmith Part 2 的数据采集应以 object variation 为第一随机化轴**。
 
 **数据多样性 > 数据数量**（InternVLA-A1 关键经验）：
 

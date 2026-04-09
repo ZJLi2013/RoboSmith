@@ -109,16 +109,6 @@ def _load_scene_presets() -> dict:
         presets["tabletop_simple"] = tabletop_simple
     except ImportError:
         pass
-    try:
-        from robotsmith.scenes.presets.kitchen_counter import kitchen_counter
-        presets["kitchen_counter"] = kitchen_counter
-    except ImportError:
-        pass
-    try:
-        from robotsmith.scenes.presets.sorting_table import sorting_table
-        presets["sorting_table"] = sorting_table
-    except ImportError:
-        pass
     return presets
 
 
