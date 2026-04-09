@@ -18,7 +18,7 @@ export TORCH_SDPA_BACKEND=MATH
 export PYTORCH_HIP_ALLOC_CONF=expandable_segments:True
 echo "[${EXP_TAG}] TORCH_SDPA_BACKEND=$TORCH_SDPA_BACKEND"
 
-pip show transformers | head -2
+python -c "import transformers; print(f'transformers=={transformers.__version__}')"
 
 # ---- 2. SmolVLA Training (2000 steps, batch 4) ----
 echo ""
