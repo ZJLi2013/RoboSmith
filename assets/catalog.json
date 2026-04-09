@@ -283,5 +283,26 @@
       3.9
     ],
     "description": "Generated: red ceramic mug (SDXL-Turbo + Hunyuan3D-2.1 Shape + mesh_cleanup, base plane removed)"
+  },
+  {
+    "name": "red_ceramic_mug_20260409_035414",
+    "dir": "generated\\red_ceramic_mug_20260409_035414",
+    "tags": [
+      "mug",
+      "cup",
+      "container",
+      "red",
+      "generated",
+      "grasp",
+      "pbr"
+    ],
+    "source": "generated",
+    "mass_kg": 0.1,
+    "size_cm": [
+      10.0,
+      4.4,
+      10.0
+    ],
+    "description": "Generated: red ceramic mug (SDXL-Turbo + Hunyuan3D-2.1 PBR Paint, visual.glb with embedded textures)"
   }
 ]

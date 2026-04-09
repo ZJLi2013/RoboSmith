@@ -176,13 +176,27 @@ class Hunyuan3DBackend(GenBackend):
             paint_dir = str(self._repo_path / "hy3dpaint")
             if paint_dir not in sys.path:
                 sys.path.insert(0, paint_dir)
-            from textureGenPipeline import Hunyuan3DPaintPipeline
+            from textureGenPipeline import (
+                Hunyuan3DPaintPipeline,
+                Hunyuan3DPaintConfig,
+            )
+            config = Hunyuan3DPaintConfig(max_num_view=6, resolution=512)
+            config.realesrgan_ckpt_path = str(
+                self._repo_path / "hy3dpaint" / "ckpt" / "RealESRGAN_x4plus.pth"
+            )
+            config.multiview_cfg_path = str(
+                self._repo_path / "hy3dpaint" / "cfgs" / "hunyuan-paint-pbr.yaml"
+            )
+            config.custom_pipeline = str(
+                self._repo_path / "hy3dpaint" / "hunyuanpaintpbr"
+            )
         else:
             from hy3dgen.texgen import Hunyuan3DPaintPipeline
+            config = None
 
-        print(f"[hunyuan3d] Loading PBR paint pipeline ...")
-        self._paint_pipeline = Hunyuan3DPaintPipeline()
-        print(f"[hunyuan3d] Paint pipeline ready (PBR textures enabled)")
+        print("[hunyuan3d] Loading PBR paint pipeline ...")
+        self._paint_pipeline = Hunyuan3DPaintPipeline(config)
+        print("[hunyuan3d] Paint pipeline ready (PBR textures enabled)")
 
     def generate(
         self,
