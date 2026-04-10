@@ -35,6 +35,10 @@ if [ -z "${DISPLAY:-}" ]; then
 fi
 
 python -c "import transformers; print(f'transformers=={transformers.__version__}')"
+
+# Genesis ROCm patch: wrap cuda.bindings import in try/except
+python scripts/patch_genesis_rocm.py
+
 mkdir -p "$OUT"
 
 # ---- 1. SmolVLA Training (2K steps, batch 4, num_workers=4) ----
