@@ -111,6 +111,11 @@ def main():
         default=0,
         help="Drop first N frames of each episode before training (0 disables).",
     )
+    ap.add_argument(
+        "--video-backend",
+        default=None,
+        help="Video backend for LeRobot dataset (e.g. 'pyav' to avoid torchcodec CUDA dep).",
+    )
     args = ap.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -204,12 +209,15 @@ def main():
             raise ValueError(f"No episodes selected from {args.episodes_json}")
         print(f"  selected episodes ({len(selected_episodes)}): {selected_episodes[:10]}...")
 
-    dataset = LeRobotDataset(
-        args.dataset_id,
-        root=ds_root,
+    ds_kwargs = dict(
         episodes=selected_episodes,
         delta_timestamps=delta_timestamps,
     )
+    if ds_root:
+        ds_kwargs["root"] = ds_root
+    if args.video_backend:
+        ds_kwargs["video_backend"] = args.video_backend
+    dataset = LeRobotDataset(args.dataset_id, **ds_kwargs)
     if args.trim_first_n_frames > 0:
         base_len = len(dataset)
         kept_indices = build_trimmed_indices(dataset, args.trim_first_n_frames)

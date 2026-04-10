@@ -24,7 +24,7 @@ echo "  Training: 2000 steps, batch 4, num_workers=4"
 echo ""
 
 # ---- 0. Deps + headless display ----
-pip install -q 'accelerate' 'sentencepiece' 'protobuf' 2>&1 | tail -3
+pip install -q 'accelerate' 'sentencepiece' 'protobuf' 'av' 2>&1 | tail -3
 apt-get update -qq && apt-get install -y -qq xvfb > /dev/null 2>&1 || true
 
 if [ -z "${DISPLAY:-}" ]; then
@@ -45,6 +45,7 @@ t0=$SECONDS
 python pipeline/train_smolvla.py \
   --dataset-id "$DATASET" \
   --dataset-root "$DATASET_ROOT" \
+  --video-backend pyav \
   --n-steps 2000 \
   --batch-size 4 \
   --log-every 50 \
