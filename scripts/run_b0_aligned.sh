@@ -1,23 +1,29 @@
 #!/bin/bash
 set -euo pipefail
 
-# Stage 1 - B0 Aligned: Reproduce MI308 V6 results with num_workers=4
+# Stage 1 - B0 Aligned: Reproduce MI308 V6 results
 #
-# Changes vs original B0:
-#   1. num_workers=4 (was 0) — PNG format doesn't use torchcodec, safe on ROCm
-#   2. Clean HF cache first to avoid stale data
+# Optimized config based on I/O benchmark (2025-04-10):
+#   - Video format (SVT-AV1) instead of PNG → 15.7× smaller, faster training I/O
+#   - num_workers=4 → 5.1× faster training vs PNG+nw=0
+#   - All data on /datasets NVMe (not root partition)
 #
-# Expected: unseen ~40%, training ~50%, training time <10 min (was 78 min)
+# Expected: unseen ~40%, training ~50%
+# Expected time: data gen ~47 min, training ~17 min, eval ~10 min → total ~75 min
 
 REPO=local/franka-pick-vision-100ep
-OUT=/output/stage1_b0_aligned
+DATA_ROOT=/datasets/robotsmith
+OUT=${DATA_ROOT}/stage1_b0_aligned
 EXP_TAG="B0-aligned"
-HF_CACHE="/root/.cache/huggingface/lerobot/${REPO}"
 
-echo "=== Stage 1 ${EXP_TAG}: V6a Reproduction + num_workers=4 ==="
+export HF_HOME=/datasets/hf_cache
+HF_LEROBOT="${HF_HOME}/lerobot/${REPO}"
+
+echo "=== Stage 1 ${EXP_TAG}: V6a Reproduction (Video + nw=4) ==="
 echo "  GPU: AMD Instinct MI308X"
-echo "  Data: 100 episodes, vision-only (9D state + images, PNG)"
+echo "  Data: 100 episodes, vision-only (9D state + images, Video/SVT-AV1)"
 echo "  Training: 2000 steps, batch 4, num_workers=4"
+echo "  Storage: /datasets NVMe"
 echo ""
 
 # ---- 0. Deps + AMD workarounds ----
@@ -28,15 +34,17 @@ export PYTORCH_HIP_ALLOC_CONF=expandable_segments:True
 export PYTHONUNBUFFERED=1
 python -c "import transformers; print(f'transformers=={transformers.__version__}')"
 
-# ---- 1. Clean stale cache ----
-if [ -d "$HF_CACHE" ]; then
-    echo "[${EXP_TAG}] Removing stale HF cache: $HF_CACHE"
-    rm -rf "$HF_CACHE"
+mkdir -p "$OUT"
+
+# ---- 1. Clean stale cache (if any) ----
+if [ -d "$HF_LEROBOT" ]; then
+    echo "[${EXP_TAG}] Removing stale HF cache: $HF_LEROBOT"
+    rm -rf "$HF_LEROBOT"
 fi
 
-# ---- 2. Data Generation (100ep, vision-only, PNG) ----
+# ---- 2. Data Generation (100ep, vision-only, VIDEO format) ----
 echo ""
-echo "[${EXP_TAG}] Step 1: Data generation (100 episodes, vision-only)..."
+echo "[${EXP_TAG}] Step 1: Data generation (100 episodes, vision-only, video)..."
 t0=$SECONDS
 python pipeline/collect_data.py \
   --n-episodes 100 \
@@ -44,9 +52,11 @@ python pipeline/collect_data.py \
   --save "$OUT" \
   --seed 42 \
   --no-bbox-detection \
-  --no-videos \
   --task "Pick up the red cube."
-echo "[${EXP_TAG}] Data gen done in $((SECONDS - t0))s"
+DATAGEN_TIME=$((SECONDS - t0))
+echo "[RESULT] Data gen: ${DATAGEN_TIME}s (~$((DATAGEN_TIME / 60)) min)"
+
+du -sh "$HF_LEROBOT" 2>/dev/null || true
 
 # ---- 3. SmolVLA Training (2K steps, batch 4, num_workers=4) ----
 echo ""
@@ -61,7 +71,7 @@ python pipeline/train_smolvla.py \
   --num-workers 4 \
   --save-dir "$OUT/outputs/smolvla_b0"
 TRAIN_TIME=$((SECONDS - t0))
-echo "[${EXP_TAG}] Training done in ${TRAIN_TIME}s (~$((TRAIN_TIME / 60)) min)"
+echo "[RESULT] Training: ${TRAIN_TIME}s (~$((TRAIN_TIME / 60)) min)"
 
 # ---- 4. Eval: unseen (seed=99) ----
 echo ""
@@ -94,6 +104,7 @@ python pipeline/eval_policy.py \
 # ---- 6. Results ----
 echo ""
 echo "=== ${EXP_TAG} RESULTS ==="
+echo "  Data gen wall time: ${DATAGEN_TIME}s (~$((DATAGEN_TIME / 60)) min)"
 echo "  Training wall time: ${TRAIN_TIME}s (~$((TRAIN_TIME / 60)) min)"
 python -c "
 import json

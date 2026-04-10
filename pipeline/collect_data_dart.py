@@ -111,6 +111,8 @@ def main():
     ap.add_argument("--success-sustain-frames", type=int, default=8)
     ap.add_argument("--success-final-delta", type=float, default=0.01)
     ap.add_argument("--task", default="Pick up the cube.")
+    ap.add_argument("--no-bbox-detection", action="store_true",
+                    help="Disable box_box_detection (workaround for AMD LLVM fatal #2570)")
     args = ap.parse_args()
 
     ensure_display()
@@ -124,7 +126,8 @@ def main():
     scene = gs.Scene(
         sim_options=gs.options.SimOptions(dt=1.0 / args.fps, substeps=4),
         rigid_options=gs.options.RigidOptions(
-            enable_collision=True, enable_joint_limit=True, box_box_detection=True,
+            enable_collision=True, enable_joint_limit=True,
+            box_box_detection=(not args.no_bbox_detection),
         ),
         show_viewer=False,
     )

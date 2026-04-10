@@ -30,6 +30,217 @@
 | E2 | 闭环 DART σ=0.005 (vision-only) | 100 | 10000 | 16 | | | DART 增量, ~32 epochs |
 | E3 | 闭环 DART σ=0.005 (vision-only) | 200 | 10000 | 32 | | | 数据量增量, ~16 epochs |
 
+## Genesis AMD 渲染后端调研
+
+> 2025-04-10 调研。基于 [Genesis AMD issues](https://github.com/Genesis-Embodied-AI/Genesis/issues?q=AMD)、
+> PR [#2393](https://github.com/Genesis-Embodied-AI/Genesis/pull/2393)、
+> PR [#2680](https://github.com/Genesis-Embodied-AI/Genesis/pull/2680)、
+> 以及本地 MI308X 实测。
+
+### 当前后端确认
+
+在 MI308X Docker 容器内执行 `gs.init(backend=gs.gpu)` 输出：
+
+```
+Running on [AMD Instinct MI308X] with backend gs.amdgpu. Device memory: 191.98 GB.
+```
+
+**结论**：Genesis 0.4.3 在 MI308X 上自动解析 `gs.gpu` → **`gs.amdgpu`**（非 OpenGL / Vulkan / CPU）。
+
+### Genesis 后端架构
+
+Genesis 有 5 种后端（`genesis/constants.py`）：
+
+| 后端 | 编号 | 引擎 | 用途 |
+|------|:----:|------|------|
+| `cpu` | 0 | Quadrants CPU | 开发调试 |
+| `gpu` | 1 | 自动解析 → cuda / amdgpu / metal | 默认推荐 |
+| `cuda` | 2 | Quadrants CUDA | NVIDIA GPU 物理计算 |
+| `amdgpu` | 3 | Quadrants HIP (ROCm) | AMD GPU 物理计算 |
+| `metal` | 4 | Quadrants Metal | macOS |
+
+`gs.gpu` 的解析顺序：CUDA → AMDGPU → Metal → CPU fallback。
+MI308X 上 ROCm/HIP 可用 → 解析为 `amdgpu`。
+
+**物理引擎**：通过 [Quadrants](https://github.com/Genesis-Embodied-AI/quadrants)（Taichi fork）的 AMDGPU 后端，使用 HIP kernel 做物理仿真，直接跑在 GPU 上。
+
+**渲染引擎**：Genesis 的相机渲染使用 OpenGL/EGL（pyrender）。MI308X 是 CDNA 架构（纯计算卡，无光栅化硬件），渲染走 Mesa EGL → **llvmpipe（CPU 软件光栅化）**，这是 data gen ~28s/ep 的主要瓶颈。相比之下，NVIDIA 4090 有硬件光栅化 + EGL 加速。
+
+### 社区 MI300X 性能基准（PR #2680, v01dXYZ, 2025-04-09）
+
+v01dXYZ 在 MI300X 上运行了 Genesis 官方 benchmark，与 RTX Pro 6000 对比：
+
+**物理仿真 FPS（batch_size=30000, 纯物理无渲染）**：
+
+| 场景 | MI300X (amdgpu) | RTX 6000 (cuda) | MI300X / RTX 6000 |
+|------|----------------:|-----------------:|:------------------:|
+| franka | 3.12M | 5.43M | 57% |
+| franka_free | 4.55M | 1.83M | **249%** |
+| franka_random (gjk=off) | 2.55M | 6.74M | 38% |
+| franka_random (gjk=on) | 1.98M | 6.69M | 30% |
+| anymal_random | 1.33M | 6.92M | 19% |
+| duck_in_box_easy | 3.04M | 6.95M | 44% |
+
+**分析**：
+- 无碰撞检测场景（`franka_free`）MI300X **大幅领先**（2.5×），得益于 HBM 带宽优势
+- 有碰撞检测场景 MI300X 约为 RTX 6000 的 **30-57%**，碰撞检测 kernel 尚未针对 CDNA 优化
+- 编译时间 MI300X ~50-80s vs RTX 6000 ~27-45s（Quadrants JIT 编译开销更大）
+
+### 已知 AMD 兼容性问题
+
+| Issue | 状态 | 影响 | 描述 |
+|-------|------|------|------|
+| [#2570](https://github.com/Genesis-Embodied-AI/Genesis/issues/2570) | Open | **MI308X** | LLVM ISel 失败：convex collision kernel 在 CDNA3 (gfx942) 上无法编译。影响 box-box collision=true 场景。**我们提交的 issue** |
+| [#2434](https://github.com/Genesis-Embodied-AI/Genesis/issues/2434) | Open | RDNA3 | hipMemset >1GB 数组触发 `hipErrorInvalidValue`。Workaround: `device_memory_GB=20` |
+| [#2669](https://github.com/Genesis-Embodied-AI/Genesis/issues/2669) | Open | gfx1150 | `hipErrorInvalidKernelFile`：ISA 不兼容，需要 `HSA_OVERRIDE_GFX_VERSION` |
+| [#2680](https://github.com/Genesis-Embodied-AI/Genesis/pull/2680) | Open PR | MI300X | 修复 `rocm-smi` fallback 和 KFD sysfs 内存报告，已含 benchmark 数据 |
+| [#2679](https://github.com/Genesis-Embodied-AI/Genesis/issues/2679) | Open | CI | 提议将 MI300X 加入 GitHub CI runner（Hot Aisle $1.99/hr） |
+| [#2393](https://github.com/Genesis-Embodied-AI/Genesis/pull/2393) | Merged | 全平台 | 用 `amdgpu` 后端替换了有 bug 的 `vulkan` 后端 |
+
+### 对 RoboSmith 的影响与建议
+
+| 环节 | 当前状态 | 瓶颈 | 可能优化 |
+|------|---------|------|---------|
+| **物理仿真** | `amdgpu` 后端，GPU 加速 | 碰撞检测 kernel 未优化（30-57% of CUDA） | 等待 Quadrants CDNA3 优化；简单场景影响不大 |
+| **相机渲染** | Mesa EGL → **llvmpipe (CPU 软件光栅化)** | **主要瓶颈**：CDNA 无光栅化硬件，~28s/ep 中大部分是 CPU 渲染开销 | 1. 减少相机分辨率 2. 减少渲染帧数 3. 未来考虑 Vulkan compute-based renderer |
+| **碰撞检测** | `--no-bbox-detection` 关闭 box_box_detection | [#2570](https://github.com/Genesis-Embodied-AI/Genesis/issues/2570)：我们提交的 issue，convex collision kernel LLVM ISel 在 gfx942 编译失败。`--no-bbox-detection` 即 bypass 此问题 | 等待 Quadrants/LLVM 修复；Stage 2 多物体碰撞需关注 |
+| **并行环境** | batch_size=1（当前） | 未利用 GPU 并行 | Data gen 可考虑 batch scene 加速 |
+
+> **⚠ 注意**：`pipeline/collect_data_dart.py` 中 `box_box_detection=True` 是硬编码的，
+> 未接入 `--no-bbox-detection` 参数。E2 DART 数据采集在 MI308X 上会触发 #2570 crash，需修复。
+
+### 关键结论
+
+1. **物理仿真走 `amdgpu` GPU 后端**，不是 CPU fallback
+2. **相机渲染走 CPU（llvmpipe）**——CDNA 是纯计算架构无光栅化硬件，这是 data gen ~28s/ep 的主要瓶颈（NVIDIA 4090 有硬件光栅化 + EGL 加速，快得多）
+3. **`--no-bbox-detection` 是 #2570 的 workaround**：关闭 `box_box_detection` 避免 convex collision kernel 在 gfx942 上 LLVM 编译失败
+4. **Genesis AMD 生态正在快速演进**：PR #2393（2月）加入 amdgpu 后端，PR #2680（4月）修复兼容性并提供首批 MI300X benchmark
+5. **Stage 1 impact 可控**：pick-cube 场景简单，`--no-bbox-detection` 足够。Stage 2 引入多物体后需重新评估碰撞检测
+
+### Genesis 渲染技术栈：CDNA3 vs RDNA4
+
+> CDNA3 (MI300X/MI308X) = 纯计算卡，无图形流水线硬件。
+> RDNA4 (RX 9070 XT) = 完整图形+计算架构，有光栅化/RT 硬件。
+
+#### 系统级图形驱动支持
+
+| 技术栈 | CDNA3 (gfx942) | RDNA4 (gfx1200) |
+|--------|:--------------:|:---------------:|
+| **OpenGL (radeonsi)** | **不支持** — 无光栅化硬件 | **支持** — OpenGL 4.6, Mesa radeonsi |
+| **Vulkan (RADV)** | **显式拒绝** — Mesa 25.0 起 bail out ([Phoronix](https://www.phoronix.com/news/Mesa-25.0-RADV-No-CDNA)) | **支持** — Vulkan 1.4 + RT, Mesa RADV |
+| **EGL headless** | Mesa EGL → **llvmpipe (CPU)** | Mesa EGL → **radeonsi (GPU 硬件加速)** |
+| **ROCm compute (HIP)** | **完整支持** — 主要用途 | **支持** — ROCm 6.4.1+ ([参考](https://kaeru.my/notes/amd-radeon-9070-xt-on-ubuntu-linux-25-04-with-rocm-6-4-1-and-mesa-25)) |
+
+#### Genesis 渲染后端适配
+
+| Genesis 后端 | 底层技术 | CDNA3 (MI308X) | RDNA4 (RX 9070 XT) | NVIDIA (4090) |
+|-------------|---------|:--------------:|:-------------------:|:-------------:|
+| **Rasterizer** (默认) | OpenGL / EGL | llvmpipe (**CPU**, ~5 FPS) | radeonsi (**GPU**, ~100+ FPS) | **GPU**, ~200+ FPS |
+| **RayTracer** | LuisaRender + OptiX | **不可用** (需 CUDA + OptiX) | **不可用** (LuisaCompute 无 HIP 后端) | **可用** |
+| **BatchRenderer** | gs-madrona (CUDA) | **不可用** (CUDA-only) | **不可用** (CUDA-only) | **可用** |
+
+#### CDNA3 上的渲染优化选项
+
+| 方案 | 预计收益 | 复杂度 | 可行性 |
+|------|---------|--------|--------|
+| 降低分辨率 (640→320) | ~2-4× | 低 | **推荐**：像素量减 75%，llvmpipe 近线性加速 |
+| 跳帧渲染 (每 N 步) | ~2-3× | 中 | 需改 data collection 逻辑 |
+| HIP compute rasterizer | ~10-20× (理论) | 极高 | 用 HIP 实现软件光栅化，工程量巨大，非标准方案 |
+
+#### RDNA4 上的渲染加速路径
+
+| 方案 | 预计收益 vs CDNA3 llvmpipe | 复杂度 | 可行性 |
+|------|:-------------------------:|--------|--------|
+| **EGL + radeonsi** (Genesis Rasterizer 默认路径) | **20-60×** | **零改动** | **直接可用**：Genesis 检测到 RDNA GPU 自动走硬件 OpenGL |
+| RADV Vulkan renderer (如有 Genesis 支持) | ~20-60× | 高 | Genesis 暂无 Vulkan 渲染后端 |
+| LuisaRender HIP 后端 | ~20-50× | 极高 | LuisaCompute 目前仅 CUDA/DX12/Metal，无 HIP |
+| gs-madrona ROCm 移植 | 待定 | 高 | gs-madrona 是 CUDA-only，需社区移植 |
+
+#### RDNA4 作为渲染加速卡的可行性
+
+**混合架构方案**：MI308X (CDNA3) 做物理仿真 + VLA 训练，RDNA4 (RX 9070 XT) 做渲染。
+
+| 考量 | 评估 |
+|------|------|
+| **硬件可用性** | RX 9070 XT 是消费级卡 (~$550)，PCIe 插槽需要确认服务器兼容性 |
+| **Genesis 支持** | Rasterizer 后端走 EGL + radeonsi，**零代码改动**即可 GPU 加速渲染 |
+| **ROCm 兼容** | ROCm 6.4.1 已支持 RDNA4 ([参考](https://kaeru.my/notes/amd-radeon-9070-xt-on-ubuntu-linux-25-04-with-rocm-6-4-1-and-mesa-25)) |
+| **Headless 渲染** | 需确认 RDNA4 无显示器时 EGL headless 是否正常（RDNA3 W7900 已验证） |
+| **多 GPU 路由** | Genesis 物理仿真和渲染可能需要在不同 GPU 上，需验证 `CUDA_VISIBLE_DEVICES` / `HIP_VISIBLE_DEVICES` 路由 |
+| **Data gen 提速** | 渲染从 CPU ~5 FPS → GPU ~100+ FPS，**data gen 每 ep 可能从 28s 降到 3-5s** |
+
+#### 总结
+
+| | CDNA3 (MI308X) | RDNA4 (RX 9070 XT) | NVIDIA (4090) |
+|-|:-:|:-:|:-:|
+| 物理仿真 | GPU (amdgpu) | GPU (amdgpu) | GPU (cuda) |
+| 渲染 | **CPU** (llvmpipe) | **GPU** (radeonsi) | **GPU** (OpenGL/EGL) |
+| RayTracer | 不可用 | 不可用 | 可用 (OptiX) |
+| BatchRenderer | 不可用 | 不可用 | 可用 (CUDA) |
+| VLA 训练 | **最优** (192GB HBM3) | 受限 (16GB GDDR6) | 受限 (24GB GDDR6X) |
+
+**建议**：
+- **短期 (Stage 1)**：继续在 MI308X + CPU 渲染，data gen 慢但仅需跑一次，训练迭代瓶颈已解决
+- **中期 (Stage 2-3)**：评估混合架构——MI308X 训练 + RDNA4 渲染加速，data gen 可提速 5-10×
+- **长期**：关注 Genesis 社区 gs-madrona ROCm 移植 和 LuisaCompute HIP 后端进展
+
+---
+
+## I/O 性能 Benchmark（MI308X）
+
+> 2025-04-10，`banff-cyxtera-s71-4`，存储路径 `/datasets`（空闲 NVMe `nvme2n1`）。
+> 目的：定位 B0 训练 78 min（2K steps）的瓶颈，确定最优存储格式与 DataLoader 配置。
+
+### 背景
+
+B0 使用 `--no-videos`（PNG 存储）+ `num_workers=0`，训练 2K steps 耗时 78 min，而 4090 参考值约 6 min。
+原始 `--no-videos` 是为了规避 SVT-AV1 编码在根分区（99% full）上 hang 的问题。
+
+### 数据生成（20 episodes）
+
+| 格式 | 耗时 | 磁盘占用 | 每 episode | 备注 |
+|------|------|---------|-----------|------|
+| PNG | 615s (10.3 min) | 235 MB | ~30.8s | 数千小文件 |
+| Video (SVT-AV1) | 562s (9.4 min) | **15 MB** | ~28.1s | 顺序写入，15.7× 更紧凑 |
+
+**结论**：Data gen 瓶颈是 Genesis GPU 渲染（~28s/ep），与存储格式无关。
+SVT-AV1 在空闲 NVMe 上完全正常，之前 hang 是根分区满导致。
+
+### 训练（200 steps, batch 4）
+
+| 格式 \ num_workers | nw=0 | nw=1 | nw=4 |
+|--------------------|------|------|------|
+| **PNG** | 521s | 480s | 159s |
+| **Video** | 190s | 141s | **103s** |
+
+参考：GPU 计算 ~0.22s/step → 200 steps 理论下限 ~44s。
+
+### 关键发现
+
+1. **Video 格式大幅降低 I/O 开销**：Video nw=0 (190s) 已比 PNG nw=0 (521s) 快 **2.7×**——顺序读取 video 比打开数千个 PNG 文件高效得多
+2. **num_workers 对 PNG 效果巨大**：521s → 159s (**3.3×**)；对 Video 边际收益较小：190s → 103s (1.8×)
+3. **最优组合：Video + nw=4 = 103s**，比原始 PNG + nw=0 快 **5.1×**
+
+### 推算 2K steps 训练耗时
+
+| 配置 | 预估 2K steps | vs 4090 参考 (6 min) |
+|------|-------------|---------------------|
+| PNG nw=0（B0 实际） | ~87 min | 14.5× 慢 |
+| PNG nw=4 | ~26 min | 4.3× 慢 |
+| Video nw=0 | ~32 min | 5.3× 慢 |
+| **Video nw=4（推荐）** | **~17 min** | 2.8× 慢 |
+| GPU 计算理论下限 | ~7.3 min | 1.2× 慢 |
+
+### 推荐配置（后续实验统一采用）
+
+| 阶段 | 配置 |
+|------|------|
+| Data gen | **去掉 `--no-videos`**（使用 video 格式），存储到 `/datasets` NVMe |
+| Training | **`num_workers=4`**，自动读取 video 格式数据 |
+| 存储路径 | `/datasets/zhengjli/` — 避免使用根分区 `~/.hf_cache` |
+
+---
+
 ## B0：V6a 复现（Vision-Only Baseline）
 
 **目的**：确认 pipeline 迁移后功能正确，复现 lerobot V6a ~40%。
