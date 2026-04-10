@@ -81,6 +81,8 @@ def build_trimmed_indices(dataset, trim_first_n_frames: int):
 def main():
     ap = argparse.ArgumentParser(description="SmolVLA post-train on Genesis pick data")
     ap.add_argument("--dataset-id", default="local/so101-genesis-pick")
+    ap.add_argument("--dataset-root", default=None,
+                    help="Local root directory for the dataset (bypasses HF Hub download)")
     ap.add_argument("--pretrained", default="lerobot/smolvla_base")
     ap.add_argument("--n-steps", type=int, default=2000)
     ap.add_argument("--batch-size", type=int, default=8)
@@ -134,8 +136,9 @@ def main():
         from lerobot.policies.factory import make_pre_post_processors
 
     # ---- dataset ----
-    print(f"\n[train] loading dataset: {args.dataset_id}")
-    dataset_metadata = LeRobotDatasetMetadata(args.dataset_id)
+    ds_root = args.dataset_root
+    print(f"\n[train] loading dataset: {args.dataset_id}" + (f" (root={ds_root})" if ds_root else ""))
+    dataset_metadata = LeRobotDatasetMetadata(args.dataset_id, root=ds_root)
     print(f"  total_frames: {dataset_metadata.total_frames}")
     print(f"  episodes: {dataset_metadata.total_episodes}")
     print(f"  fps: {dataset_metadata.fps}")
@@ -203,6 +206,7 @@ def main():
 
     dataset = LeRobotDataset(
         args.dataset_id,
+        root=ds_root,
         episodes=selected_episodes,
         delta_timestamps=delta_timestamps,
     )

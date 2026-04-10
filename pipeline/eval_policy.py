@@ -142,6 +142,8 @@ def main():
     ap.add_argument("--policy-type", default="bc", choices=["bc", "act", "smolvla"])
     ap.add_argument("--checkpoint", required=True)
     ap.add_argument("--dataset-id", default="local/franka-genesis-pick")
+    ap.add_argument("--dataset-root", default=None,
+                    help="Local root directory for the dataset (bypasses HF Hub download)")
     ap.add_argument("--n-episodes", type=int, default=10)
     ap.add_argument("--max-steps", type=int, default=150)
     ap.add_argument("--action-horizon", type=int, default=1)
@@ -269,7 +271,7 @@ def main():
             from lerobot.policies.act.modeling_act import ACTPolicy
             from lerobot.policies.factory import make_pre_post_processors
 
-        dataset_metadata = LeRobotDatasetMetadata(args.dataset_id)
+        dataset_metadata = LeRobotDatasetMetadata(args.dataset_id, root=args.dataset_root)
         features = dataset_to_policy_features(dataset_metadata.features)
         output_features = {k: ft for k, ft in features.items() if ft.type is FeatureType.ACTION}
         input_features = {k: ft for k, ft in features.items() if k not in output_features}
@@ -360,7 +362,7 @@ def main():
             from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
             from lerobot.policies.factory import make_pre_post_processors
 
-        dataset_metadata = LeRobotDatasetMetadata(args.dataset_id)
+        dataset_metadata = LeRobotDatasetMetadata(args.dataset_id, root=args.dataset_root)
         features = dataset_to_policy_features(dataset_metadata.features)
         output_features = {k: ft for k, ft in features.items() if ft.type is FeatureType.ACTION}
         input_features = {k: ft for k, ft in features.items() if k not in output_features}

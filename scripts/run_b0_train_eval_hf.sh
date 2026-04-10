@@ -8,6 +8,7 @@ set -euo pipefail
 # Eval: Genesis sim on MI308X (CPU rendering, ~10 min)
 
 DATASET=lidavidsh/franka-pick-100ep-genesis
+DATASET_ROOT=/datasets/robotsmith/franka-pick-100ep-genesis
 OUT=/datasets/robotsmith/stage1_b0
 EXP_TAG="B0-hf"
 
@@ -43,6 +44,7 @@ echo "  Dataset will be downloaded from HF on first run."
 t0=$SECONDS
 python pipeline/train_smolvla.py \
   --dataset-id "$DATASET" \
+  --dataset-root "$DATASET_ROOT" \
   --n-steps 2000 \
   --batch-size 4 \
   --log-every 50 \
@@ -60,6 +62,7 @@ python pipeline/eval_policy.py \
   --policy-type smolvla \
   --checkpoint "$OUT/outputs/smolvla_b0/final" \
   --dataset-id "$DATASET" \
+  --dataset-root "$DATASET_ROOT" \
   --n-episodes 10 --max-steps 150 \
   --action-horizon 10 \
   --seed 99 \
@@ -77,6 +80,7 @@ python pipeline/eval_policy.py \
   --policy-type smolvla \
   --checkpoint "$OUT/outputs/smolvla_b0/final" \
   --dataset-id "$DATASET" \
+  --dataset-root "$DATASET_ROOT" \
   --n-episodes 10 --max-steps 150 \
   --action-horizon 10 \
   --seed 42 \
