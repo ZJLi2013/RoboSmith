@@ -26,12 +26,22 @@ echo "  Training: 2000 steps, batch 4, num_workers=4"
 echo "  Storage: /datasets NVMe"
 echo ""
 
-# ---- 0. Deps + AMD workarounds ----
+# ---- 0. Deps + AMD workarounds + headless display ----
 pip install -q 'transformers==5.3.0' 'accelerate' 'sentencepiece' 'protobuf' 2>&1 | tail -3
+apt-get update -qq && apt-get install -y -qq xvfb > /dev/null 2>&1 || true
 
 export TORCH_SDPA_BACKEND=MATH
 export PYTORCH_HIP_ALLOC_CONF=expandable_segments:True
 export PYTHONUNBUFFERED=1
+
+# Headless rendering: start Xvfb for pyglet/OpenGL
+if [ -z "${DISPLAY:-}" ]; then
+    Xvfb :99 -screen 0 1280x1024x24 -ac +extension GLX &
+    export DISPLAY=:99
+    sleep 1
+    echo "[env] Xvfb started on :99"
+fi
+
 python -c "import transformers; print(f'transformers=={transformers.__version__}')"
 
 mkdir -p "$OUT"
