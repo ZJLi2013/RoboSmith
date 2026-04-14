@@ -67,15 +67,15 @@ def render_one_seed(seed: int, scene_name: str, assets_root: str, out_dir: Path,
 
     cam_overview = scene.add_camera(
         res=(960, 720),
-        pos=(cx + 0.8, cy + 0.6, table_z + 0.6),
-        lookat=(cx, cy, table_z),
-        fov=50, GUI=False,
+        pos=(cx + 0.9, cy + 0.7, table_z + 0.7),
+        lookat=(cx * 0.5, cy, table_z),
+        fov=55, GUI=False,
     )
     cam_topdown = scene.add_camera(
         res=(960, 720),
-        pos=(cx, cy, table_z + 1.0),
-        lookat=(cx, cy, table_z),
-        fov=50, GUI=False,
+        pos=(cx * 0.5, cy, table_z + 1.2),
+        lookat=(cx * 0.5, cy, table_z),
+        fov=55, GUI=False,
     )
 
     scene.build()
