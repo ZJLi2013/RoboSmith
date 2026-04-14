@@ -5,8 +5,8 @@
   "density_kg_m3": 1000.0,
   "size_cm": [
     8.0,
-    8.0,
-    7.7
+    1.5,
+    4.7
   ],
   "tags": [
     "fruit",
@@ -17,17 +17,27 @@
     "fruit_02"
   ],
   "source": "objaverse",
-  "description": "Toy fruit (Objaverse) [uid=50ffb91434ea4d978eaefe03220d36fe]",
+  "description": "Toy fruit (Objaverse) [uid=4d4c8d85a09b476c8136f0c4cd24c45a]",
   "stable_poses": [
     {
-      "z": 0.025,
+      "z": 0.021794,
       "quat": [
-        1.0,
-        0.0,
-        0.0,
-        0.0
+        0.002694,
+        -0.002959,
+        0.73942,
+        0.673233
       ],
-      "probability": 1.0
+      "probability": 0.5072
+    },
+    {
+      "z": 0.021922,
+      "quat": [
+        0.640538,
+        -0.767878,
+        0.006586,
+        0.005494
+      ],
+      "probability": 0.4928
     }
   ]
 }
