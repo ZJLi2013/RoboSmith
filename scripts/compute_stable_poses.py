@@ -30,7 +30,7 @@ from robotsmith.assets.library import AssetLibrary
 from robotsmith.assets.schema import AssetMetadata
 
 
-def _stable_poses_from_mesh(mesh: trimesh.Trimesh, n_samples: int = 5000) -> list[dict]:
+def _stable_poses_from_mesh(mesh: trimesh.Trimesh, n_samples: int = 500) -> list[dict]:
     """Compute stable resting poses via trimesh."""
     transforms, probs = mesh.compute_stable_poses(n_samples=n_samples)
     poses = []
