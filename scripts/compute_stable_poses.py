@@ -106,8 +106,12 @@ def compute_for_asset(asset_dir: Path, dry_run: bool = False) -> list[dict]:
                 [g for g in mesh.geometry.values() if isinstance(g, trimesh.Trimesh)]
             )
         if len(mesh.faces) > MAX_FACES_FOR_STABLE_POSE:
-            print(f"  Decimating {len(mesh.faces)} -> {MAX_FACES_FOR_STABLE_POSE} faces for speed")
-            mesh = mesh.simplify_quadric_decimation(MAX_FACES_FOR_STABLE_POSE)
+            try:
+                print(f"  Decimating {len(mesh.faces)} -> {MAX_FACES_FOR_STABLE_POSE} faces for speed")
+                mesh = mesh.simplify_quadric_decimation(MAX_FACES_FOR_STABLE_POSE)
+            except Exception:
+                print(f"  Decimation failed, using convex hull ({len(mesh.convex_hull.faces)} faces)")
+                mesh = mesh.convex_hull
         poses = _stable_poses_from_mesh(mesh)
     else:
         urdf_path = asset_dir / "model.urdf"
