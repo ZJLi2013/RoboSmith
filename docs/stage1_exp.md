@@ -608,3 +608,46 @@ python pipeline/train_smolvla.py \
 
 - [ ] Vision-only unseen: 80%+
 - [ ] Vision-only training: 90%+ (sanity check)
+
+---
+
+## Exp-Layout-1: 多物体桌面场景布局验证
+
+### 假设
+
+通过修正 table 位置偏移和相机参数，`snapshot_scene.py` 渲染的 `tabletop_simple` 场景中所有物体应稳定地落在桌面上，且从 overview/top-down 两个视角可完整观察到 table + objects + Franka。
+
+### 问题诊断
+
+Table URDF origin 在 (0,0,0)，tabletop 范围 x∈[-0.4,0.4], y∈[-0.3,0.3]。
+但 workspace_xy=[[0.35,-0.20],[0.65,0.20]] 对应 Franka 正前方操作区域（x=0.35~0.65），
+大部分采样点 x>0.4 → 超出桌面 → 物理 settle 后物体掉到地面。
+
+| 原因 | 说明 | 修复 |
+|------|------|------|
+| Table 位于世界原点 | 桌面 x∈[-0.4,0.4] 与 workspace x∈[0.35,0.65] 大部分不重叠 | 在 genesis_loader 中将 table 偏移到 pos=(0.5, 0, 0) |
+| 相机离桌面太近 | overview 被桌面遮挡大半 | 调整相机位置和 lookat |
+| 多 seed / 多视角冗余 | 验证 layout 只需 1 seed × 2 视角 | 简化为 overview + top-down |
+
+### 实验方案
+
+1. `genesis_loader.py`: table URDF 添加 `pos=(table_offset_x, 0, 0)`, 其中 `table_offset_x` 从 SceneConfig 推导
+2. `snapshot_scene.py`: 改为 2 视角 (overview + top-down)，调整相机位置
+3. 远端 `--seeds 1` 重新渲染
+
+### 预期
+
+- 所有 5 个物体稳定在桌面上，settle 后 z 无显著下降
+- overview: 能看到完整 table + objects + Franka
+- top-down: 所有物体在桌面矩形范围内
+
+### 结果
+
+| 轮次 | 修改 | 结果 |
+|------|------|------|
+| r0 (baseline) | 无 | 物体掉落，相机角度不对 |
+| r1 | table offset + camera fix | （待验证） |
+
+### 结论与 Next Step
+
+（待实验）

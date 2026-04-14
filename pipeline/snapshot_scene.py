@@ -4,7 +4,7 @@ Builds the Genesis scene (table + random objects + Franka at home pose),
 steps physics briefly to settle, then saves camera images as PNG.
 
 Usage:
-  python pipeline/snapshot_scene.py --seeds 1 2 3 --out /output/snapshots
+  python pipeline/snapshot_scene.py --seed 1 --out /output/snapshots
 """
 from __future__ import annotations
 
@@ -60,23 +60,22 @@ def render_one_seed(seed: int, scene_name: str, assets_root: str, out_dir: Path,
     scene = handle.scene
     franka = handle.franka
 
+    ws = scene_config.workspace_xy
+    cx = (ws[0][0] + ws[1][0]) / 2.0
+    cy = (ws[0][1] + ws[1][1]) / 2.0
+    table_z = scene_config.table_height + scene_config.table_size[2] / 2.0
+
     cam_overview = scene.add_camera(
         res=(960, 720),
-        pos=(1.0, 0.8, 1.2),
-        lookat=(0.5, 0.0, 0.78),
+        pos=(cx + 0.8, cy + 0.6, table_z + 0.6),
+        lookat=(cx, cy, table_z),
         fov=50, GUI=False,
     )
-    cam_top = scene.add_camera(
+    cam_topdown = scene.add_camera(
         res=(960, 720),
-        pos=(0.5, 0.0, 1.6),
-        lookat=(0.5, 0.0, 0.78),
-        fov=45, GUI=False,
-    )
-    cam_front = scene.add_camera(
-        res=(960, 720),
-        pos=(1.2, 0.0, 0.95),
-        lookat=(0.5, 0.0, 0.80),
-        fov=45, GUI=False,
+        pos=(cx, cy, table_z + 1.0),
+        lookat=(cx, cy, table_z),
+        fov=50, GUI=False,
     )
 
     scene.build()
@@ -87,7 +86,7 @@ def render_one_seed(seed: int, scene_name: str, assets_root: str, out_dir: Path,
     for _ in range(settle_steps):
         scene.step()
 
-    for cam_name, cam in [("overview", cam_overview), ("top", cam_top), ("front", cam_front)]:
+    for cam_name, cam in [("overview", cam_overview), ("topdown", cam_topdown)]:
         rgb, _, _, _ = cam.render(rgb=True, depth=False, segmentation=False, normal=False)
         arr = rgb.cpu().numpy() if hasattr(rgb, "cpu") else np.array(rgb)
         if arr.ndim == 4:
@@ -107,7 +106,7 @@ def main():
     ap = argparse.ArgumentParser(description="Render scene snapshots for layout review")
     ap.add_argument("--scene", default="tabletop_simple")
     ap.add_argument("--assets-root", default=None)
-    ap.add_argument("--seeds", type=int, nargs="+", default=[1, 2, 3])
+    ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--out", default="/output/snapshots")
     ap.add_argument("--cpu", action="store_true")
     ap.add_argument("--settle-steps", type=int, default=60,
@@ -125,8 +124,7 @@ def main():
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    for seed in args.seeds:
-        render_one_seed(seed, args.scene, assets_root, out_dir, gs, args.settle_steps)
+    render_one_seed(args.seed, args.scene, assets_root, out_dir, gs, args.settle_steps)
 
     pngs = sorted(out_dir.glob("*.png"))
     print(f"\n[done] {len(pngs)} images saved to {out_dir}")
