@@ -20,6 +20,10 @@ class AssetMetadata:
     tags: list[str] = field(default_factory=list)
     source: str = "builtin"
     description: str = ""
+    stable_poses: list[dict] = field(default_factory=list)
+    """Pre-computed stable resting poses on a flat surface.
+    Each entry: {"z": float, "quat": [w, x, y, z]}.
+    Empty list means not yet computed (fallback: upright with z = half-height)."""
 
     def save(self, path: Path) -> None:
         path.write_text(json.dumps(asdict(self), indent=2, ensure_ascii=False))

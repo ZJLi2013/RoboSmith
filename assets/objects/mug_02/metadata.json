@@ -1,0 +1,34 @@
+{
+  "mass_kg": 0.25,
+  "friction": 0.6,
+  "restitution": 0.1,
+  "density_kg_m3": 1000.0,
+  "size_cm": [
+    10.0,
+    9.5,
+    6.3
+  ],
+  "tags": [
+    "mug",
+    "cup",
+    "container",
+    "cylinder",
+    "handle",
+    "grasp",
+    "mug_02"
+  ],
+  "source": "objaverse",
+  "description": "Ceramic mug (Objaverse) [uid=4fbb57124fec47d8b216101e19f5d385]",
+  "stable_poses": [
+    {
+      "z": 0.025,
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "probability": 1.0
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "mass_kg": 0.08,
+  "friction": 0.5,
+  "restitution": 0.1,
+  "density_kg_m3": 1000.0,
+  "size_cm": [
+    4.2,
+    8.0,
+    4.3
+  ],
+  "tags": [
+    "figurine",
+    "toy",
+    "animal",
+    "irregular",
+    "grasp",
+    "figurine_02"
+  ],
+  "source": "objaverse",
+  "description": "Toy animal figurine (Objaverse) [uid=09032fd39ff343a8900ed9969835151b]",
+  "stable_poses": [
+    {
+      "z": 0.025,
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "probability": 1.0
+    }
+  ]
+}

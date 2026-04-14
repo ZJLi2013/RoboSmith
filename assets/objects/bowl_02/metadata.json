@@ -1,0 +1,33 @@
+{
+  "mass_kg": 0.3,
+  "friction": 0.5,
+  "restitution": 0.1,
+  "density_kg_m3": 1000.0,
+  "size_cm": [
+    14.0,
+    5.5,
+    13.3
+  ],
+  "tags": [
+    "bowl",
+    "container",
+    "concave",
+    "round",
+    "grasp",
+    "bowl_02"
+  ],
+  "source": "objaverse",
+  "description": "Ceramic bowl (Objaverse) [uid=68655c9cf95642efa50c98f895c7a449]",
+  "stable_poses": [
+    {
+      "z": 0.025,
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "probability": 1.0
+    }
+  ]
+}

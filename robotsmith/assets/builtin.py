@@ -13,41 +13,7 @@ from typing import Optional
 from robotsmith.assets.schema import Asset, AssetMetadata
 
 PRIMITIVE_DEFS: list[dict] = [
-    {
-        "name": "mug_red",
-        "geometry": "cylinder",
-        "radius": 0.04,
-        "length": 0.12,
-        "color": [0.8, 0.15, 0.1, 1.0],
-        "mass_kg": 0.25,
-        "friction": 0.6,
-        "size_cm": [8, 8, 12],
-        "tags": ["mug", "cup", "red", "container", "grasp"],
-        "description": "Red ceramic mug",
-    },
-    {
-        "name": "bowl_white",
-        "geometry": "sphere_half",
-        "radius": 0.075,
-        "color": [0.95, 0.95, 0.92, 1.0],
-        "mass_kg": 0.3,
-        "friction": 0.5,
-        "size_cm": [15, 15, 7],
-        "tags": ["bowl", "white", "container", "grasp"],
-        "description": "White ceramic bowl",
-    },
-    {
-        "name": "plate_round",
-        "geometry": "cylinder",
-        "radius": 0.11,
-        "length": 0.02,
-        "color": [0.92, 0.92, 0.88, 1.0],
-        "mass_kg": 0.35,
-        "friction": 0.5,
-        "size_cm": [22, 22, 2],
-        "tags": ["plate", "dish", "round", "flat", "grasp"],
-        "description": "Round ceramic plate",
-    },
+    # --- blocks (3 color variants) ---
     {
         "name": "block_red",
         "geometry": "box",
@@ -81,51 +47,56 @@ PRIMITIVE_DEFS: list[dict] = [
         "tags": ["block", "cube", "green", "stackable", "grasp"],
         "description": "Green wooden block",
     },
+    # --- box (2 size variants, flat rectangular) ---
     {
-        "name": "bottle_tall",
-        "geometry": "cylinder",
-        "radius": 0.035,
-        "length": 0.22,
-        "color": [0.3, 0.6, 0.35, 0.8],
-        "mass_kg": 0.4,
-        "friction": 0.4,
-        "size_cm": [7, 7, 22],
-        "tags": ["bottle", "tall", "green", "container", "grasp", "pour"],
-        "description": "Tall glass bottle",
-    },
-    {
-        "name": "can_soda",
-        "geometry": "cylinder",
-        "radius": 0.033,
-        "length": 0.12,
-        "color": [0.85, 0.1, 0.1, 1.0],
-        "mass_kg": 0.35,
-        "friction": 0.45,
-        "size_cm": [6.6, 6.6, 12],
-        "tags": ["can", "soda", "red", "cylinder", "grasp"],
-        "description": "Red soda can",
-    },
-    {
-        "name": "fork_silver",
+        "name": "box_small",
         "geometry": "box",
-        "size": [0.01, 0.005, 0.19],
-        "color": [0.75, 0.75, 0.78, 1.0],
-        "mass_kg": 0.04,
-        "friction": 0.35,
-        "size_cm": [1, 0.5, 19],
-        "tags": ["fork", "silver", "utensil", "thin", "grasp"],
-        "description": "Silver fork",
+        "size": [0.08, 0.06, 0.03],
+        "color": [0.85, 0.75, 0.55, 1.0],
+        "mass_kg": 0.08,
+        "friction": 0.5,
+        "size_cm": [8, 6, 3],
+        "tags": ["box", "rectangular", "flat", "grasp"],
+        "description": "Small cardboard box",
     },
     {
-        "name": "spoon_silver",
+        "name": "box_large",
         "geometry": "box",
-        "size": [0.015, 0.005, 0.18],
-        "color": [0.75, 0.75, 0.78, 1.0],
-        "mass_kg": 0.035,
-        "friction": 0.35,
-        "size_cm": [1.5, 0.5, 18],
-        "tags": ["spoon", "silver", "utensil", "thin", "grasp"],
-        "description": "Silver spoon",
+        "size": [0.12, 0.08, 0.04],
+        "color": [0.7, 0.55, 0.4, 1.0],
+        "mass_kg": 0.15,
+        "friction": 0.5,
+        "size_cm": [12, 8, 4],
+        "tags": ["box", "rectangular", "flat", "grasp"],
+        "description": "Large cardboard box",
+    },
+]
+
+# L-block requires a composite URDF (two joined boxes), handled separately.
+L_BLOCK_DEFS: list[dict] = [
+    {
+        "name": "lblock_yellow",
+        "color": [0.95, 0.85, 0.2, 1.0],
+        "mass_kg": 0.08,
+        "friction": 0.6,
+        "size_cm": [8, 4, 4],
+        "tags": ["lblock", "L-shape", "yellow", "non-convex", "grasp"],
+        "description": "Yellow L-shaped block",
+        "arm_a": [0.08, 0.04, 0.04],
+        "arm_b": [0.04, 0.04, 0.04],
+        "offset_b": [0.02, 0.04, 0.0],
+    },
+    {
+        "name": "lblock_purple",
+        "color": [0.6, 0.3, 0.75, 1.0],
+        "mass_kg": 0.10,
+        "friction": 0.6,
+        "size_cm": [10, 4, 4],
+        "tags": ["lblock", "L-shape", "purple", "non-convex", "grasp"],
+        "description": "Purple L-shaped block",
+        "arm_a": [0.10, 0.04, 0.04],
+        "arm_b": [0.04, 0.04, 0.04],
+        "offset_b": [0.03, 0.04, 0.0],
     },
 ]
 
@@ -195,6 +166,63 @@ def _generate_urdf(defn: dict) -> str:
       <geometry>{geom_xml}</geometry>
     </collision>
   </link>
+</robot>
+"""
+
+
+def _generate_lblock_urdf(defn: dict) -> str:
+    """Generate a URDF for an L-shaped block (two box links joined by fixed joint)."""
+    name = defn["name"]
+    mass = defn["mass_kg"]
+    r, g, b, a = defn["color"]
+    ax, ay, az = defn["arm_a"]
+    bx, by, bz = defn["arm_b"]
+    ox, oy, oz = defn["offset_b"]
+
+    mass_a = mass * 0.6
+    mass_b = mass * 0.4
+    ixx_a, iyy_a, izz_a = _box_inertia(mass_a, ax, ay, az)
+    ixx_b, iyy_b, izz_b = _box_inertia(mass_b, bx, by, bz)
+
+    return f"""<?xml version="1.0"?>
+<robot name="{name}">
+  <link name="arm_a">
+    <inertial>
+      <origin xyz="0 0 {az/2:.6f}" rpy="0 0 0"/>
+      <mass value="{mass_a}"/>
+      <inertia ixx="{ixx_a:.8f}" ixy="0" ixz="0" iyy="{iyy_a:.8f}" iyz="0" izz="{izz_a:.8f}"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 {az/2:.6f}" rpy="0 0 0"/>
+      <geometry><box size="{ax} {ay} {az}"/></geometry>
+      <material name="{name}_mat"><color rgba="{r} {g} {b} {a}"/></material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 {az/2:.6f}" rpy="0 0 0"/>
+      <geometry><box size="{ax} {ay} {az}"/></geometry>
+    </collision>
+  </link>
+  <link name="arm_b">
+    <inertial>
+      <origin xyz="0 0 {bz/2:.6f}" rpy="0 0 0"/>
+      <mass value="{mass_b}"/>
+      <inertia ixx="{ixx_b:.8f}" ixy="0" ixz="0" iyy="{iyy_b:.8f}" iyz="0" izz="{izz_b:.8f}"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 {bz/2:.6f}" rpy="0 0 0"/>
+      <geometry><box size="{bx} {by} {bz}"/></geometry>
+      <material name="{name}_mat"><color rgba="{r} {g} {b} {a}"/></material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 {bz/2:.6f}" rpy="0 0 0"/>
+      <geometry><box size="{bx} {by} {bz}"/></geometry>
+    </collision>
+  </link>
+  <joint name="ab_joint" type="fixed">
+    <parent link="arm_a"/>
+    <child link="arm_b"/>
+    <origin xyz="{ox} {oy} {oz}" rpy="0 0 0"/>
+  </joint>
 </robot>
 """
 
@@ -275,6 +303,31 @@ def bootstrap_builtin_assets(assets_root: Path) -> list[Asset]:
 
         urdf_path = asset_dir / "model.urdf"
         urdf_path.write_text(_generate_urdf(defn), encoding="utf-8")
+
+        meta = AssetMetadata(
+            mass_kg=defn["mass_kg"],
+            friction=defn["friction"],
+            size_cm=defn["size_cm"],
+            tags=defn["tags"],
+            source="builtin_primitive",
+            description=defn["description"],
+        )
+        meta.save(asset_dir / "metadata.json")
+
+        created.append(Asset(
+            name=defn["name"],
+            root_dir=asset_dir,
+            urdf_path=urdf_path,
+            metadata=meta,
+        ))
+
+    # L-blocks
+    for defn in L_BLOCK_DEFS:
+        asset_dir = objects_dir / defn["name"]
+        asset_dir.mkdir(exist_ok=True)
+
+        urdf_path = asset_dir / "model.urdf"
+        urdf_path.write_text(_generate_lblock_urdf(defn), encoding="utf-8")
 
         meta = AssetMetadata(
             mass_kg=defn["mass_kg"],

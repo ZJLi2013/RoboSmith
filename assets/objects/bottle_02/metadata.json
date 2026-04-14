@@ -1,0 +1,34 @@
+{
+  "mass_kg": 0.4,
+  "friction": 0.4,
+  "restitution": 0.1,
+  "density_kg_m3": 1000.0,
+  "size_cm": [
+    6.8,
+    22.0,
+    6.7
+  ],
+  "tags": [
+    "bottle",
+    "tall",
+    "cylinder",
+    "narrow",
+    "container",
+    "grasp",
+    "bottle_02"
+  ],
+  "source": "objaverse",
+  "description": "Bottle (Objaverse) [uid=1450ccf286f64ca4882422d0751334ae]",
+  "stable_poses": [
+    {
+      "z": 0.025,
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "probability": 1.0
+    }
+  ]
+}

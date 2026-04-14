@@ -14,5 +14,17 @@
     "surface"
   ],
   "source": "builtin_primitive",
-  "description": "Simple wooden table (80x60cm, 75cm tall)"
+  "description": "Simple wooden table (80x60cm, 75cm tall)",
+  "stable_poses": [
+    {
+      "z": 0.025,
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "probability": 1.0
+    }
+  ]
 }

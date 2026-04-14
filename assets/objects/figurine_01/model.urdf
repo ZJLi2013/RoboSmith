@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<robot name="figurine_01">
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0"/>
+      <mass value="0.080000"/>
+      <inertia ixx="0.00005539" ixy="0.00000000" ixz="0.00000000"
+               iyy="0.00002420" iyz="0.00000000" izz="0.00005414"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><mesh filename="visual.glb"/></geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><mesh filename="collision.obj"/></geometry>
+    </collision>
+  </link>
+</robot>

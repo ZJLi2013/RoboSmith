@@ -1,0 +1,33 @@
+{
+  "mass_kg": 0.35,
+  "friction": 0.45,
+  "restitution": 0.1,
+  "density_kg_m3": 1000.0,
+  "size_cm": [
+    12.0,
+    9.9,
+    8.6
+  ],
+  "tags": [
+    "can",
+    "soda",
+    "cylinder",
+    "smooth",
+    "grasp",
+    "can_02"
+  ],
+  "source": "objaverse",
+  "description": "Soda can (Objaverse) [uid=8d1c092f61ac4e239d2010688e170085]",
+  "stable_poses": [
+    {
+      "z": 0.025,
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "probability": 1.0
+    }
+  ]
+}

@@ -24,11 +24,20 @@ Thumbs.db
 .coverage
 htmlcov/
 
-# Assets: keep catalog.json, ignore large generated files
+# Assets: keep JSON/URDF metadata, ignore large mesh/texture files
 assets/generated/*
 !assets/generated/.gitkeep
 !assets/catalog.json
 assets/gallery.html
+
+# Large mesh/texture files in objects/ (Objaverse imports, TRELLIS.2 outputs)
+assets/objects/**/*.glb
+assets/objects/**/*.obj
+assets/objects/**/*.stl
+assets/objects/**/*.ply
+assets/objects/**/*.png
+assets/objects/**/*.jpg
+assets/objects/**/*.mtl
 
 # Demo results: keep PNGs for README, ignore large mesh files
 demo/results/**/*.obj

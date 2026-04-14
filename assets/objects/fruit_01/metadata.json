@@ -1,0 +1,33 @@
+{
+  "mass_kg": 0.1,
+  "friction": 0.5,
+  "restitution": 0.1,
+  "density_kg_m3": 1000.0,
+  "size_cm": [
+    8.0,
+    1.5,
+    4.7
+  ],
+  "tags": [
+    "fruit",
+    "toy",
+    "round",
+    "organic",
+    "grasp",
+    "fruit_01"
+  ],
+  "source": "objaverse",
+  "description": "Toy fruit (Objaverse) [uid=4d4c8d85a09b476c8136f0c4cd24c45a]",
+  "stable_poses": [
+    {
+      "z": 0.025,
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "probability": 1.0
+    }
+  ]
+}

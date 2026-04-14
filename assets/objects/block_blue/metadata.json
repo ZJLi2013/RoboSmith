@@ -16,5 +16,17 @@
     "grasp"
   ],
   "source": "builtin_primitive",
-  "description": "Blue wooden block"
+  "description": "Blue wooden block",
+  "stable_poses": [
+    {
+      "z": 0.025,
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "probability": 1.0
+    }
+  ]
 }

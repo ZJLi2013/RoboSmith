@@ -168,29 +168,123 @@ python scripts/sync_assets.py banff-sc-cs41-29.amd.com \
 > TRELLIS.2 生成质量接近策划资产水准（PBR 纹理、无底座 artifact），作为"搜索未命中"的默认兜底。
 > 默认 1K PBR（sim 实验最佳平衡），可通过 `--quality` 或 `--texture-size` 调整。
 
-### 物品 — 10 个桌面操作物品（Objaverse 策划）
+### 物品 — 10 品类桌面操作物品
 
-| # | 物品 | 典型尺寸 | 交互类型 | 来源 |
-|---|------|---------|---------|------|
-| 1 | 水杯 (mug) | 8×8×12 cm | 抓取、放置 | Objaverse LVIS `mug` |
-| 2 | 碗 (bowl) | 15×15×7 cm | 抓取、装盛 | Objaverse LVIS `bowl` |
-| 3 | 盘子 (plate) | 22×22×2 cm | 平面抓取 | Objaverse LVIS `plate` |
-| 4 | 叉子 (fork) | 2×1×19 cm | 抓取（细长） | Objaverse LVIS `fork` |
-| 5 | 勺子 (spoon) | 2×4×18 cm | 抓取（细长） | Objaverse LVIS `spoon` |
-| 6 | 小刀 (knife) | 2×1×20 cm | 抓取（细长） | Objaverse LVIS `knife` |
-| 7 | 瓶子 (bottle) | 7×7×22 cm | 抓取、倒 | Objaverse LVIS `bottle` |
-| 8 | 罐子 (can) | 6×6×12 cm | 抓取 | Objaverse LVIS `can` |
-| 9 | 积木 (block) | 5×5×5 cm | 抓取、堆叠 | Objaverse keyword search |
-| 10 | 平底锅 (pan) | 28×28×5 cm | 抓取（重） | Objaverse LVIS `frying_pan` |
+> 选品原则：**几何拓扑多样性最大化**（而非按生活用品分类），
+> 使每个品类贡献不同的抓取挑战，最大化 VLA policy 泛化收益。
 
-> **选品标准**：① 室内桌面场景 ② Franka 可操作尺寸 ③ 无动画 ④ 面数 500~200K
-> ⑤ CC-BY 或 CC0 许可 ⑥ 社区高评分。排除椅子、冰箱等大型家具和室外资产。
+| # | 品类 | 代表几何 | 抓取挑战 | 典型尺寸 | 变体 | 资产来源 |
+|---|------|---------|---------|---------|:---:|---------|
+| 1 | 马克杯 (mug) | 圆柱 + 把手 | 把手 affordance，朝向影响策略 | 8-10cm | 3 | Objaverse LVIS `mug` |
+| 2 | 碗 (bowl) | 凹半球 | 边缘夹取，可堆叠 | 10-14cm | 2 | Objaverse LVIS `bowl` |
+| 3 | 积木 (block) | 长方体 | 基线几何，多面可抓 | 3-5cm | 3 | Primitive (颜色变体) |
+| 4 | 易拉罐 (can) | 短圆柱 | 光滑曲面，侧面抓 | 6-12cm | 2 | Objaverse LVIS `can` |
+| 5 | 瓶子 (bottle) | 高圆柱 + 窄颈 | 高重心，颈/身两种抓法 | 15-22cm | 2 | Objaverse LVIS `bottle` |
+| 6 | 水果玩具 (fruit) | 近球/椭球 | 滚动、非对称（香蕉弯曲） | 5-10cm | 3 | Objaverse keyword `toy fruit` |
+| 7 | 动物玩具 (figurine) | 不规则凸包 | 复杂几何，无明显抓取面 | 5-10cm | 3 | Objaverse keyword `toy animal` |
+| 8 | 盘子 (plate) | 扁圆盘 | 薄 + 平，需边缘 pinch | 12-18cm | 2 | Objaverse LVIS `plate` |
+| 9 | L/T 形块 (L-block) | 非凸多面体 | 重心偏移，抓取点选择 | 6-10cm | 2 | Primitive URDF 组合 |
+| 10 | 小盒子 (box) | 扁长方体 | 类比纸盒/食品盒，扁平抓 | 8-15cm | 2 | Primitive URDF |
+
+**几何覆盖**：
+
+```
+球体/椭球 ─── fruit          对称，滚动
+圆柱体   ─── can, bottle     高/矮，光滑曲面
+长方体   ─── block, box      尺度变化（3cm → 15cm）
+凹形     ─── bowl, mug       内凹面，边缘/把手
+扁平     ─── plate           极端长宽比，pinch
+不规则   ─── figurine        无规律，考验泛化
+非凸     ─── L-block         重心偏移，非对称
+```
+
+**与旧选品对比**（fork/spoon/knife/pan → fruit/figurine/L-block/box）：
+
+| 替换 | 原因 |
+|------|------|
+| ~~fork/spoon/knife~~ | 极细长，Franka 平行夹爪成功率低，不适合 pick 任务初期 |
+| ~~pan~~ | 28cm 超出常规抓取范围，需双手/特殊策略 |
+| + fruit | 近球体几何 + 滚动挑战，Objaverse 大量现成 |
+| + figurine | 不规则凸包，训练泛化核心品类（GraspVLA 验证有效） |
+| + L-block | 非凸形状，重心偏移，简单 primitive 组合即可 |
+| + box | 扁长方体（与 block 不同长宽比），primitive 即可 |
+
+**排除品类**（初期不引入）：
+
+| 品类 | 原因 |
+|------|------|
+| 布料/毛绒 | 柔体，Genesis rigid body 不适用 |
+| 刀具/剪刀 | 铰接 + 安全，不适合初期 |
+| 纯球体 | fruit 已覆盖，纯球无法稳定放置 |
+| 透明物体 (glass) | 渲染/感知 sim2real gap 过大 |
+
+### 资产尺寸预算
+
+> **目标：全部资产 < 500 MB**（初期尽量控制在 ~100 MB 内）。
+
+**10 品类 × 24 变体，按来源估算**：
+
+| 来源 | 数量 | 单个大小 | 小计 |
+|------|:---:|:---:|:---:|
+| Objaverse 导入 (mug×3, bowl×2, can×2, bottle×2, fruit×3, figurine×3, plate×2) | 17 | ~3 MB | ~51 MB |
+| TRELLIS.2 @ 512px 补缺（Objaverse 找不到合适变体时） | ~0-3 | ~2 MB | ~6 MB |
+| Primitive URDF (block×3, L-block×2, box×2) | 7 | ~1 KB | ~0 MB |
+| **合计** | **24** | | **~60 MB** |
+
+**分辨率对总尺寸的影响**：
+
+| 纹理分辨率 | 单个 (TRELLIS.2) | 24 asset 全量估算 | 50 asset 扩展 |
+|:---:|:---:|:---:|:---:|
+| 4K ❌ | ~130 MB | 超标 | 超标 |
+| **1K** | ~8 MB | ~200 MB | ~400 MB |
+| **512 ← 推荐初期** | ~2 MB | **~60 MB** | ~100 MB |
+
+> **决策**：TRELLIS.2 生成统一使用 **512px（fast 预设）**。
+> Objaverse 原始 GLB 天然 1-5 MB/个，无需额外降质。
+> 现有 4K 马克杯（131 MB）需用 512 重新生成。
+> 512px 在仿真器视口（通常 640×480）下视觉无明显差异，collision mesh 不受影响。
+
+**变体数量原则**："同品类内变体 > 跨品类数量"（见 §2.7 Insight 5），但初期每品类 **2-3 个即可**——
+先验证 pipeline 跑通，再按需扩展。扩展到 50 个仍在 200 MB 以内。
+
+### 资产来源策略（修订）
+
+| 来源 | 适用品类 | 视觉质量 | 单个大小 | 说明 |
+|------|---------|:---:|:---:|------|
+| **Objaverse 按需导入** ← 主力 | #1-8 (17 个变体) | ★★★★ | 1-5 MB | `objaverse` 包按 UID 下载，不需要完整数据集 |
+| **TRELLIS.2 @ 512** ← 补缺 | Objaverse 找不到好的变体时 | ★★★★ | ~2 MB | 512px fast 预设，特定颜色/形态长尾变体 |
+| **Primitive URDF** ← 仅限几何体 | #3 block, #9 L-block, #10 box | ★★ | ~1 KB | 几何形状本身就是方块的品类 |
+
+> **Primitive URDF 不适用于视觉策略训练**：VLA 依赖视觉 encoder，纯色几何体导致 policy 学到 color/shape shortcut 而非真正的物体理解。
+> Primitive 仅保留给"物体外观就是纯色方块"的品类（L-block, box），以及 table/plane 等场景基础设施。
+
+**Objaverse 按需导入流程**（不需要下载完整数据集）：
+
+```
+pip install objaverse     # Python 包，按需下载
+    │
+    ▼
+objaverse.load_annotations()     # 首次下载注释索引 (~200MB, 缓存到 ~/.objaverse/)
+objaverse.load_lvis_annotations() # LVIS 类别标注
+    │
+    ▼
+find_candidates("mug", ...)      # LVIS + keyword 检索 → 候选 UID 列表
+_score_candidate(ann)            # 面数/评分/许可证排序
+    │
+    ▼
+objaverse.load_objects(uids=[best_uid])   # 只下载选中的 GLB (~几 MB/个)
+    │
+    ▼
+trimesh.load → cleanup_mesh → mesh_to_urdf → metadata.json
+```
+
+每品类 2-3 个变体（24 个总计），Objaverse 下载量 ~50 MB。
 
 **导入命令**：
 
 ```bash
 pip install objaverse trimesh numpy
-python scripts/import_objaverse.py              # 导入全部 10 类
+python scripts/import_objaverse.py              # 导入全部品类
 python scripts/import_objaverse.py --category mug  # 导入单类
 python scripts/import_objaverse.py --dry-run       # 仅预览候选
 ```
@@ -974,6 +1068,173 @@ Genie Sim Benchmark 的 Sim2Real 实验（8 任务）显示：
 | 光照/桌面纹理 | P1 | 减少视觉 overfitting |
 | 相机视角 | P1 | 至少 2-3 个视角变化 |
 
+## 2.8 场景多样性 — 借鉴 GraspVLA-playground
+
+> 参考 [GraspVLA-playground](https://github.com/MiYanDoris/GraspVLA-playground)（MuJoCo/Robosuite）。
+> 其场景多样性方案中有三个维度的技术可直接迁移到 Genesis + `ProgrammaticSceneBackend`。
+
+### 三维多样性拆解
+
+| 维度 | GraspVLA 做法 | 核心依赖 | RoboSmith 迁移可行性 |
+|------|-------------|---------|-------------------|
+| **物体多样性** | Objaverse 预处理子集，`random.sample(candidates, N)` | 离线 mesh 简化 + stable pose 预计算 | ✅ 直接复用 AssetLibrary |
+| **Layout 多样性** | trimesh `CollisionManager` 碰撞感知随机摆放 | 纯几何，与仿真器无关 | ✅ 可直接集成到 `ProgrammaticSceneBackend.resolve()` |
+| **环境外观多样性** | 38 种地板 + 43 种墙壁纹理随机替换 | Robosuite MuJoCo texture | ⚠️ 需适配 Genesis `gs.surfaces` / texture API |
+
+### 关键技术：碰撞感知的多物体摆放
+
+GraspVLA 的 layout 随机化**不依赖 BDDL 或 Robosuite**，核心是 `misc/sampling.py` 中的纯几何方案：
+
+```python
+# GraspVLA 核心逻辑 (misc/sampling.py)
+collision_manager = trimesh.collision.CollisionManager()
+for obj in objects:
+    mesh = trimesh.load_mesh("simplified.obj")
+    stable_pose = random.choice(precomputed_stable_poses)   # 预计算稳定姿态
+    rand_pos = [uniform(0.35, 0.7), uniform(-0.2, 0.2), stable_pose.z]
+    rand_yaw = uniform(0, 2π)
+    transform = compose(rand_pos, rand_yaw @ stable_pose.orientation)
+    if collision_manager.min_distance_single(mesh, transform) > 0.02:  # 2cm 间距
+        collision_manager.add_object(mesh, transform)   # 接受，加入碰撞管理
+```
+
+两个关键点：
+
+1. **Stable pose 预计算** — 每个 Objaverse 物体离线生成若干稳定放置姿态（`table_pose.json`：z 高度 + quaternion），运行时随机选一个。保证物体不会以不稳定姿态出现在桌面上。
+2. **逐物体碰撞检测** — 依次放置，每放一个检查与已有物体的最小距离 > 阈值（2cm），最多重试 100 次。纯 trimesh 计算，不需要仿真器参与。
+
+### BDDL 的角色澄清
+
+BDDL（Behavior Domain Definition Language）在 GraspVLA 中**仅用于向 Robosuite 声明"场景里有哪些物体、目标是什么"**，不负责 layout 计算。BDDL 本身不绑定 NVIDIA Omniverse（BEHAVIOR benchmark 绑 Omniverse，但 LIBERO benchmark 绑 MuJoCo）。
+
+RoboSmith 使用 Genesis + URDF，**不需要引入 BDDL**。`SceneConfig` + `ProgrammaticSceneBackend` 已覆盖同等功能。
+
+### RoboSmith 迁移方案
+
+**Step 1：增强 `ProgrammaticSceneBackend.resolve()` — 碰撞感知摆放**
+
+当前 `resolve()` 仅做 uniform 随机，无碰撞检测。借鉴 GraspVLA 后：
+
+```python
+# robotsmith/scenes/backend.py — 增强后
+import trimesh
+
+class ProgrammaticSceneBackend(SceneBackend):
+    def resolve(self, config, library):
+        collision_mgr = trimesh.collision.CollisionManager()
+        placed = []
+        for obj_spec in config.objects:
+            asset = library.search(obj_spec.asset_query, top_k=obj_spec.count)
+            for i in range(obj_spec.count):
+                mesh = trimesh.load(asset[i].collision_mesh_path)
+                stable_poses = asset[i].metadata.get("stable_poses", [identity])
+                for _ in range(100):
+                    pose = self.rng.choice(stable_poses)
+                    pos = self._sample_position(obj_spec.position_range)
+                    transform = compose_transform(pos, pose)
+                    if collision_mgr.min_distance_single(mesh, transform) > 0.02:
+                        collision_mgr.add_object(f"{asset[i].name}_{i}", mesh, transform)
+                        placed.append(PlacedObject(asset[i], pos, euler_from(pose)))
+                        break
+        ...
+```
+
+**Step 2：Workspace + Stable pose — 两层采样约束**
+
+采样一个物体的完整放置 pose 需要两层独立信息：
+
+```
+Workspace XY (机器人属性, 场景级)      Stable pose (物体属性, 资产级)
+   "在哪采样位置"                        "以什么姿态放"
+        │                                      │
+        ▼                                      ▼
+   采样 (x, y) ∈ workspace ∩ table        选一个稳定朝向 → 得到 z 和 quat
+        │                                      │
+        └────────────── 组合 ──────────────────┘
+                         │
+                         ▼
+                (x, y, z, qx, qy, qz, qw)
+                         │
+                    碰撞检测 → 通过则接受
+```
+
+**Workspace**：Franka base 在 (0, 0, 0)，臂展 0.855m，桌面操作有效区域大约 x∈[0.35, 0.7], y∈[-0.25, 0.25]。
+当前 `pipeline/collect_data.py` 和 GraspVLA 都是硬编码这一范围。
+多物体场景需额外约束：workspace ∩ table_surface（物体不超出桌面边缘，需考虑物体自身尺寸）。
+
+在 `SceneConfig` 中显式定义场景级 workspace，替代分散硬编码：
+
+```python
+@dataclass
+class SceneConfig:
+    ...
+    # 机器人可操作区域 (XY)，所有物体默认在此范围内采样
+    # per-object position_range 可覆盖此默认值
+    workspace_xy: list[list[float]] = field(
+        default_factory=lambda: [[0.35, -0.25], [0.70, 0.25]]
+    )
+```
+
+| 方案 | 做法 | 适用场景 |
+|------|------|---------|
+| 矩形近似（当前 + GraspVLA） | 手调 x/y 范围，保守取内 | 桌面 pick，足够 |
+| workspace ∩ table_surface | 矩形取交集，减去物体半径 margin | 多物体桌面 |
+| 精确 reachability map | 离线 IK 网格采样标记可达 | shelf/bin 等复杂结构，暂不需要 |
+
+**Stable pose**：物体几何属性，与 workspace 独立。每个物体预计算若干稳定放置姿态（如马克杯：正立/倒扣/侧躺），存入 `metadata.json`：
+
+```json
+{
+  "mass": 0.25,
+  "friction": 0.6,
+  "stable_poses": [
+    {"z": 0.035, "quat": [1, 0, 0, 0]},
+    {"z": 0.042, "quat": [0.707, 0, 0.707, 0]}
+  ]
+}
+```
+
+预计算方式：`trimesh.poses.compute_stable_poses()` 或 Genesis simulate-then-settle。
+
+**Step 3：Genesis scene loader — 连接 ResolvedScene → Genesis entities**
+
+```python
+# robotsmith/scenes/genesis_loader.py
+def load_into_genesis(resolved: ResolvedScene) -> tuple[gs.Scene, ...]:
+    scene = gs.Scene(...)
+    scene.add_entity(gs.morphs.Plane())
+    if resolved.table_asset:
+        scene.add_entity(gs.morphs.URDF(file=resolved.table_asset.urdf_path))
+    entities = []
+    for obj in resolved.placed_objects:
+        e = scene.add_entity(gs.morphs.URDF(
+            file=obj.asset.urdf_path, pos=obj.position, euler=obj.rotation,
+        ))
+        entities.append(e)
+    franka = scene.add_entity(gs.morphs.MJCF(file="xml/.../panda.xml"))
+    scene.build()
+    return scene, franka, entities
+```
+
+这一步将 `collect_data.py` 中硬编码的 Plane + Box + Franka 替换为从 `ResolvedScene` 动态加载。
+
+**Step 4：环境外观随机化（P1）**
+
+| 方法 | Genesis API | 说明 |
+|------|-----------|------|
+| 颜色随机化 | `gs.surfaces.Default(color=random_rgb)` | 最简单，已可用 |
+| 纹理贴图 | `gs.surfaces.Default(texture=path)` | 取决于 Genesis 渲染后端支持 |
+| 光照随机化 | `scene.add_light(...)` 参数随机 | 减少视觉 overfitting |
+
+### 实施优先级
+
+| 优先级 | 改动 | 收益 | 依赖 |
+|:---:|------|------|------|
+| P0 | Step 1 碰撞感知摆放 | 多物体场景不穿透 | trimesh（已在 deps） |
+| P0 | Step 2 stable pose metadata | 物体物理合理摆放 | 离线预计算脚本 |
+| P0 | Step 3 genesis_loader bridge | `collect_data.py` 不再硬编码单 cube | URDF 资产就绪 |
+| P1 | Step 4 纹理/颜色随机化 | 视觉 domain randomization | Genesis texture 支持 |
+
 ---
 
 # 扩展方向
@@ -1187,6 +1448,10 @@ robotsmith/
 - [mesh-to-sim-asset](https://github.com/nepfaff/mesh-to-sim-asset) — Mesh → SDF 碰撞体
 - [ArtVIP](https://huggingface.co/datasets/X-Humanoid/ArtVIP) — 铰接物体资产库 (ICLR'26)
 - [URDF-Anything+](https://github.com/URDF-Anything-plus/Code) — 图片 → URDF (ICML'26)
+
+**场景多样性 & 评估**
+- [GraspVLA-playground](https://github.com/MiYanDoris/GraspVLA-playground) — GraspVLA 仿真环境（Objaverse 物体 + 碰撞摆放 + 纹理随机）
+- [LIBERO](https://github.com/Lifelong-Robot-Learning/LIBERO) — 终身学习操作 benchmark
 
 **仿真平台 & 可视化**
 - [MuJoCo](https://mujoco.org/) — 精确接触物理引擎

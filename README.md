@@ -32,7 +32,7 @@
 ```bash
 pip install -e .
 
-# 导入 Objaverse 高质量资产（10 类桌面物品，首次运行需下载）
+# 导入 Objaverse 高质量资产（10 品类 24 变体，按需下载 ~50 MB）
 pip install objaverse
 python scripts/import_objaverse.py
 
@@ -54,8 +54,23 @@ robotsmith validate
 
 ## 3D 生成
 
-**资产策略**：10 类高频桌面物品从 [Objaverse](https://objaverse.allenai.org/) 策划导入（无生成 artifact），
-搜索未命中时自动调用 TRELLIS.2-4B 生成。可插拔后端架构（`GenBackend` ABC）。
+**资产策略**：10 品类桌面操作物品（24 变体，~60 MB），几何拓扑多样性最大化。
+主力来源 [Objaverse](https://objaverse.allenai.org/) 按需导入，搜索未命中时自动调用 TRELLIS.2-4B @512 生成。可插拔后端架构（`GenBackend` ABC）。
+
+**默认品类**（按几何覆盖选品，非按生活用品分类）：
+
+| 品类 | 几何 | 变体 | 来源 |
+|------|------|:---:|------|
+| 马克杯 (mug) | 圆柱+把手 | 3 | Objaverse |
+| 碗 (bowl) | 凹半球 | 2 | Objaverse |
+| 积木 (block) | 长方体 | 3 | Primitive |
+| 易拉罐 (can) | 短圆柱 | 2 | Objaverse |
+| 瓶子 (bottle) | 高圆柱+窄颈 | 2 | Objaverse |
+| 水果玩具 (fruit) | 球/椭球 | 3 | Objaverse |
+| 动物玩具 (figurine) | 不规则凸包 | 3 | Objaverse |
+| 盘子 (plate) | 扁圆盘 | 2 | Objaverse |
+| L 形块 (L-block) | 非凸体 | 2 | Primitive |
+| 小盒子 (box) | 扁长方体 | 2 | Primitive |
 
 | 后端 | 模型 | PBR | VRAM | ROCm | 状态 |
 |------|------|:---:|------|------|------|
@@ -86,15 +101,18 @@ robotsmith validate
 
 ```
 assets/
-├── objects/                              # 内置资产 (git tracked)
-├── generated/                            # 管线生成资产 (git ignored)
-│   └── red_ceramic_mug_20260408/
-│       ├── model.urdf                    # 引用 visual.glb + collision.obj
-│       ├── visual.glb                    # PBR 纹理 mesh
-│       ├── visual.obj                    # OBJ fallback
-│       ├── collision.obj                 # 碰撞凸包
-│       ├── metadata.json                 # 物理属性 + tags
-│       └── reference.png                 # T2I 参考图
+├── objects/                              # 默认资产（metadata.json git tracked，大文件 git ignored）
+│   ├── mug_01/
+│   │   ├── model.urdf                    # 引用 visual + collision mesh
+│   │   ├── visual.glb                    # PBR mesh (git ignored)
+│   │   ├── collision.obj                 # 碰撞凸包 (git ignored)
+│   │   ├── metadata.json                 # 物理属性 + tags + stable_poses (git tracked)
+│   │   └── provenance.json              # Objaverse UID / 来源 (git tracked)
+│   ├── block_red/                        # Primitive: 只有 URDF + metadata (全 git tracked)
+│   ├── table_simple/
+│   └── plane/
+├── generated/                            # 管线生成资产 (全 git ignored)
+│   └── red_ceramic_mug_trellis2/         # TRELLIS.2 4K 参考 (保留)
 └── catalog.json                          # 轻量索引 (git tracked)
 ```
 

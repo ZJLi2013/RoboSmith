@@ -15,5 +15,17 @@
     "static"
   ],
   "source": "builtin_primitive",
-  "description": "Ground plane (10x10m)"
+  "description": "Ground plane (10x10m)",
+  "stable_poses": [
+    {
+      "z": 0.0005,
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "probability": 1.0
+    }
+  ]
 }

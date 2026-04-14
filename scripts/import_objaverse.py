@@ -28,60 +28,28 @@ sys.path.insert(0, str(REPO_ROOT))
 # Maps our asset name -> (LVIS categories to search, name keywords fallback,
 #                         target size in meters, mass in kg, physical tags)
 
+# Each category specifies: LVIS search terms, keyword fallbacks, physical properties,
+# and `variants` (number of distinct assets to import per category).
 ASSET_SPECS: dict[str, dict] = {
     "mug": {
         "lvis": ["mug"],
-        "keywords": ["mug", "coffee mug", "ceramic mug"],
-        "target_size_m": 0.12,
+        "keywords": ["mug", "coffee mug", "ceramic mug", "cup"],
+        "target_size_m": 0.10,
         "mass_kg": 0.25,
         "friction": 0.6,
-        "tags": ["mug", "cup", "red", "container", "grasp"],
+        "tags": ["mug", "cup", "container", "cylinder", "handle", "grasp"],
         "description": "Ceramic mug (Objaverse)",
+        "variants": 3,
     },
     "bowl": {
         "lvis": ["bowl"],
-        "keywords": ["bowl", "cereal bowl", "ceramic bowl"],
-        "target_size_m": 0.15,
+        "keywords": ["bowl", "cereal bowl", "ceramic bowl", "soup bowl"],
+        "target_size_m": 0.14,
         "mass_kg": 0.30,
         "friction": 0.5,
-        "tags": ["bowl", "white", "container", "grasp"],
+        "tags": ["bowl", "container", "concave", "round", "grasp"],
         "description": "Ceramic bowl (Objaverse)",
-    },
-    "plate": {
-        "lvis": ["plate"],
-        "keywords": ["plate", "dinner plate", "ceramic plate"],
-        "target_size_m": 0.22,
-        "mass_kg": 0.35,
-        "friction": 0.5,
-        "tags": ["plate", "dish", "round", "flat", "grasp"],
-        "description": "Round plate (Objaverse)",
-    },
-    "fork": {
-        "lvis": ["fork"],
-        "keywords": ["fork", "dinner fork", "metal fork"],
-        "target_size_m": 0.19,
-        "mass_kg": 0.04,
-        "friction": 0.35,
-        "tags": ["fork", "silver", "utensil", "thin", "grasp"],
-        "description": "Metal fork (Objaverse)",
-    },
-    "spoon": {
-        "lvis": ["spoon"],
-        "keywords": ["spoon", "tablespoon", "metal spoon"],
-        "target_size_m": 0.18,
-        "mass_kg": 0.035,
-        "friction": 0.35,
-        "tags": ["spoon", "silver", "utensil", "thin", "grasp"],
-        "description": "Metal spoon (Objaverse)",
-    },
-    "bottle": {
-        "lvis": ["bottle"],
-        "keywords": ["bottle", "water bottle", "glass bottle"],
-        "target_size_m": 0.22,
-        "mass_kg": 0.40,
-        "friction": 0.4,
-        "tags": ["bottle", "tall", "green", "container", "grasp", "pour"],
-        "description": "Glass bottle (Objaverse)",
+        "variants": 2,
     },
     "can": {
         "lvis": ["can"],
@@ -89,35 +57,52 @@ ASSET_SPECS: dict[str, dict] = {
         "target_size_m": 0.12,
         "mass_kg": 0.35,
         "friction": 0.45,
-        "tags": ["can", "soda", "red", "cylinder", "grasp"],
+        "tags": ["can", "soda", "cylinder", "smooth", "grasp"],
         "description": "Soda can (Objaverse)",
+        "variants": 2,
     },
-    "block": {
-        "lvis": ["block_(wood)"],
-        "keywords": ["wooden block", "toy block", "cube", "building block"],
-        "target_size_m": 0.05,
-        "mass_kg": 0.05,
-        "friction": 0.6,
-        "tags": ["block", "cube", "red", "stackable", "grasp"],
-        "description": "Wooden block (Objaverse)",
+    "bottle": {
+        "lvis": ["bottle"],
+        "keywords": ["bottle", "water bottle", "plastic bottle", "glass bottle"],
+        "target_size_m": 0.22,
+        "mass_kg": 0.40,
+        "friction": 0.4,
+        "tags": ["bottle", "tall", "cylinder", "narrow", "container", "grasp"],
+        "description": "Bottle (Objaverse)",
+        "variants": 2,
     },
-    "knife": {
-        "lvis": ["knife"],
-        "keywords": ["knife", "butter knife", "dinner knife", "table knife"],
-        "target_size_m": 0.20,
-        "mass_kg": 0.06,
-        "friction": 0.3,
-        "tags": ["knife", "silver", "utensil", "thin", "grasp"],
-        "description": "Table knife (Objaverse)",
-    },
-    "pan": {
-        "lvis": ["frying_pan"],
-        "keywords": ["frying pan", "pan", "skillet"],
-        "target_size_m": 0.28,
-        "mass_kg": 0.80,
+    "fruit": {
+        "lvis": ["apple", "banana", "orange_(fruit)", "lemon"],
+        "keywords": ["toy fruit", "plastic fruit", "toy apple", "toy banana",
+                     "toy orange", "toy lemon", "fake fruit", "play food fruit"],
+        "target_size_m": 0.08,
+        "mass_kg": 0.10,
         "friction": 0.5,
-        "tags": ["pan", "frying pan", "container", "grasp"],
-        "description": "Frying pan (Objaverse)",
+        "tags": ["fruit", "toy", "round", "organic", "grasp"],
+        "description": "Toy fruit (Objaverse)",
+        "variants": 3,
+    },
+    "figurine": {
+        "lvis": ["figurine", "toy"],
+        "keywords": ["toy animal", "plastic animal", "toy pig", "toy elephant",
+                     "toy cow", "toy horse", "toy dinosaur", "figurine",
+                     "rubber duck", "toy duck"],
+        "target_size_m": 0.08,
+        "mass_kg": 0.08,
+        "friction": 0.5,
+        "tags": ["figurine", "toy", "animal", "irregular", "grasp"],
+        "description": "Toy animal figurine (Objaverse)",
+        "variants": 3,
+    },
+    "plate": {
+        "lvis": ["plate"],
+        "keywords": ["plate", "dinner plate", "ceramic plate", "dish"],
+        "target_size_m": 0.18,
+        "mass_kg": 0.35,
+        "friction": 0.5,
+        "tags": ["plate", "dish", "round", "flat", "thin", "grasp"],
+        "description": "Round plate (Objaverse)",
+        "variants": 2,
     },
 }
 
@@ -200,11 +185,15 @@ def process_asset(
     uid: str,
     glb_path: str,
     category: str,
+    variant_idx: int,
     spec: dict,
     output_dir: Path,
     ann: dict,
 ) -> Path:
-    """Load GLB, cleanup, convert to URDF, write metadata."""
+    """Load GLB, cleanup, convert to URDF, write metadata.
+
+    Assets are named {category}_{variant_idx:02d}, e.g. mug_01, mug_02.
+    """
     import trimesh
     from robotsmith.gen.mesh_cleanup import cleanup_mesh
     from robotsmith.gen.mesh_to_urdf import mesh_to_urdf
@@ -221,13 +210,14 @@ def process_asset(
     mesh, stats = cleanup_mesh(mesh, remove_base=True, recenter=True)
     print(f"  Cleanup: {stats}")
 
-    asset_dir = output_dir / category
+    asset_name = f"{category}_{variant_idx:02d}"
+    asset_dir = output_dir / asset_name
     asset_dir.mkdir(parents=True, exist_ok=True)
 
     mesh_to_urdf(
         mesh,
         asset_dir,
-        name=category,
+        name=asset_name,
         target_size_m=spec["target_size_m"],
         mass_kg=spec["mass_kg"],
         density_kg_m3=800.0,
@@ -238,7 +228,7 @@ def process_asset(
         mass_kg=spec["mass_kg"],
         friction=spec["friction"],
         size_cm=[round(e * 100, 1) for e in mesh.bounding_box.extents],
-        tags=spec["tags"],
+        tags=spec["tags"] + [asset_name],
         source="objaverse",
         description=f"{spec['description']} [uid={uid}]",
     )
@@ -305,11 +295,13 @@ def main():
 
     results: dict[str, list] = {}
     for cat, spec in categories.items():
+        n_variants = spec.get("variants", 1)
+        top_k = max(args.top_k, n_variants * 2)
         print(f"\n{'='*60}")
-        print(f"Category: {cat}")
+        print(f"Category: {cat}  (need {n_variants} variants, searching top-{top_k})")
         print(f"  LVIS search: {spec['lvis']}")
 
-        candidates = find_candidates(cat, spec, lvis, all_anns, top_k=args.top_k)
+        candidates = find_candidates(cat, spec, lvis, all_anns, top_k=top_k)
         results[cat] = candidates
 
         if not candidates:
@@ -317,74 +309,67 @@ def main():
             continue
 
         for i, (uid, ann, score) in enumerate(candidates):
+            marker = " <<<" if i < n_variants else ""
+            name = ann.get('name', '')[:50]
+            try:
+                name.encode('ascii')
+            except UnicodeEncodeError:
+                name = name.encode('ascii', errors='replace').decode('ascii')
             print(
                 f"  #{i+1} score={score:.1f}  faces={ann.get('faceCount',0):,}  "
                 f"likes={ann.get('likeCount',0)}  "
                 f"license={ann.get('license','')}  "
-                f"name={ann.get('name','')[:50]}"
+                f"name={name}{marker}"
             )
 
     if args.dry_run:
-        print("\n[DRY RUN] Exiting without download.")
+        total = sum(s.get("variants", 1) for s in categories.values())
+        print(f"\n[DRY RUN] Would import {total} assets across {len(categories)} categories.")
         return
 
     print(f"\n{'='*60}")
-    print("Downloading and processing best candidates...")
+    print("Downloading and processing variants...")
 
+    imported = 0
     for cat, candidates in results.items():
+        spec = ASSET_SPECS[cat] if cat in ASSET_SPECS else categories[cat]
+        n_variants = spec.get("variants", 1)
         if not candidates:
             print(f"\n[SKIP] {cat}: no candidates")
             continue
 
-        uid, ann, score = candidates[0]
-        print(f"\n[{cat}] Downloading {uid} ({ann.get('name','')[:40]})...")
+        variant_idx = 0
+        for uid, ann, score in candidates:
+            if variant_idx >= n_variants:
+                break
 
-        objects = objaverse.load_objects(
-            uids=[uid],
-            download_processes=min(4, multiprocessing.cpu_count()),
-        )
-        glb_path = objects.get(uid)
-        if not glb_path:
-            print(f"  ERROR: download failed for {uid}")
-            continue
+            print(f"\n[{cat}_{variant_idx+1:02d}] Downloading {uid} ({ann.get('name','')[:40]})...")
+            objects = objaverse.load_objects(
+                uids=[uid],
+                download_processes=min(4, multiprocessing.cpu_count()),
+            )
+            glb_path = objects.get(uid)
+            if not glb_path:
+                print(f"  ERROR: download failed for {uid}, trying next candidate")
+                continue
 
-        print(f"  Downloaded: {glb_path}")
+            print(f"  Downloaded: {glb_path}")
+            try:
+                process_asset(uid, glb_path, cat, variant_idx + 1, spec, output_dir, ann)
+                variant_idx += 1
+                imported += 1
+            except Exception as e:
+                print(f"  ERROR processing: {e}, trying next candidate")
+                continue
 
-        try:
-            process_asset(uid, glb_path, cat, ASSET_SPECS[cat], output_dir, ann)
-        except Exception as e:
-            print(f"  ERROR processing {cat}: {e}")
-            # Try next candidate
-            for uid2, ann2, score2 in candidates[1:]:
-                print(f"  Trying fallback: {uid2}...")
-                try:
-                    objects2 = objaverse.load_objects(uids=[uid2])
-                    glb2 = objects2.get(uid2)
-                    if glb2:
-                        process_asset(uid2, glb2, cat, ASSET_SPECS[cat], output_dir, ann2)
-                        break
-                except Exception as e2:
-                    print(f"  Fallback also failed: {e2}")
-                    continue
-
-    if not args.keep_primitives:
-        print("\nCleaning up old primitive-only assets...")
-        primitives_to_remove = [
-            "mug_red", "bowl_white", "plate_round",
-            "block_red", "block_blue", "block_green",
-            "bottle_tall", "can_soda", "fork_silver", "spoon_silver",
-        ]
-        for name in primitives_to_remove:
-            old_dir = output_dir / name
-            if old_dir.exists():
-                shutil.rmtree(old_dir)
-                print(f"  Removed: {old_dir.name}")
+        if variant_idx < n_variants:
+            print(f"  WARNING: only imported {variant_idx}/{n_variants} variants for {cat}")
 
     print("\nRebuilding catalog.json...")
     from robotsmith.assets.library import AssetLibrary
     lib = AssetLibrary(REPO_ROOT / "assets")
     lib.save_catalog()
-    print(f"  Catalog: {len(lib)} assets")
+    print(f"  Catalog: {len(lib)} assets ({imported} newly imported)")
     print("\nDone!")
 
 

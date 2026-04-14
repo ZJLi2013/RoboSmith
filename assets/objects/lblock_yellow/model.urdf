@@ -1,0 +1,40 @@
+<?xml version="1.0"?>
+<robot name="lblock_yellow">
+  <link name="arm_a">
+    <inertial>
+      <origin xyz="0 0 0.020000" rpy="0 0 0"/>
+      <mass value="0.048"/>
+      <inertia ixx="0.00001280" ixy="0" ixz="0" iyy="0.00003200" iyz="0" izz="0.00003200"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0.020000" rpy="0 0 0"/>
+      <geometry><box size="0.08 0.04 0.04"/></geometry>
+      <material name="lblock_yellow_mat"><color rgba="0.95 0.85 0.2 1.0"/></material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.020000" rpy="0 0 0"/>
+      <geometry><box size="0.08 0.04 0.04"/></geometry>
+    </collision>
+  </link>
+  <link name="arm_b">
+    <inertial>
+      <origin xyz="0 0 0.020000" rpy="0 0 0"/>
+      <mass value="0.032"/>
+      <inertia ixx="0.00000853" ixy="0" ixz="0" iyy="0.00000853" iyz="0" izz="0.00000853"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0.020000" rpy="0 0 0"/>
+      <geometry><box size="0.04 0.04 0.04"/></geometry>
+      <material name="lblock_yellow_mat"><color rgba="0.95 0.85 0.2 1.0"/></material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.020000" rpy="0 0 0"/>
+      <geometry><box size="0.04 0.04 0.04"/></geometry>
+    </collision>
+  </link>
+  <joint name="ab_joint" type="fixed">
+    <parent link="arm_a"/>
+    <child link="arm_b"/>
+    <origin xyz="0.02 0.04 0.0" rpy="0 0 0"/>
+  </joint>
+</robot>
