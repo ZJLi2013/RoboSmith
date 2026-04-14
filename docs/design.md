@@ -11,21 +11,23 @@
 ## 项目总览
 
 ```
-Part 1 ── 数字资产库框架 ◀ 当前核心
+Part 1 ── 数字资产库框架 ✅
 │
 │   text query → search → 命中 → URDF
 │                    │
 │                    └→ 未命中 → T2I (SDXL-Turbo) → TRELLIS.2-4B (默认) → mesh_cleanup → URDF → 入库
 │
 │   入库 = assets/generated/ + catalog.json（远端 sync 回本地，.gitignore 大文件）
-│   内置 10 个 Objaverse 策划资产 + 1 个场景预设 + table/plane
+│   内置 26 个策划资产 (17 Objaverse + 7 primitive + 2 scene) + 场景预设
+│   所有资产预计算 stable_poses (trimesh)
 │   可视化: viser SceneViewer (静态预览)
 │
 ────────────────────────────────────────────────
 │
-Part 2 ── Sim-to-Policy 管线（后续）
+Part 2 ── 场景多样性 + Sim 管线 ◀ 当前核心
 │
-│   URDF → MuJoCo 加载 → mjviser 可视化
+│   SceneConfig → ProgrammaticSceneBackend (碰撞感知摆放 + stable pose)
+│   → ResolvedScene → genesis_loader → Genesis 仿真
 │   轨迹采集 (IK scripted) → LeRobot 数据集
 │   策略训练 (SmolVLA / ACT) → 闭环评估
 │
@@ -40,17 +42,20 @@ Part 2 ── Sim-to-Policy 管线（后续）
 
 | 模块 | 状态 | 说明 |
 |------|:----:|------|
-| 资产库 (`AssetLibrary`) | ✅ | 10 Objaverse 策划 + N 生成，`objects/` + `generated/` 双目录扫描 |
-| 资产持久化 & 同步 | ✅ | `catalog.json` 索引，`sync_assets.py` 远端→本地同步 |
-| 场景预设 | ✅ | tabletop_simple |
+| 资产库 (`AssetLibrary`) | ✅ | 26 资产 (17 Objaverse + 7 primitive + 2 scene)，`objects/` + `generated/` 双目录扫描 |
+| Stable poses | ✅ | 全部 26 资产预计算（trimesh, Linux MI300X），存入 `metadata.json` |
+| 资产持久化 & 同步 | ✅ | `catalog.json` 索引，`.gitignore` 排除大文件，只 track json/urdf |
+| 碰撞感知摆放 | ✅ | `ProgrammaticSceneBackend` + workspace_xy + stable pose 采样 + AABB/FCL 碰撞检测 |
+| Genesis scene loader | ✅ | `genesis_loader.py`: ResolvedScene → Genesis entities (Plane + Table + Objects + Franka) |
+| 场景预设 | ✅ | `tabletop_simple` (mug + bowl + 3 blocks, collision-aware) |
 | 3D 生成后端 | ✅ | **TRELLIS.2-4B (默认, 1K PBR balanced, 可选 512/4K)** + Hunyuan3D-2.1 (备选)，MI308X 验证 |
 | mesh → URDF 转换 | ✅ | trimesh 凸包 + 物理属性估算 |
 | T2I 桥接 (text→image) | ✅ | SDXL-Turbo 默认，3D 友好 prompt 优化 (§1.4) |
-| 已知问题 & 路线 | 📋 | sim-ready 成熟度、策划资产扩充 (§1.6)；底座 artifact 已通过切换 TRELLIS.2 解决 |
 | 静态场景可视化 | ✅ | viser SceneViewer |
-| 仿真 + 物理可视化 | 📋 | MuJoCo + mjviser 计划中 (§2.2) |
-| 轨迹采集 | 📋 | IK scripted，复用 lerobot 经验 |
-| 策略训练 | 📋 | SmolVLA/ACT baseline 已验证（单任务） |
+| `collect_data.py` | ✅ | 支持 `--scene tabletop_simple` 模式（ResolvedScene）+ 原始 hardcoded cube 模式 |
+| 轨迹采集 (Genesis E2E) | 🔜 | 待远端 GPU 验证 `--scene` 模式端到端 |
+| 策略训练 | 📋 | SmolVLA/ACT baseline 已验证（单任务 cube），多物体场景待验证 |
+| 环境外观随机化 | 📋 | P1: 颜色/纹理/光照随机化 (§2.8 Step 4) |
 
 ---
 
@@ -1111,44 +1116,30 @@ RoboSmith 使用 Genesis + URDF，**不需要引入 BDDL**。`SceneConfig` + `Pr
 
 ### RoboSmith 迁移方案
 
-**Step 1：增强 `ProgrammaticSceneBackend.resolve()` — 碰撞感知摆放**
+**Step 1 ✅：碰撞感知 `ProgrammaticSceneBackend.resolve()`**
 
-当前 `resolve()` 仅做 uniform 随机，无碰撞检测。借鉴 GraspVLA 后：
+已实现于 `robotsmith/scenes/backend.py`。核心流程：
 
-```python
-# robotsmith/scenes/backend.py — 增强后
-import trimesh
-
-class ProgrammaticSceneBackend(SceneBackend):
-    def resolve(self, config, library):
-        collision_mgr = trimesh.collision.CollisionManager()
-        placed = []
-        for obj_spec in config.objects:
-            asset = library.search(obj_spec.asset_query, top_k=obj_spec.count)
-            for i in range(obj_spec.count):
-                mesh = trimesh.load(asset[i].collision_mesh_path)
-                stable_poses = asset[i].metadata.get("stable_poses", [identity])
-                for _ in range(100):
-                    pose = self.rng.choice(stable_poses)
-                    pos = self._sample_position(obj_spec.position_range)
-                    transform = compose_transform(pos, pose)
-                    if collision_mgr.min_distance_single(mesh, transform) > 0.02:
-                        collision_mgr.add_object(f"{asset[i].name}_{i}", mesh, transform)
-                        placed.append(PlacedObject(asset[i], pos, euler_from(pose)))
-                        break
-        ...
+```
+对每个 ObjectPlacement:
+  1. library.search(query) → 匹配资产 (支持 Objaverse + primitive)
+  2. _pick_stable_pose() → 按概率采样 (z_offset, quaternion)
+  3. 采样 (x, y) ∈ workspace_xy (或 per-object position_range)
+  4. z = table_height + table_thickness/2 + stable_pose.z
+  5. _CollisionChecker.min_distance_single() → ≥ margin 则接受
+  6. 最多 retry 100 次，失败则 skip + warning
 ```
 
-**Step 2：Workspace + Stable pose — 两层采样约束**
+碰撞检测后端：优先 FCL (`python-fcl`, Linux)，fallback 到 AABB 距离检测 (Windows)。
 
-采样一个物体的完整放置 pose 需要两层独立信息：
+**Step 2 ✅：Workspace + Stable pose — 两层采样**
 
 ```
 Workspace XY (机器人属性, 场景级)      Stable pose (物体属性, 资产级)
    "在哪采样位置"                        "以什么姿态放"
         │                                      │
         ▼                                      ▼
-   采样 (x, y) ∈ workspace ∩ table        选一个稳定朝向 → 得到 z 和 quat
+   采样 (x, y) ∈ workspace_xy            按概率选稳定朝向 → z + quat
         │                                      │
         └────────────── 组合 ──────────────────┘
                          │
@@ -1158,67 +1149,36 @@ Workspace XY (机器人属性, 场景级)      Stable pose (物体属性, 资产
                     碰撞检测 → 通过则接受
 ```
 
-**Workspace**：Franka base 在 (0, 0, 0)，臂展 0.855m，桌面操作有效区域大约 x∈[0.35, 0.7], y∈[-0.25, 0.25]。
-当前 `pipeline/collect_data.py` 和 GraspVLA 都是硬编码这一范围。
-多物体场景需额外约束：workspace ∩ table_surface（物体不超出桌面边缘，需考虑物体自身尺寸）。
+`SceneConfig` 已实现 `workspace_xy` 字段（默认 Franka 矩形近似 `[[0.35, -0.25], [0.70, 0.25]]`），
+以及 `collision_margin` (2cm) 和 `max_placement_retries` (100)。
 
-在 `SceneConfig` 中显式定义场景级 workspace，替代分散硬编码：
+Stable poses 已对全部 26 资产预计算（`trimesh.compute_stable_poses(n_samples=500)`，Linux MI300X），
+结果存入各 `metadata.json`。典型结果：
 
-```python
-@dataclass
-class SceneConfig:
-    ...
-    # 机器人可操作区域 (XY)，所有物体默认在此范围内采样
-    # per-object position_range 可覆盖此默认值
-    workspace_xy: list[list[float]] = field(
-        default_factory=lambda: [[0.35, -0.25], [0.70, 0.25]]
-    )
-```
+| 资产类型 | stable poses 数 | 说明 |
+|---------|:-:|------|
+| block/box (primitive) | 1 | 方块只有平放 |
+| mug (Objaverse) | 4-5 | 正立、侧倒、倒扣 |
+| fruit — apple | 2 | 近球形，正/倒 p≈0.5 |
+| fruit — banana | 21 | 多角度 |
+| plate | 2 | 正面/反面 |
+| bottle | 5-66 | 圆柱可多角度静止 |
 
-| 方案 | 做法 | 适用场景 |
-|------|------|---------|
-| 矩形近似（当前 + GraspVLA） | 手调 x/y 范围，保守取内 | 桌面 pick，足够 |
-| workspace ∩ table_surface | 矩形取交集，减去物体半径 margin | 多物体桌面 |
-| 精确 reachability map | 离线 IK 网格采样标记可达 | shelf/bin 等复杂结构，暂不需要 |
+**Step 3 ✅：Genesis scene loader**
 
-**Stable pose**：物体几何属性，与 workspace 独立。每个物体预计算若干稳定放置姿态（如马克杯：正立/倒扣/侧躺），存入 `metadata.json`：
-
-```json
-{
-  "mass": 0.25,
-  "friction": 0.6,
-  "stable_poses": [
-    {"z": 0.035, "quat": [1, 0, 0, 0]},
-    {"z": 0.042, "quat": [0.707, 0, 0.707, 0]}
-  ]
-}
-```
-
-预计算方式：`trimesh.poses.compute_stable_poses()` 或 Genesis simulate-then-settle。
-
-**Step 3：Genesis scene loader — 连接 ResolvedScene → Genesis entities**
+已实现于 `robotsmith/scenes/genesis_loader.py`：
 
 ```python
-# robotsmith/scenes/genesis_loader.py
-def load_into_genesis(resolved: ResolvedScene) -> tuple[gs.Scene, ...]:
-    scene = gs.Scene(...)
-    scene.add_entity(gs.morphs.Plane())
-    if resolved.table_asset:
-        scene.add_entity(gs.morphs.URDF(file=resolved.table_asset.urdf_path))
-    entities = []
-    for obj in resolved.placed_objects:
-        e = scene.add_entity(gs.morphs.URDF(
-            file=obj.asset.urdf_path, pos=obj.position, euler=obj.rotation,
-        ))
-        entities.append(e)
-    franka = scene.add_entity(gs.morphs.MJCF(file="xml/.../panda.xml"))
-    scene.build()
-    return scene, franka, entities
+handle = load_resolved_scene(resolved, gs_module=gs, fps=30)
+# handle.scene   → gs.Scene (已含 Plane + Table + Objects + Franka)
+# handle.franka  → Franka entity
+# handle.objects → [obj_entity, ...]  按 placed_objects 顺序
+# handle.cameras → {"default": cam}
 ```
 
-这一步将 `collect_data.py` 中硬编码的 Plane + Box + Franka 替换为从 `ResolvedScene` 动态加载。
+`collect_data.py` 已集成：`--scene tabletop_simple` 使用 ResolvedScene 模式，不带 `--scene` 保持原始 hardcoded cube 模式。
 
-**Step 4：环境外观随机化（P1）**
+**Step 4：环境外观随机化（P1, 待实现）**
 
 | 方法 | Genesis API | 说明 |
 |------|-----------|------|
@@ -1228,12 +1188,41 @@ def load_into_genesis(resolved: ResolvedScene) -> tuple[gs.Scene, ...]:
 
 ### 实施优先级
 
-| 优先级 | 改动 | 收益 | 依赖 |
-|:---:|------|------|------|
-| P0 | Step 1 碰撞感知摆放 | 多物体场景不穿透 | trimesh（已在 deps） |
-| P0 | Step 2 stable pose metadata | 物体物理合理摆放 | 离线预计算脚本 |
-| P0 | Step 3 genesis_loader bridge | `collect_data.py` 不再硬编码单 cube | URDF 资产就绪 |
-| P1 | Step 4 纹理/颜色随机化 | 视觉 domain randomization | Genesis texture 支持 |
+| 优先级 | 改动 | 状态 | 收益 |
+|:---:|------|:---:|------|
+| P0 | Step 1 碰撞感知摆放 | ✅ | 多物体场景不穿透 |
+| P0 | Step 2 stable pose + workspace | ✅ | 物体物理合理摆放 |
+| P0 | Step 3 genesis_loader bridge | ✅ | `collect_data.py --scene` 多物体场景 |
+| P1 | Step 4 纹理/颜色随机化 | 📋 | 视觉 domain randomization |
+
+### 实现笔记 (2026-04-14)
+
+**已完成文件变更：**
+
+| 文件 | 改动要点 |
+|------|---------|
+| `robotsmith/scenes/config.py` | +`workspace_xy`, `collision_margin`, `max_placement_retries` |
+| `robotsmith/scenes/backend.py` | `_CollisionChecker` (FCL/AABB), `_pick_stable_pose`, `_load_collision_mesh`; `resolve()` 碰撞感知 |
+| `robotsmith/scenes/genesis_loader.py` | 新文件：`load_resolved_scene()` → `GenesisSceneHandle` |
+| `robotsmith/scenes/presets/tabletop_simple.py` | 简化：不再硬编码 position_range，依赖 workspace_xy |
+| `robotsmith/assets/schema.py` | +`stable_poses` field |
+| `robotsmith/assets/builtin.py` | 7 primitives + table + plane (清理旧 mug/bowl) |
+| `scripts/compute_stable_poses.py` | 新脚本：convex_hull + `trimesh.compute_stable_poses(n_samples=500)` |
+| `scripts/import_objaverse.py` | 按 10 品类 / 17 variants 下载 |
+| `pipeline/collect_data.py` | +`--scene` / `--assets-root` 参数，集成 genesis_loader |
+| `tests/test_scenes.py` | 37 tests passing (collision, stable pose, workspace, quat) |
+| `tests/test_library.py` | 更新 BUILTIN_COUNT=9, 新品类 assertion |
+
+**关键设计决策：**
+
+1. **碰撞检测跨平台**：`python-fcl` 在 Windows 难装，实现 AABB fallback 保证本地单测通过。远端 Linux 使用 FCL 精确碰撞。
+2. **Stable pose 远端计算**：`trimesh.compute_stable_poses()` 需要物理模拟，Windows 极慢。在 MI300X Linux 节点批量计算，`scp` 传回 `metadata.json`。
+3. **`collect_data.py` 双模式**：`--scene` 模式用 ResolvedScene + genesis_loader；无参数保持原始 hardcoded cube 兼容，避免破坏已有工作流。
+4. **资产体积控制**：Objaverse 资产走按需下载 (`scripts/import_objaverse.py`)，Git 仅 track json/urdf，`.gitignore` 排除 glb/obj/stl/png。
+
+**下一步 (Next)：**
+
+在远端 GPU (MI300X) 上用 `--scene tabletop_simple` 运行 `collect_data.py`，验证端到端 Genesis 场景加载 + 数据采集。
 
 ---
 

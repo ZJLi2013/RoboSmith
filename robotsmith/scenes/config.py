@@ -6,15 +6,19 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 
+# Franka Panda effective tabletop workspace (conservative rectangle).
+# Robot base at origin; arm reach ~0.855m.
+DEFAULT_WORKSPACE_XY = [[0.35, -0.25], [0.70, 0.25]]
+
+
 @dataclass
 class ObjectPlacement:
     """Placement specification for one object in a scene."""
 
     asset_query: str
     count: int = 1
-    position_range: list[list[float]] = field(
-        default_factory=lambda: [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
-    )
+    position_range: Optional[list[list[float]]] = None
+    """XY(Z) sampling bounds. If None, falls back to scene-level workspace_xy."""
     rotation_range: list[list[float]] = field(
         default_factory=lambda: [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
     )
@@ -33,6 +37,15 @@ class SceneConfig:
     table_height: float = 0.75
     robot: str = "franka_panda"
 
+    workspace_xy: list[list[float]] = field(
+        default_factory=lambda: list(DEFAULT_WORKSPACE_XY)
+    )
+    """Robot-reachable XY area. Objects sample (x,y) within this rectangle."""
+
+    collision_margin: float = 0.02
+    """Minimum distance (m) between placed objects."""
+    max_placement_retries: int = 100
+
     gravity: list[float] = field(default_factory=lambda: [0.0, 0.0, -9.81])
     time_step: float = 1.0 / 240.0
 
@@ -46,6 +59,7 @@ class SceneConfig:
             "description": self.description,
             "table": {"size": self.table_size, "height": self.table_height},
             "robot": self.robot,
+            "workspace_xy": self.workspace_xy,
             "objects": [
                 {
                     "query": o.asset_query,

@@ -114,6 +114,11 @@ def main():
                     help="Disable box_box_detection (workaround for AMD LLVM fatal)")
     ap.add_argument("--no-videos", action="store_true",
                     help="Store images as PNG instead of video (faster, more disk)")
+    ap.add_argument("--scene", default=None,
+                    help="Use scene-based setup: 'tabletop_simple' or path to scene JSON. "
+                         "If not set, uses legacy hardcoded cube.")
+    ap.add_argument("--assets-root", default=None,
+                    help="Path to assets/ directory (for --scene mode)")
     args = ap.parse_args()
 
     ensure_display()
@@ -122,35 +127,80 @@ def main():
 
     gs.init(backend=(gs.cpu if args.cpu else gs.gpu), logging_level="warning")
 
-    cube_z = CUBE_SIZE[2] / 2.0
+    use_scene = args.scene is not None
 
-    scene = gs.Scene(
-        sim_options=gs.options.SimOptions(dt=1.0 / args.fps, substeps=4),
-        rigid_options=gs.options.RigidOptions(
-            enable_collision=True, enable_joint_limit=True,
+    if use_scene:
+        from robotsmith.assets.library import AssetLibrary
+        from robotsmith.scenes.backend import ProgrammaticSceneBackend
+        from robotsmith.scenes.genesis_loader import load_resolved_scene
+
+        assets_root = args.assets_root or str(
+            Path(__file__).resolve().parent.parent / "assets"
+        )
+        library = AssetLibrary(assets_root)
+
+        if args.scene == "tabletop_simple":
+            from robotsmith.scenes.presets.tabletop_simple import tabletop_simple
+            scene_config = tabletop_simple
+        else:
+            raise ValueError(f"Unknown scene preset: {args.scene}")
+
+        backend = ProgrammaticSceneBackend(seed=args.seed)
+        resolved = backend.resolve(scene_config, library)
+        print(f"[scene] {resolved.summary()}")
+
+        handle = load_resolved_scene(
+            resolved,
+            gs_module=gs,
+            fps=args.fps,
             box_box_detection=(not args.no_bbox_detection),
-        ),
-        show_viewer=False,
-    )
-    scene.add_entity(gs.morphs.Plane())
-    cube = scene.add_entity(
-        morph=gs.morphs.Box(size=CUBE_SIZE, pos=(0.55, 0.0, cube_z)),
-        material=gs.materials.Rigid(friction=args.cube_friction),
-        surface=gs.surfaces.Default(color=(1.0, 0.3, 0.3, 1.0)),
-    )
-    franka = scene.add_entity(
-        gs.morphs.MJCF(file="xml/franka_emika_panda/panda.xml"),
-    )
+        )
+        scene = handle.scene
+        franka = handle.franka
+        target_obj = handle.objects[0] if handle.objects else None
 
-    cam_up = scene.add_camera(
-        res=(640, 480), pos=(0.55, 0.55, 0.55),
-        lookat=(0.55, 0.0, 0.10), fov=45, GUI=False,
-    )
-    cam_side = scene.add_camera(
-        res=(640, 480), pos=(0.55, -0.55, cube_z + 0.25),
-        lookat=(0.55, 0.0, cube_z + 0.10), fov=50, GUI=False,
-    )
-    scene.build()
+        cam_up = scene.add_camera(
+            res=(640, 480), pos=(0.55, 0.55, 0.55),
+            lookat=(0.55, 0.0, 0.10), fov=45, GUI=False,
+        )
+        cam_side = scene.add_camera(
+            res=(640, 480), pos=(0.55, -0.55, 0.30),
+            lookat=(0.55, 0.0, 0.15), fov=50, GUI=False,
+        )
+        scene.build()
+
+        cube = target_obj
+        cube_z = resolved.placed_objects[0].position[2] if resolved.placed_objects else 0.02
+    else:
+        cube_z = CUBE_SIZE[2] / 2.0
+
+        scene = gs.Scene(
+            sim_options=gs.options.SimOptions(dt=1.0 / args.fps, substeps=4),
+            rigid_options=gs.options.RigidOptions(
+                enable_collision=True, enable_joint_limit=True,
+                box_box_detection=(not args.no_bbox_detection),
+            ),
+            show_viewer=False,
+        )
+        scene.add_entity(gs.morphs.Plane())
+        cube = scene.add_entity(
+            morph=gs.morphs.Box(size=CUBE_SIZE, pos=(0.55, 0.0, cube_z)),
+            material=gs.materials.Rigid(friction=args.cube_friction),
+            surface=gs.surfaces.Default(color=(1.0, 0.3, 0.3, 1.0)),
+        )
+        franka = scene.add_entity(
+            gs.morphs.MJCF(file="xml/franka_emika_panda/panda.xml"),
+        )
+
+        cam_up = scene.add_camera(
+            res=(640, 480), pos=(0.55, 0.55, 0.55),
+            lookat=(0.55, 0.0, 0.10), fov=45, GUI=False,
+        )
+        cam_side = scene.add_camera(
+            res=(640, 480), pos=(0.55, -0.55, cube_z + 0.25),
+            lookat=(0.55, 0.0, cube_z + 0.10), fov=50, GUI=False,
+        )
+        scene.build()
 
     motors_dof = [franka.get_joint(name).dofs_idx_local[0] for name in JOINT_NAMES]
     arm_dof = motors_dof[:7]
