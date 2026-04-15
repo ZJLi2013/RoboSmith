@@ -38,6 +38,12 @@
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
+<p align="center">
+  <img src="images/scene_overview.png" width="600" alt="tabletop_simple scene — Franka + random objects">
+  <br>
+  <em>tabletop_simple 场景：Franka 机械臂 + 碰撞感知随机摆放 (Genesis)</em>
+</p>
+
 ## 快速上手
 
 ```bash
