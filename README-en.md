@@ -89,9 +89,8 @@ asset = lib.generate("red ceramic mug")  # auto-generates ref image via FLUX
 
 | Backend | Model | PBR | VRAM | ROCm | Status |
 |---------|-------|:---:|------|------|--------|
-| **`hunyuan3d`** | [Hunyuan3D-2.1](https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1) 3.3B | Yes | ≥10 GB | **Verified** (MI300X) | **Default, ready** |
-| `trellis2` | [TRELLIS.2](https://github.com/microsoft/TRELLIS.2) 4B | Yes | ≥24 GB | Blocked | Stub (cumesh/flex_gemm CUDA-only) |
-| `triposg` | [TripoSG](https://github.com/VAST-AI-Research/TripoSG) 1.5B | No | ≥6 GB | Likely | Stub |
+| **`trellis2`** | [TRELLIS.2-4B](https://github.com/ZJLi2013/TRELLIS.2/tree/rocm) | Yes | ≥24 GB | **Verified** (MI300X) | **Default** — 1K PBR, no base artifact |
+| `hunyuan3d` | [Hunyuan3D-2.1](https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1) 3.3B | Yes | ≥29 GB | Verified (MI300X) | Fallback |
 
 > Background concepts: [docs/background.md](docs/background.md).
 
@@ -151,7 +150,6 @@ robotsmith/
       backend.py           # GenBackend ABC + registry
       hunyuan3d_backend.py # Hunyuan3D-2.1 backend (verified, default)
       trellis2_backend.py  # TRELLIS.2 backend (stub)
-      triposg_backend.py   # TripoSG backend (stub)
       mesh_to_urdf.py      # trimesh → URDF (collision hull + inertia)
       catalog.py           # Auto-tag from prompt + metadata generation
       generate.py          # Orchestrator: registry → gen → convert → catalog
@@ -166,7 +164,6 @@ robotsmith/
     cli.py               # CLI entry points (incl. view subcommand)
   assets/                # Generated asset files (URDF + mesh + metadata)
   tests/                 # 30 tests (all passing)
-  # experiments.md      # Experiment log (local only, not tracked)
   docs/background.md     # Technical background (watertight meshes, URDF, etc.)
 ```
 
@@ -241,18 +238,6 @@ Optional:
 - [FLUX.1-dev](https://github.com/black-forest-labs/flux) — T2I bridge (auto-generates ref images for text queries, planned)
 - `genesis-world >= 0.2` — Genesis sim (Part 2)
 
-## Demo: end-to-end reproduction
+## More docs
 
-The `demo/` directory provides scripts to reproduce the full pipeline from scratch:
-
-```bash
-# On a remote GPU node (MI300X / MI300X + ROCm 6.4)
-bash demo/setup_env.sh           # 1. Install Hunyuan3D-2.1 + RoboSmith
-python demo/run_pipeline.py      # 2. image → 3D mesh → URDF → catalog → visualize
-```
-
-See [demo/README.md](demo/README.md) for details.
-
-## Design document
-
-Technical background on watertight meshes, URDF, convex hull approximation: [docs/background.md](docs/background.md).
+- [docs/background.md](docs/background.md) — Technical background (watertight meshes, URDF, convex hull approximation)

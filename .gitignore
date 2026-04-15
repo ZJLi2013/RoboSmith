@@ -55,8 +55,5 @@ scripts/patch_genesis_rocm.py
 # Training / eval output
 output/
 
-# Demo results: keep PNGs for README, ignore large mesh files
-demo/results/**/*.obj
-demo/results/**/*.glb
-demo/results/**/*.urdf
-demo/results/**/*.log
+# Demo (outdated, not for public; kept locally)
+demo/

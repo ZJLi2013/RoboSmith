@@ -74,8 +74,7 @@ robotsmith validate
 | 后端 | 模型 | PBR | VRAM | ROCm | 状态 |
 |------|------|:---:|------|------|------|
 | **`trellis2`** | [TRELLIS.2-4B](https://github.com/ZJLi2013/TRELLIS.2/tree/rocm) | ✅ | ≥24 GB | ✅ MI300X | **默认** — 1K PBR (可选 512/4K), 无底座 artifact, 无 bpy 依赖 |
-| `hunyuan3d` | [Hunyuan3D-2.1](https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1) | ✅ | ≥29 GB | ✅ MI300X/MI300X | 备选 — 内壁纹理破碎, 需 bpy lazy-import |
-| `triposg` | [TripoSG](https://github.com/VAST-AI-Research/TripoSG) 1.5B | ❌ | ≥6 GB | 🔵 待验证 | stub |
+| `hunyuan3d` | [Hunyuan3D-2.1](https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1) | ✅ | ≥29 GB | ✅ MI300X | 备选 |
 
 默认管线（TRELLIS.2-4B）：
 
@@ -144,16 +143,6 @@ python scripts/browse_assets.py --no-open  # 仅生成
 - Built-in 显示 SVG 几何预览，Generated 显示 T2I 参考图
 - 支持 All / Built-in / Generated 筛选
 - 自包含 HTML，可离线查看
-
-## Demo：端到端复现
-
-```bash
-# 远端 GPU 节点（MI300X + ROCm 6.4）
-bash demo/setup_env.sh           # 安装 TRELLIS.2 + RoboSmith
-python demo/run_pipeline.py      # image → 3D → URDF → 入库 → 可视化
-```
-
-详见 [demo/README.md](demo/README.md)。
 
 ## Sim-ready 成熟度
 
