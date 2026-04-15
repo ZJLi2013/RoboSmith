@@ -41,7 +41,7 @@
 <p align="center">
   <img src="images/scene_overview.png" width="600" alt="tabletop_simple scene — Franka + random objects">
   <br>
-  <em>tabletop_simple 场景：Franka 机械臂 + 碰撞感知随机摆放 (Genesis)</em>
+  <em>tabletop_simple 场景：碰撞感知随机摆放 (Genesis)。注：机械臂位姿尚未校准，仅展示场景布局。</em>
 </p>
 
 ## 快速上手
