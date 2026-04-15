@@ -39,6 +39,22 @@ assets/objects/**/*.png
 assets/objects/**/*.jpg
 assets/objects/**/*.mtl
 
+# Internal docs (experiment logs, design docs, experiment plans)
+docs/design.md
+docs/stage-1.md
+docs/stage-2.md
+docs/*_exp.md
+experiments.md
+
+# Internal scripts (experiment runners, benchmarks, node-specific tools)
+scripts/run_*.sh
+scripts/benchmark_io.sh
+scripts/sync_assets.py
+scripts/patch_genesis_rocm.py
+
+# Training / eval output
+output/
+
 # Demo results: keep PNGs for README, ignore large mesh files
 demo/results/**/*.obj
 demo/results/**/*.glb

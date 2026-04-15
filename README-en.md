@@ -26,7 +26,7 @@ User query: "red mug"  (text)
 > **Note**: All current SOTA 3D generation models (Hunyuan3D-2.1, TRELLIS.2, TripoSG) are single-image-to-3D
 > and do not accept pure text input. When a text query misses in the library, a T2I model (FLUX) first generates
 > a reference image which is then fed to the 3D generation pipeline.
-> See [docs/design.md — T2I bridge analysis](docs/design.md#14-text-to-image-桥接组件).
+> All current SOTA 3D models are image-to-3D; a T2I model (SDXL-Turbo) generates reference images when only text is provided.
 
 ## Quick start
 
@@ -93,7 +93,7 @@ asset = lib.generate("red ceramic mug")  # auto-generates ref image via FLUX
 | `trellis2` | [TRELLIS.2](https://github.com/microsoft/TRELLIS.2) 4B | Yes | ≥24 GB | Blocked | Stub (cumesh/flex_gemm CUDA-only) |
 | `triposg` | [TripoSG](https://github.com/VAST-AI-Research/TripoSG) 1.5B | No | ≥6 GB | Likely | Stub |
 
-> Model survey details: [docs/design.md](docs/design.md). Background concepts: [docs/background.md](docs/background.md).
+> Background concepts: [docs/background.md](docs/background.md).
 
 ## Scene presets
 
@@ -166,8 +166,8 @@ robotsmith/
     cli.py               # CLI entry points (incl. view subcommand)
   assets/                # Generated asset files (URDF + mesh + metadata)
   tests/                 # 30 tests (all passing)
-  experiments.md         # Experiment log (Hunyuan3D / e2e verification)
-  docs/design.md         # Original design document (Part 1 + Part 2 vision)
+  # experiments.md      # Experiment log (local only, not tracked)
+  docs/background.md     # Technical background (watertight meshes, URDF, etc.)
 ```
 
 ## Sim-ready maturity
@@ -246,7 +246,7 @@ Optional:
 The `demo/` directory provides scripts to reproduce the full pipeline from scratch:
 
 ```bash
-# On a remote GPU node (MI300X / MI308X + ROCm 6.4)
+# On a remote GPU node (MI300X / MI300X + ROCm 6.4)
 bash demo/setup_env.sh           # 1. Install Hunyuan3D-2.1 + RoboSmith
 python demo/run_pipeline.py      # 2. image → 3D mesh → URDF → catalog → visualize
 ```
@@ -255,4 +255,4 @@ See [demo/README.md](demo/README.md) for details.
 
 ## Design document
 
-The original design covering both Part 1 (asset library) and Part 2 (sim-to-policy pipeline) is at [docs/design.md](docs/design.md).
+Technical background on watertight meshes, URDF, convex hull approximation: [docs/background.md](docs/background.md).

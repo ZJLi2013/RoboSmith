@@ -24,8 +24,7 @@
  仿真就绪资产 (URDF + 碰撞凸包 + PBR 纹理 + 元数据)
 ```
 
-> 当前所有 SOTA 3D 生成模型均为 image-to-3D，文本查询未命中时先经 T2I 生成参考图。
-> 详见 [docs/design.md § 1.4](docs/design.md#14-text-to-image-桥接组件)。
+> 当前所有 SOTA 3D 生成模型均为 image-to-3D，文本查询未命中时先经 T2I (SDXL-Turbo) 生成参考图。
 
 ## 快速上手
 
@@ -74,8 +73,8 @@ robotsmith validate
 
 | 后端 | 模型 | PBR | VRAM | ROCm | 状态 |
 |------|------|:---:|------|------|------|
-| **`trellis2`** | [TRELLIS.2-4B](https://github.com/ZJLi2013/TRELLIS.2/tree/rocm) | ✅ | ≥24 GB | ✅ MI308X | **默认** — 1K PBR (可选 512/4K), 无底座 artifact, 无 bpy 依赖 |
-| `hunyuan3d` | [Hunyuan3D-2.1](https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1) | ✅ | ≥29 GB | ✅ MI300X/MI308X | 备选 — 内壁纹理破碎, 需 bpy lazy-import |
+| **`trellis2`** | [TRELLIS.2-4B](https://github.com/ZJLi2013/TRELLIS.2/tree/rocm) | ✅ | ≥24 GB | ✅ MI300X | **默认** — 1K PBR (可选 512/4K), 无底座 artifact, 无 bpy 依赖 |
+| `hunyuan3d` | [Hunyuan3D-2.1](https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1) | ✅ | ≥29 GB | ✅ MI300X/MI300X | 备选 — 内壁纹理破碎, 需 bpy lazy-import |
 | `triposg` | [TripoSG](https://github.com/VAST-AI-Research/TripoSG) 1.5B | ❌ | ≥6 GB | 🔵 待验证 | stub |
 
 默认管线（TRELLIS.2-4B）：
@@ -95,7 +94,6 @@ robotsmith validate
 > Collision mesh 由 trimesh 凸包生成，与纹理分辨率无关。
 > 1K PBR 在仿真视口（640×480 ~ 1024×768）中肉眼无差异，GLB 从 38 MB→~8 MB，仿真加载更快。
 > 权重：[microsoft/TRELLIS.2-4B](https://huggingface.co/microsoft/TRELLIS.2-4B)。ROCm fork: [ZJLi2013/TRELLIS.2@rocm](https://github.com/ZJLi2013/TRELLIS.2/tree/rocm)。
-> 详细分析见 [docs/design.md](docs/design.md#纹理分辨率预设--quality----texture-size)。
 
 ### 资产目录结构
 
@@ -168,7 +166,6 @@ L2     物理属性精确                   ❌ 待实现
 L3     视觉逼真（PBR）               ✅ TRELLIS.2 PBR (1K 默认, 可选 512/4K)
 ```
 
-> 缺失项详析、改进路线见 [docs/design.md § 1.6](docs/design.md#16-已知问题--计划解决方案)。
 
 
 ## 依赖
@@ -210,9 +207,6 @@ python pipeline/train_smolvla.py --dataset-id local/franka-pick-100ep --n-steps 
 python pipeline/eval_policy.py --policy-type smolvla --checkpoint outputs/smolvla/final
 ```
 
-## 设计文档
+## 更多文档
 
-- [docs/design.md](docs/design.md) — 完整设计（架构、已知问题、改进路线、生态对比）
-- [docs/stage-1.md](docs/stage-1.md) — Stage 1：单物体 re-baseline 计划
-- [docs/stage1_exp.md](docs/stage1_exp.md) — Stage 1：实验记录
-- [docs/stage-2.md](docs/stage-2.md) — Stage 2：多物体泛化实验计划
+- [docs/background.md](docs/background.md) — 技术背景（水密网格、URDF、凸包近似等）
