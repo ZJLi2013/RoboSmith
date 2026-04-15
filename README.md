@@ -3,28 +3,40 @@
 
 # RoboSmith
 
-面向机器人操作研究的仿真就绪（sim-ready）数字资产库，搜索不到时自动调用 3D 生成模型补全。
+从 3D 资产到机器人行为数据的端到端锻造管线：**Gen2Sim → 场景随机化 → 闭环数据采集 → VLA Post-Training → Sim 评估**。
 
 ## 工作流程
 
 ```
-用户查询: "红色杯子"  (文本)
-       │
-       ▼
- AssetLibrary.search()
-       │
-   ┌───┴───┐
-  命中    未命中
-   │         │
-   ▼         ▼
- 返回      T2I → 参考图 → TRELLIS.2-4B (默认) → URDF → 入库
- URDF      SDXL-Turbo        image → PBR GLB (1K 默认)     │
-   │         ┌────────────────────────────────────────────┘
-   ▼         ▼
- 仿真就绪资产 (URDF + 碰撞凸包 + PBR 纹理 + 元数据)
+┌─────────────────────────────────────────────────────────────────────┐
+│ Part 1: Sim-Ready 资产                                              │
+│                                                                     │
+│  文本查询 → AssetLibrary.search()                                    │
+│               │                                                     │
+│           命中 / 未命中 → T2I (SDXL-Turbo) → TRELLIS.2-4B → URDF    │
+│               │                                                     │
+│               ▼                                                     │
+│  Sim-Ready 资产 (URDF + PBR GLB + 碰撞凸包 + stable_poses)          │
+└───────────────────────────────┬─────────────────────────────────────┘
+                                │
+┌───────────────────────────────▼─────────────────────────────────────┐
+│ Part 2: Sim-to-Policy 管线                                          │
+│                                                                     │
+│  SceneConfig (tabletop_simple)                                      │
+│       │                                                             │
+│       ▼                                                             │
+│  碰撞感知随机摆放 (stable_pose + AABB/FCL 碰撞检测)                   │
+│       │                                                             │
+│       ▼                                                             │
+│  Genesis 仿真 (Franka + Table + Objects)                             │
+│       │                                                             │
+│       ├── IK Scripted 采集 (开环 baseline)                           │
+│       └── DART 闭环采集 (σ 扰动 + 纠正)                              │
+│               │                                                     │
+│               ▼                                                     │
+│  LeRobot v3.0 数据集 → SmolVLA Post-Training → 闭环 Sim 评估         │
+└─────────────────────────────────────────────────────────────────────┘
 ```
-
-> 当前所有 SOTA 3D 生成模型均为 image-to-3D，文本查询未命中时先经 T2I (SDXL-Turbo) 生成参考图。
 
 ## 快速上手
 
@@ -169,32 +181,32 @@ L3     视觉逼真（PBR）               ✅ TRELLIS.2 PBR (1K 默认, 可选 
 - [Hunyuan3D-2.1](https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1) — 备选 3D 后端
 - `genesis-world >= 0.2` — Genesis 仿真器（Part 2）
 
-## 项目目标
+## Sim-to-Policy 管线
 
-教学/PoC 项目，分阶段验证 **Synthetic Data → VLA Post-Training → Sim Evaluation** 闭环。
+```bash
+# 1. 数据采集（Genesis + Franka，碰撞感知随机场景）
+python pipeline/collect_data.py --n-episodes 100 --scene tabletop_simple --save
+python pipeline/collect_data_dart.py --n-episodes 100 --save     # DART 闭环采集
 
-| 阶段 | 目标 | 核心新增维度 | VLA 模型 | 状态 |
-|:---:|------|------------|---------|:----:|
-| **1** | 单物体 + 位姿泛化 (unseen 80%+) | 闭环 DART 数据 + 训练调优 | SmolVLA (450M) | 🔄 **← re-baseline** |
+# 2. SmolVLA Post-Training
+python pipeline/train_smolvla.py --dataset-id local/franka-pick-100ep --n-steps 2000
+
+# 3. 闭环 Sim 评估
+python pipeline/eval_policy.py --policy-type smolvla --checkpoint outputs/smolvla/final
+```
+
+数据采集支持两种模式：
+- **开环 IK scripted**：确定性轨迹，快速批量生成 baseline 数据
+- **DART 闭环**：对 IK 轨迹施加高斯扰动 (σ)，执行后纠正回参考轨迹，生成 recovery 行为数据
+
+## 项目路线
+
+| 阶段 | 目标 | 核心维度 | VLA 模型 | 状态 |
+|:---:|------|---------|---------|:----:|
+| **1** | 单物体 + 位姿泛化 (unseen 80%+) | DART 闭环数据 + 训练调优 | SmolVLA (450M) | 🔄 |
 | 2 | 多物体泛化 | gen2sim 物品变体 | SmolVLA (450M) | 📋 |
 | 3 | 中程多步任务 (stacking) | 多步推理 | [StarVLA](https://github.com/starVLA/starVLA) (Qwen3-VL 4B) | 📋 |
 | 4 | 长程任务 | 长序列规划 | StarVLA (Qwen3-VL 4B) | 📋 |
-
-**当前：Stage 1 re-baseline**。lerobot 项目中 V5 达到 60%（unseen），需要通过闭环 DART 数据 + 训练调优达到 **80%+** 后再进入 Stage 2。
-
-### Sim-to-Policy 管线
-
-```bash
-# 数据采集（Genesis + Franka IK）
-python pipeline/collect_data.py --n-episodes 100 --save          # 开环 baseline
-python pipeline/collect_data_dart.py --n-episodes 100 --save     # 闭环 DART
-
-# SmolVLA 后训练
-python pipeline/train_smolvla.py --dataset-id local/franka-pick-100ep --n-steps 2000
-
-# 闭环评估
-python pipeline/eval_policy.py --policy-type smolvla --checkpoint outputs/smolvla/final
-```
 
 ## 更多文档
 
