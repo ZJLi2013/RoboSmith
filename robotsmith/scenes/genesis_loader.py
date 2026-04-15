@@ -107,8 +107,12 @@ def load_resolved_scene(
         )
         obj_entities.append(entity)
 
+    table_surface_z = config.table_height + config.table_size[2] / 2.0
     franka = scene.add_entity(
-        gs.morphs.MJCF(file="xml/franka_emika_panda/panda.xml"),
+        gs.morphs.MJCF(
+            file="xml/franka_emika_panda/panda.xml",
+            pos=(0, 0, table_surface_z),
+        ),
     )
 
     cameras = {}
