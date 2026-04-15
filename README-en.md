@@ -40,7 +40,7 @@ End-to-end pipeline from 3D assets to robot behavior data: **Gen2Sim → Scene R
 <p align="center">
   <img src="images/scene_overview.png" width="600" alt="tabletop_simple scene — Franka + random objects">
   <br>
-  <em>tabletop_simple scene: collision-aware random placement (Genesis). Note: robot pose not yet calibrated — showing scene layout only.</em>
+  <em>tabletop_simple scene: Franka arm + collision-aware random placement (Genesis, MI300X)</em>
 </p>
 
 ## Quick start
