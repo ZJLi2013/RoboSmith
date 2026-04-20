@@ -228,38 +228,42 @@ def _generate_lblock_urdf(defn: dict) -> str:
 
 
 def _generate_table_urdf() -> str:
-    """A simple table: a box top on 4 legs, all as a single fixed link."""
+    """A simple table: a box top on 4 legs, all as a single fixed link.
+
+    Dimensions: 1.2m (L) x 0.8m (W) x 0.75m (H).
+    Long enough for Franka base to sit on the table surface.
+    """
     return """<?xml version="1.0"?>
 <robot name="table_simple">
   <link name="base_link">
     <inertial>
       <origin xyz="0 0 0.375" rpy="0 0 0"/>
-      <mass value="15.0"/>
-      <inertia ixx="0.5" ixy="0" ixz="0" iyy="0.3" iyz="0" izz="0.6"/>
+      <mass value="20.0"/>
+      <inertia ixx="0.8" ixy="0" ixz="0" iyy="0.5" iyz="0" izz="0.9"/>
     </inertial>
     <visual>
       <origin xyz="0 0 0.375" rpy="0 0 0"/>
-      <geometry><box size="0.8 0.6 0.75"/></geometry>
+      <geometry><box size="1.2 0.8 0.75"/></geometry>
       <material name="table_mat"><color rgba="0.55 0.35 0.2 1.0"/></material>
     </visual>
     <collision>
       <origin xyz="0 0 0.75" rpy="0 0 0"/>
-      <geometry><box size="0.8 0.6 0.05"/></geometry>
+      <geometry><box size="1.2 0.8 0.05"/></geometry>
     </collision>
     <collision>
-      <origin xyz="0.35 0.25 0.375" rpy="0 0 0"/>
+      <origin xyz="0.55 0.35 0.375" rpy="0 0 0"/>
       <geometry><cylinder radius="0.025" length="0.75"/></geometry>
     </collision>
     <collision>
-      <origin xyz="-0.35 0.25 0.375" rpy="0 0 0"/>
+      <origin xyz="-0.55 0.35 0.375" rpy="0 0 0"/>
       <geometry><cylinder radius="0.025" length="0.75"/></geometry>
     </collision>
     <collision>
-      <origin xyz="0.35 -0.25 0.375" rpy="0 0 0"/>
+      <origin xyz="0.55 -0.35 0.375" rpy="0 0 0"/>
       <geometry><cylinder radius="0.025" length="0.75"/></geometry>
     </collision>
     <collision>
-      <origin xyz="-0.35 -0.25 0.375" rpy="0 0 0"/>
+      <origin xyz="-0.55 -0.35 0.375" rpy="0 0 0"/>
       <geometry><cylinder radius="0.025" length="0.75"/></geometry>
     </collision>
   </link>

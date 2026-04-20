@@ -74,11 +74,13 @@ def load_resolved_scene(
 
     scene.add_entity(gs.morphs.Plane())
 
-    # Position table so its center aligns with the workspace center.
-    # Table URDF origin is at the bottom-center; tabletop extends
-    # ±table_size[0]/2 in X, ±table_size[1]/2 in Y from that origin.
+    # Position table so it covers both the Franka base (at x=0) and the
+    # workspace area.  The table URDF origin is at the bottom-center;
+    # tabletop extends ±table_size[0]/2 in X, ±table_size[1]/2 in Y.
     ws = config.workspace_xy
-    table_center_x = (ws[0][0] + ws[1][0]) / 2.0
+    ws_center_x = (ws[0][0] + ws[1][0]) / 2.0
+    # Center table between Franka base (x=0) and workspace center
+    table_center_x = ws_center_x / 2.0
     table_center_y = (ws[0][1] + ws[1][1]) / 2.0
 
     table_entity = None
@@ -108,6 +110,7 @@ def load_resolved_scene(
         obj_entities.append(entity)
 
     table_surface_z = config.table_height + config.table_size[2] / 2.0
+    # Franka base sits on the table surface (not floating)
     franka = scene.add_entity(
         gs.morphs.MJCF(
             file="xml/franka_emika_panda/panda.xml",

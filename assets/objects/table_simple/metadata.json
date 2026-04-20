@@ -1,11 +1,11 @@
 {
-  "mass_kg": 15.0,
+  "mass_kg": 20.0,
   "friction": 0.5,
   "restitution": 0.1,
   "density_kg_m3": 1000.0,
   "size_cm": [
+    120,
     80,
-    60,
     75
   ],
   "tags": [
@@ -14,7 +14,7 @@
     "surface"
   ],
   "source": "builtin_primitive",
-  "description": "Simple wooden table (80x60cm, 75cm tall)",
+  "description": "Simple wooden table (120x80cm, 75cm tall)",
   "stable_poses": [
     {
       "z": 0.025,

@@ -33,7 +33,7 @@ class SceneConfig:
     description: str = ""
     objects: list[ObjectPlacement] = field(default_factory=list)
 
-    table_size: list[float] = field(default_factory=lambda: [0.8, 0.6, 0.05])
+    table_size: list[float] = field(default_factory=lambda: [1.2, 0.8, 0.05])
     table_height: float = 0.75
     robot: str = "franka_panda"
 

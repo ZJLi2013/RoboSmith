@@ -64,17 +64,19 @@ def render_one_seed(seed: int, scene_name: str, assets_root: str, out_dir: Path,
     cx = (ws[0][0] + ws[1][0]) / 2.0
     cy = (ws[0][1] + ws[1][1]) / 2.0
     table_z = scene_config.table_height + scene_config.table_size[2] / 2.0
+    # Franka base is at x=0; look at midpoint between base and workspace
+    scene_center_x = cx / 2.0
 
     cam_overview = scene.add_camera(
         res=(960, 720),
-        pos=(cx + 0.9, cy + 0.7, table_z + 0.7),
-        lookat=(cx * 0.5, cy, table_z),
+        pos=(scene_center_x + 1.0, cy + 0.8, table_z + 0.8),
+        lookat=(scene_center_x, cy, table_z),
         fov=55, GUI=False,
     )
     cam_topdown = scene.add_camera(
         res=(960, 720),
-        pos=(cx * 0.5, cy, table_z + 1.2),
-        lookat=(cx * 0.5, cy, table_z),
+        pos=(scene_center_x, cy, table_z + 1.4),
+        lookat=(scene_center_x, cy, table_z),
         fov=55, GUI=False,
     )
 

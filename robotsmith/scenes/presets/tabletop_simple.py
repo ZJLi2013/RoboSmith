@@ -14,7 +14,7 @@ tabletop_simple = SceneConfig(
         ObjectPlacement(asset_query="bowl", count=1),
         ObjectPlacement(asset_query="block", count=3),
     ],
-    table_size=[0.8, 0.6, 0.05],
+    table_size=[1.2, 0.8, 0.05],
     table_height=0.75,
     workspace_xy=[[0.35, -0.20], [0.65, 0.20]],
 )

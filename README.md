@@ -3,7 +3,10 @@
 
 # RoboSmith
 
-从 3D 资产到机器人行为数据的端到端锻造管线：**Gen2Sim → 场景随机化 → 闭环数据采集 → VLA Post-Training → Sim 评估**。
+从 3D 资产到机器人操作数据的端到端锻造管线：**Gen2Sim → Task 定义 → IK 数采（+ DART 增强）→ VLA 验证**。
+
+> Part 2 的核心是**多任务 IK 数采基础设施**：Task 定义系统（成功判定 + composable predicates）
+> + 多任务 IK solver + DART 噪声增强，覆盖 pick / pick-and-place / stacking 等桌面操作任务。
 
 ## 工作流程
 
@@ -20,21 +23,21 @@
 └───────────────────────────────┬─────────────────────────────────────┘
                                 │
 ┌───────────────────────────────▼─────────────────────────────────────┐
-│ Part 2: Sim-to-Policy 管线                                          │
+│ Part 2: 多任务数采基础设施 ◀ 核心                                     │
 │                                                                     │
-│  SceneConfig (tabletop_simple)                                      │
+│  TaskSpec 定义 (instruction + success predicates + scene)            │
 │       │                                                             │
 │       ▼                                                             │
-│  碰撞感知随机摆放 (stable_pose + AABB/FCL 碰撞检测)                   │
+│  SceneConfig → 碰撞感知随机摆放 → Genesis / MuJoCo 仿真               │
 │       │                                                             │
 │       ▼                                                             │
-│  Genesis 仿真 (Franka + Table + Objects)                             │
+│  IK Solver 数采 (per-task waypoint 逻辑 + DART 噪声增强可选)          │
 │       │                                                             │
-│       ├── IK Scripted 采集 (开环 baseline)                           │
-│       └── DART 闭环采集 (σ 扰动 + 纠正)                              │
-│               │                                                     │
-│               ▼                                                     │
-│  LeRobot v3.0 数据集 → SmolVLA Post-Training → 闭环 Sim 评估         │
+│       ▼                                                             │
+│  LeRobot v3.0 数据集 → VLA 验证 (SmolVLA)                            │
+│                                                                     │
+│  支持任务: pick → pick-and-place → stacking → ...                    │
+│  成功判定: composable predicates (object_above, object_in_container) │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -187,32 +190,38 @@ L3     视觉逼真（PBR）               ✅ TRELLIS.2 PBR (1K 默认, 可选 
 - [Hunyuan3D-2.1](https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1) — 备选 3D 后端
 - `genesis-world >= 0.2` — Genesis 仿真器（Part 2）
 
-## Sim-to-Policy 管线
+## 多任务数采管线
+
+Part 2 的核心是在 sim 中为不同操作任务生成训练数据。每个任务通过 `TaskSpec` 定义，
+IK solver 根据任务类型生成轨迹，DART 噪声增强作为可选参数提升数据鲁棒性。
+
+**Task 定义**（借鉴 [RoboLab](https://github.com/NVLabs/RoboLab) composable predicates）：
+
+| 任务 | 场景 | 成功判定 | IK 逻辑 |
+|------|------|---------|---------|
+| pick | cube on table | `object_above(cube, table, z=0.05)` | reach → grasp → lift |
+| pick_and_place | mug + bowl | `object_in_container(mug, bowl)` | reach → grasp → lift → move → place |
+| stacking | 3 blocks | `stacked(blocks, order)` | 多轮 pick-and-place |
 
 ```bash
-# 1. 数据采集（Genesis + Franka，碰撞感知随机场景）
-python pipeline/collect_data.py --n-episodes 100 --scene tabletop_simple --save
-python pipeline/collect_data_dart.py --n-episodes 100 --save     # DART 闭环采集
+# 数据采集（IK solver + 可选 DART 噪声增强）
+python pipeline/collect_data.py --task pick --n-episodes 100 --save
+python pipeline/collect_data.py --task pick --n-episodes 100 --dart-sigma 0.005 --save
+python pipeline/collect_data.py --task pick_and_place --n-episodes 100 --dart-sigma 0.005 --save
 
-# 2. SmolVLA Post-Training
-python pipeline/train_smolvla.py --dataset-id local/franka-pick-100ep --n-steps 2000
-
-# 3. 闭环 Sim 评估
+# VLA 验证
+python pipeline/train_smolvla.py --dataset-id local/franka-pick-100ep --n-steps 10000
 python pipeline/eval_policy.py --policy-type smolvla --checkpoint outputs/smolvla/final
 ```
 
-数据采集支持两种模式：
-- **开环 IK scripted**：确定性轨迹，快速批量生成 baseline 数据
-- **DART 闭环**：对 IK 轨迹施加高斯扰动 (σ)，执行后纠正回参考轨迹，生成 recovery 行为数据
-
 ## 项目路线
 
-| 阶段 | 目标 | 核心维度 | VLA 模型 | 状态 |
+| 阶段 | 任务 | 核心工作 | 验证模型 | 状态 |
 |:---:|------|---------|---------|:----:|
-| **1** | 单物体 + 位姿泛化 (unseen 80%+) | DART 闭环数据 + 训练调优 | SmolVLA (450M) | 🔄 |
-| 2 | 多物体泛化 | gen2sim 物品变体 | SmolVLA (450M) | 📋 |
-| 3 | 中程多步任务 (stacking) | 多步推理 | [StarVLA](https://github.com/starVLA/starVLA) (Qwen3-VL 4B) | 📋 |
-| 4 | 长程任务 | 长序列规划 | StarVLA (Qwen3-VL 4B) | 📋 |
+| **1** | pick-cube (unseen 80%+) | IK 数采 + DART 增强，单任务跑通 | SmolVLA (450M) | 🔄 |
+| 2 | pick (多物体泛化) | Task 定义系统 + gen2sim 物品变体 | SmolVLA (450M) | 📋 |
+| 3 | pick-and-place, stacking | 多任务 IK solver + composable predicates | SmolVLA / StarVLA | 📋 |
+| 4 | 长程任务 | sim-DAgger / RL post-training (远期) | StarVLA (Qwen3-VL 4B) | 📋 |
 
 ## 更多文档
 

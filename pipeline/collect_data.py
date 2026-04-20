@@ -159,18 +159,19 @@ def main():
         franka = handle.franka
         target_obj = handle.objects[0] if handle.objects else None
 
+        table_z = scene_config.table_height + scene_config.table_size[2] / 2.0
         cam_up = scene.add_camera(
-            res=(640, 480), pos=(0.55, 0.55, 0.55),
-            lookat=(0.55, 0.0, 0.10), fov=45, GUI=False,
+            res=(640, 480), pos=(0.55, 0.55, table_z + 0.55),
+            lookat=(0.55, 0.0, table_z + 0.10), fov=45, GUI=False,
         )
         cam_side = scene.add_camera(
-            res=(640, 480), pos=(0.55, -0.55, 0.30),
-            lookat=(0.55, 0.0, 0.15), fov=50, GUI=False,
+            res=(640, 480), pos=(0.55, -0.55, table_z + 0.30),
+            lookat=(0.55, 0.0, table_z + 0.15), fov=50, GUI=False,
         )
         scene.build()
 
         cube = target_obj
-        cube_z = resolved.placed_objects[0].position[2] if resolved.placed_objects else 0.02
+        cube_z = resolved.placed_objects[0].position[2] if resolved.placed_objects else table_z
     else:
         cube_z = CUBE_SIZE[2] / 2.0
 
@@ -240,11 +241,14 @@ def main():
         target[8] = finger_pos
         return target
 
+    # When using --scene, IK target Z values must be offset by table surface height
+    z_offset = (scene_config.table_height + scene_config.table_size[2] / 2.0) if use_scene else 0.0
+
     def plan_pick_trajectory(cx, cy):
         """Plan full pick trajectory: approach -> descend -> grasp -> lift."""
-        hover_pos = [cx, cy, args.hover_z]
-        grasp_pos = [cx, cy, args.grasp_z]
-        lift_pos = [cx, cy, args.lift_z]
+        hover_pos = [cx, cy, args.hover_z + z_offset]
+        grasp_pos = [cx, cy, args.grasp_z + z_offset]
+        lift_pos = [cx, cy, args.lift_z + z_offset]
 
         q_home = HOME_QPOS.copy()
         q_hover = solve_ik(hover_pos, finger_pos=FINGER_OPEN)
