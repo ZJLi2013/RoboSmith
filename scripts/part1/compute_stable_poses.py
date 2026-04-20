@@ -6,10 +6,10 @@ surface. For primitive-only assets (no mesh file), computes trivial upright
 poses from URDF geometry.
 
 Usage:
-    python scripts/compute_stable_poses.py                    # all assets
-    python scripts/compute_stable_poses.py --name mug_01      # single asset
-    python scripts/compute_stable_poses.py --dir assets/objects/mug_01
-    python scripts/compute_stable_poses.py --dry-run           # preview only
+    python scripts/part1/compute_stable_poses.py                    # all assets
+    python scripts/part1/compute_stable_poses.py --name mug_01      # single asset
+    python scripts/part1/compute_stable_poses.py --dir assets/objects/mug_01
+    python scripts/part1/compute_stable_poses.py --dry-run           # preview only
 """
 
 from __future__ import annotations

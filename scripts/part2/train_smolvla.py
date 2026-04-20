@@ -5,7 +5,7 @@ Fine-tunes lerobot/smolvla_base on a local LeRobot dataset.
 Logs per-step metrics to JSON for analysis.
 
 Usage:
-  python pipeline/train_smolvla.py --dataset-id local/franka-pick-vision-100ep --n-steps 2000
+  python scripts/part2/train_smolvla.py --dataset-id local/franka-pick-vision-100ep --n-steps 2000
 """
 
 from __future__ import annotations

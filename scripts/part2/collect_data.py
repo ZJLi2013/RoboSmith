@@ -1,14 +1,12 @@
-"""
-RoboSmith pipeline — open-loop data collection.
+"""RoboSmith — open-loop data collection driven by TaskSpec.
 
-Franka Panda pick-cube data generation for LeRobot.
-
-Genesis scene: Franka 7-DOF + cube + 2 cameras.
-IK trajectory: home -> pre-hover -> descend -> grasp -> lift.
-Output: LeRobot dataset with observation.state (9D), action (9D), images.
+Generates expert demonstrations via IK solver for any registered task.
+Supports DART noise augmentation (--dart-sigma) and scene-based setup.
 
 Usage:
-  python pipeline/collect_data.py --n-episodes 100 --repo-id local/franka-pick-vision-100ep
+  python scripts/part2/collect_data.py --task pick_cube --n-episodes 100
+  python scripts/part2/collect_data.py --task pick_cube --n-episodes 100 --dart-sigma 0.005
+  python scripts/part2/collect_data.py --task pick_cube --n-episodes 2 --scene tabletop_simple
 """
 from __future__ import annotations
 
@@ -39,10 +37,6 @@ FORCE_LOWER = np.array([-87, -87, -87, -87, -12, -12, -12, -100, -100], dtype=np
 FORCE_UPPER = np.array([87, 87, 87, 87, 12, 12, 12, 100, 100], dtype=np.float32)
 
 CUBE_SIZE = (0.04, 0.04, 0.04)
-GRASP_QUAT = np.array([0, 1, 0, 0], dtype=np.float32)  # top-down grasp
-FINGER_OPEN = 0.04
-FINGER_CLOSED = 0.01
-GRASP_FORCE = -0.5
 
 
 def ensure_display():
@@ -66,12 +60,6 @@ def to_numpy(t):
     return arr[0] if arr.ndim > 1 else arr
 
 
-def lerp(a, b, n):
-    a = np.array(a, dtype=np.float64)
-    b = np.array(b, dtype=np.float64)
-    return [a + (b - a) * (i + 1) / max(n, 1) for i in range(n)]
-
-
 def render_cam(cam):
     rgb, _, _, _ = cam.render(rgb=True, depth=False, segmentation=False, normal=False)
     arr = rgb.cpu().numpy() if hasattr(rgb, "cpu") else np.array(rgb)
@@ -81,7 +69,12 @@ def render_cam(cam):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Franka pick-cube data generation")
+    from robotsmith.tasks import TASK_PRESETS, IK_STRATEGIES, TrajectoryParams
+    from robotsmith.tasks import evaluate_predicate
+
+    ap = argparse.ArgumentParser(description="TaskSpec-driven data collection")
+    ap.add_argument("--task", default="pick_cube",
+                    help=f"Task name. Available: {list(TASK_PRESETS.keys())}")
     ap.add_argument("--n-episodes", type=int, default=10)
     ap.add_argument("--repo-id", default="local/franka-genesis-pick")
     ap.add_argument("--save", default="/output")
@@ -93,6 +86,9 @@ def main():
     ap.add_argument("--cube-y-max", type=float, default=0.2)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--cube-friction", type=float, default=1.5)
+    ap.add_argument("--dart-sigma", type=float, default=None,
+                    help="DART noise sigma (overrides TaskSpec.dart_sigma)")
+    # trajectory params (defaults match legacy pick-cube)
     ap.add_argument("--hover-z", type=float, default=0.25)
     ap.add_argument("--grasp-z", type=float, default=0.135)
     ap.add_argument("--lift-z", type=float, default=0.30)
@@ -102,28 +98,55 @@ def main():
     ap.add_argument("--grasp-hold-steps", type=int, default=20)
     ap.add_argument("--lift-steps", type=int, default=30)
     ap.add_argument("--lift-hold-steps", type=int, default=15)
+    # success detection params (used for logging, predicate is authoritative)
     ap.add_argument("--success-lift-delta", type=float, default=0.02)
     ap.add_argument("--success-sustain-frames", type=int, default=8)
     ap.add_argument("--success-final-delta", type=float, default=0.01)
-    ap.add_argument("--task", default="Pick up the cube.")
-    ap.add_argument("--add-phase", action="store_true",
-                    help="Append normalized time t/T to observation.state (9D→10D)")
-    ap.add_argument("--add-goal", action="store_true",
-                    help="Append cube (x,y) to observation.state (9D→11D)")
-    ap.add_argument("--no-bbox-detection", action="store_true",
-                    help="Disable box_box_detection (workaround for AMD LLVM fatal)")
-    ap.add_argument("--no-videos", action="store_true",
-                    help="Store images as PNG instead of video (faster, more disk)")
+    # observation extras
+    ap.add_argument("--add-phase", action="store_true")
+    ap.add_argument("--add-goal", action="store_true")
+    ap.add_argument("--no-bbox-detection", action="store_true")
+    ap.add_argument("--no-videos", action="store_true")
+    # scene mode
     ap.add_argument("--scene", default=None,
-                    help="Use scene-based setup: 'tabletop_simple' or path to scene JSON. "
-                         "If not set, uses legacy hardcoded cube.")
-    ap.add_argument("--assets-root", default=None,
-                    help="Path to assets/ directory (for --scene mode)")
+                    help="Scene preset or JSON path. If not set, uses legacy cube.")
+    ap.add_argument("--assets-root", default=None)
     args = ap.parse_args()
 
+    # ---- Resolve TaskSpec ----
+    if args.task not in TASK_PRESETS:
+        print(f"[error] Unknown task '{args.task}'. Available: {list(TASK_PRESETS.keys())}")
+        sys.exit(1)
+    task_spec = TASK_PRESETS[args.task]
+    if args.dart_sigma is not None:
+        task_spec = TaskSpec(**{**task_spec.to_dict(), "dart_sigma": args.dart_sigma})
+    print(f"[task] {task_spec.name}: {task_spec.instruction}")
+    print(f"[task] success_fn={task_spec.success_fn}, ik_strategy={task_spec.ik_strategy}")
+
+    # ---- Resolve IK strategy ----
+    if task_spec.ik_strategy not in IK_STRATEGIES:
+        print(f"[error] Unknown ik_strategy '{task_spec.ik_strategy}'. "
+              f"Available: {list(IK_STRATEGIES.keys())}")
+        sys.exit(1)
+    strategy = IK_STRATEGIES[task_spec.ik_strategy]
+
+    traj_params = TrajectoryParams(
+        hover_z=args.hover_z,
+        grasp_z=args.grasp_z,
+        lift_z=args.lift_z,
+        approach_steps=args.approach_steps,
+        descend_steps=args.descend_steps,
+        grasp_hold_steps=args.grasp_hold_steps,
+        lift_steps=args.lift_steps,
+        lift_hold_steps=args.lift_hold_steps,
+    )
+
+    # ---- Genesis setup ----
     ensure_display()
     import genesis as gs
     import torch
+
+    from robotsmith.tasks.task_spec import TaskSpec
 
     gs.init(backend=(gs.cpu if args.cpu else gs.gpu), logging_level="warning")
 
@@ -135,7 +158,7 @@ def main():
         from robotsmith.scenes.genesis_loader import load_resolved_scene
 
         assets_root = args.assets_root or str(
-            Path(__file__).resolve().parent.parent / "assets"
+            Path(__file__).resolve().parent.parent.parent / "assets"
         )
         library = AssetLibrary(assets_root)
 
@@ -228,8 +251,7 @@ def main():
         for _ in range(args.settle_steps):
             scene.step()
 
-    def solve_ik(pos, quat=GRASP_QUAT, finger_pos=FINGER_OPEN):
-        """Solve IK for arm, append finger positions."""
+    def solve_ik(pos, quat=traj_params.grasp_quat, finger_pos=traj_params.finger_open):
         qpos = to_numpy(franka.inverse_kinematics(
             link=end_effector,
             pos=np.array(pos, dtype=np.float32),
@@ -241,28 +263,7 @@ def main():
         target[8] = finger_pos
         return target
 
-    # When using --scene, IK target Z values must be offset by table surface height
     z_offset = (scene_config.table_height + scene_config.table_size[2] / 2.0) if use_scene else 0.0
-
-    def plan_pick_trajectory(cx, cy):
-        """Plan full pick trajectory: approach -> descend -> grasp -> lift."""
-        hover_pos = [cx, cy, args.hover_z + z_offset]
-        grasp_pos = [cx, cy, args.grasp_z + z_offset]
-        lift_pos = [cx, cy, args.lift_z + z_offset]
-
-        q_home = HOME_QPOS.copy()
-        q_hover = solve_ik(hover_pos, finger_pos=FINGER_OPEN)
-        q_grasp_open = solve_ik(grasp_pos, finger_pos=FINGER_OPEN)
-        q_grasp_closed = solve_ik(grasp_pos, finger_pos=FINGER_CLOSED)
-        q_lift = solve_ik(lift_pos, finger_pos=FINGER_CLOSED)
-
-        traj = []
-        traj += lerp(q_home, q_hover, args.approach_steps)
-        traj += lerp(q_hover, q_grasp_open, args.descend_steps)
-        traj += lerp(q_grasp_open, q_grasp_closed, args.grasp_hold_steps)
-        traj += lerp(q_grasp_closed, q_lift, args.lift_steps)
-        traj += [q_lift.copy() for _ in range(args.lift_hold_steps)]
-        return traj
 
     # ---- create LeRobot dataset ----
     try:
@@ -327,6 +328,7 @@ def main():
     out_dir = Path(args.save) / "franka_gen_pick"
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    print(f"[gen] task={task_spec.name}, ik_strategy={task_spec.ik_strategy}")
     print(f"[gen] cube x_range={x_range}, y_range={y_range}")
     print(f"[gen] {args.n_episodes} episodes to generate")
 
@@ -335,14 +337,16 @@ def main():
 
     for ep in range(args.n_episodes):
         cx, cy = episode_points[ep]
-
         reset_scene(cx, cy)
 
-        traj = plan_pick_trajectory(cx, cy)
+        target_pos = np.array([cx, cy, cube_z])
+        traj = strategy.plan(target_pos, solve_ik, HOME_QPOS, traj_params, z_offset)
+
         if frames_per_episode is None:
             frames_per_episode = len(traj)
             print(f"[gen] trajectory: {frames_per_episode} frames/episode")
 
+        initial_cube_z = cube_z
         cube_z_hist = []
         total_steps = len(traj)
         for step_idx, target in enumerate(traj):
@@ -369,34 +373,44 @@ def main():
                 "action": np.array(target, dtype=np.float32),
                 "observation.images.up": img_up,
                 "observation.images.side": img_side,
-                "task": args.task,
+                "task": task_spec.instruction,
             })
 
-        base_z = cube_z
+        # ---- Evaluate success via predicate ----
+        env_state = {
+            "object_positions": {
+                "cube": np.array([cx, cy, cube_z_hist[-1] if cube_z_hist else cube_z]),
+            },
+            "initial_positions": {
+                "cube": np.array([cx, cy, initial_cube_z]),
+            },
+        }
+        predicate_success = evaluate_predicate(
+            task_spec.success_fn, env_state, task_spec.success_params
+        )
+
+        # Legacy heuristic (kept for backward-compatible logging)
+        base_z = initial_cube_z
         cz_max = max(cube_z_hist) if cube_z_hist else base_z
         cz_end = cube_z_hist[-1] if cube_z_hist else base_z
         lifted = [z >= base_z + args.success_lift_delta for z in cube_z_hist]
-        sustain = 0
         sustain_max = 0
+        sustain = 0
         for ok in lifted:
             sustain = sustain + 1 if ok else 0
             sustain_max = max(sustain, sustain_max)
 
-        success = (
+        heuristic_success = (
             (cz_max - base_z) >= args.success_lift_delta
             and sustain_max >= args.success_sustain_frames
             and (cz_end - base_z) >= args.success_final_delta
         )
-        fail_reasons = []
-        if (cz_max - base_z) < args.success_lift_delta:
-            fail_reasons.append("max_lift_too_small")
-        if sustain_max < args.success_sustain_frames:
-            fail_reasons.append("lift_not_sustained")
-        if (cz_end - base_z) < args.success_final_delta:
-            fail_reasons.append("final_height_too_low")
+
+        success = predicate_success
 
         episode_labels.append({
             "episode_index": ep,
+            "task": task_spec.name,
             "cube_xy": [float(cx), float(cy)],
             "base_z": float(base_z),
             "cube_z_max": float(cz_max),
@@ -404,15 +418,17 @@ def main():
             "max_lift_delta": float(cz_max - base_z),
             "end_lift_delta": float(cz_end - base_z),
             "sustain_frames": int(sustain_max),
+            "success_predicate": bool(predicate_success),
+            "success_heuristic": bool(heuristic_success),
             "success": bool(success),
-            "failure_reasons": fail_reasons,
         })
 
         dataset.save_episode()
         status = "OK" if success else "FAIL"
+        pred_match = "✓" if predicate_success == heuristic_success else "≠"
         print(f"[gen] ep {ep+1}/{args.n_episodes} [{status}] "
               f"cube=({cx:.3f},{cy:.3f}) lift={cz_max-base_z:.4f}m "
-              f"sustain={sustain_max}")
+              f"sustain={sustain_max} pred={pred_match}")
 
     if hasattr(dataset, "consolidate"):
         dataset.consolidate(run_compute_stats=True)
@@ -423,6 +439,7 @@ def main():
     sr = len(success_ids) / max(len(episode_labels), 1)
 
     summary = {
+        "task": task_spec.to_dict(),
         "repo_id": args.repo_id,
         "n_episodes": args.n_episodes,
         "frames_per_episode": frames_per_episode,
@@ -432,9 +449,6 @@ def main():
         "n_dofs": n_dofs,
         "action_space": "joint_position (rad)",
         "cube_xy_range": {"x": list(x_range), "y": list(y_range)},
-        "hover_z": args.hover_z,
-        "grasp_z": args.grasp_z,
-        "lift_z": args.lift_z,
         "success_episode_ids": success_ids,
         "failure_episode_ids": failure_ids,
         "success_rate": sr,

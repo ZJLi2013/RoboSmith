@@ -1,13 +1,13 @@
 """Convert a trimesh mesh to a sim-ready URDF with collision geometry and inertia.
 
+Handles: scaling to physical size, centering, convex hull collision,
+mass/inertia estimation, and URDF packaging.
+
 Supports two visual mesh formats:
-  - GLB (default): preserves PBR textures from Hunyuan3D-Paint → textured rendering
-  - OBJ (fallback): geometry only, no textures → white mesh
+  - GLB (default): preserves PBR textures → textured rendering
+  - OBJ (fallback): geometry only → white mesh
 
 Collision mesh is always an OBJ convex hull (no textures needed).
-
-Includes post-processing to remove the flat base plane artifact commonly
-produced by Image-to-3D models (Hunyuan3D, TRELLIS, TripoSG, etc.).
 """
 
 from __future__ import annotations

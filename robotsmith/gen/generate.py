@@ -77,11 +77,6 @@ def generate_and_catalog(
         if not ref_dst.exists():
             shutil.copy2(str(ref_src), str(ref_dst))
 
-    from robotsmith.gen.mesh_cleanup import cleanup_mesh
-    mesh, cleanup_stats = cleanup_mesh(mesh, remove_base=True, recenter=False)
-    if cleanup_stats["base_faces_removed"] > 0:
-        print(f"[robotsmith]   Base plane removed: {cleanup_stats['base_faces_removed']} faces")
-
     mesh_to_urdf(
         mesh,
         output_dir,

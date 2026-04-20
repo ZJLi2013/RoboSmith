@@ -5,7 +5,7 @@ Genesis closed-loop evaluation for Franka Panda pick-cube.
 Supports: MLP BC, ACT, SmolVLA.
 
 Usage:
-  python pipeline/eval_policy.py \
+  python scripts/part2/eval_policy.py \
     --policy-type smolvla \
     --checkpoint outputs/stage1/B0/final \
     --dataset-id local/franka-pick-vision-100ep \

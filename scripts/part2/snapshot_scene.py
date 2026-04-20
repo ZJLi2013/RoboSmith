@@ -4,7 +4,7 @@ Builds the Genesis scene (table + random objects + Franka at home pose),
 steps physics briefly to settle, then saves camera images as PNG.
 
 Usage:
-  python pipeline/snapshot_scene.py --seed 1 --out /output/snapshots
+  python scripts/part2/snapshot_scene.py --seed 1 --out /output/snapshots
 """
 from __future__ import annotations
 

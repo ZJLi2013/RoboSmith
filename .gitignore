@@ -47,10 +47,8 @@ docs/*_exp.md
 experiments.md
 
 # Internal scripts (experiment runners, benchmarks, node-specific tools)
-scripts/run_*.sh
-scripts/benchmark_io.sh
-scripts/sync_assets.py
-scripts/patch_genesis_rocm.py
+scripts/tools/sync_assets.py
+scripts/tools/patch_genesis_rocm.py
 
 # Training / eval output
 output/

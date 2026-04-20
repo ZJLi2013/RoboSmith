@@ -2,14 +2,14 @@
 """Import high-quality tabletop assets from Objaverse to replace built-in primitives.
 
 Downloads 10 common manipulation objects from Objaverse (via LVIS category
-annotations + quality ranking), processes them through mesh_cleanup and
-mesh_to_urdf, and saves them as curated built-in assets.
+annotations + quality ranking), processes them through mesh_to_urdf,
+and saves them as curated built-in assets.
 
 Usage:
     pip install objaverse trimesh numpy
-    python scripts/import_objaverse.py                    # import all 10
-    python scripts/import_objaverse.py --category mug     # import one
-    python scripts/import_objaverse.py --dry-run           # preview candidates
+    python scripts/part1/import_objaverse.py                    # import all 10
+    python scripts/part1/import_objaverse.py --category mug     # import one
+    python scripts/part1/import_objaverse.py --dry-run           # preview candidates
 """
 
 from __future__ import annotations
@@ -190,12 +190,11 @@ def process_asset(
     output_dir: Path,
     ann: dict,
 ) -> Path:
-    """Load GLB, cleanup, convert to URDF, write metadata.
+    """Load GLB, convert to URDF, write metadata.
 
     Assets are named {category}_{variant_idx:02d}, e.g. mug_01, mug_02.
     """
     import trimesh
-    from robotsmith.gen.mesh_cleanup import cleanup_mesh
     from robotsmith.gen.mesh_to_urdf import mesh_to_urdf
     from robotsmith.assets.schema import AssetMetadata
 
@@ -206,9 +205,6 @@ def process_asset(
         )
     else:
         mesh = scene_or_mesh
-
-    mesh, stats = cleanup_mesh(mesh, remove_base=True, recenter=True)
-    print(f"  Cleanup: {stats}")
 
     asset_name = f"{category}_{variant_idx:02d}"
     asset_dir = output_dir / asset_name

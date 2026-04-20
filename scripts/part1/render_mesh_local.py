@@ -2,7 +2,7 @@
 
 Usage:
     pip install pyrender trimesh
-    python scripts/render_mesh_local.py path/to/visual.obj -o render.png
+    python scripts/part1/render_mesh_local.py path/to/visual.obj -o render.png
 """
 import argparse
 import os

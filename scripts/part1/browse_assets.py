@@ -7,8 +7,8 @@ For built-in URDF primitives (box/cylinder/sphere), generates inline SVG
 previews by parsing the URDF geometry and color.
 
 Usage:
-    python scripts/browse_assets.py            # generate & open
-    python scripts/browse_assets.py --no-open  # generate only
+    python scripts/part1/browse_assets.py            # generate & open
+    python scripts/part1/browse_assets.py --no-open  # generate only
 """
 
 from __future__ import annotations

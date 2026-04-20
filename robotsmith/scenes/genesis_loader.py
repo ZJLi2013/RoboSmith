@@ -1,7 +1,7 @@
 """Load a ResolvedScene into a Genesis simulation.
 
 This module bridges the simulator-agnostic ResolvedScene to Genesis entities,
-replacing the hardcoded scene setup in pipeline/collect_data.py.
+replacing the hardcoded scene setup in scripts/part2/collect_data.py.
 """
 
 from __future__ import annotations
