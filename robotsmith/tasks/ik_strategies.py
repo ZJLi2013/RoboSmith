@@ -19,11 +19,16 @@ class TrajectoryParams:
     hover_z: float = 0.25
     grasp_z: float = 0.135
     lift_z: float = 0.30
+    place_z: float = 0.15
     approach_steps: int = 40
     descend_steps: int = 30
     grasp_hold_steps: int = 20
     lift_steps: int = 30
     lift_hold_steps: int = 15
+    transport_steps: int = 40
+    place_descend_steps: int = 25
+    release_steps: int = 15
+    retreat_steps: int = 25
     grasp_quat: np.ndarray = field(
         default_factory=lambda: np.array([0, 1, 0, 0], dtype=np.float32)
     )
@@ -42,15 +47,17 @@ class IKStrategy(ABC):
         home_qpos: np.ndarray,
         params: TrajectoryParams,
         z_offset: float = 0.0,
+        place_pos: np.ndarray | None = None,
     ) -> list[np.ndarray]:
         """Generate a list of joint-space targets.
 
         Args:
-            target_pos: [x, y, z] of the target object.
+            target_pos: [x, y, z] of the target object (pick location).
             solve_ik: function(pos, quat, finger_pos) -> joint target array.
             home_qpos: home joint configuration.
             params: trajectory timing/geometry parameters.
             z_offset: height offset (e.g. table surface Z for scene mode).
+            place_pos: [x, y, z] of the placement target (for pick_and_place).
 
         Returns:
             List of joint-space target arrays.
@@ -67,7 +74,7 @@ def _lerp(a: np.ndarray, b: np.ndarray, n: int) -> list[np.ndarray]:
 class PickStrategy(IKStrategy):
     """reach → pre-grasp → grasp → lift."""
 
-    def plan(self, target_pos, solve_ik, home_qpos, params, z_offset=0.0):
+    def plan(self, target_pos, solve_ik, home_qpos, params, z_offset=0.0, place_pos=None):
         cx, cy = float(target_pos[0]), float(target_pos[1])
 
         hover_pos = [cx, cy, params.hover_z + z_offset]
@@ -90,10 +97,51 @@ class PickStrategy(IKStrategy):
 
 
 class PickAndPlaceStrategy(IKStrategy):
-    """pick + move → pre-place → place → release. (Stub for future use.)"""
+    """reach → grasp → lift → transport → place → release → retreat.
 
-    def plan(self, target_pos, solve_ik, home_qpos, params, z_offset=0.0):
-        raise NotImplementedError("pick_and_place strategy not yet implemented")
+    Extends PickStrategy with a transport + placement phase.
+    Requires place_pos to specify where the grasped object should be placed.
+    """
+
+    def plan(self, target_pos, solve_ik, home_qpos, params, z_offset=0.0, place_pos=None):
+        if place_pos is None:
+            raise ValueError("PickAndPlaceStrategy requires place_pos")
+
+        cx, cy = float(target_pos[0]), float(target_pos[1])
+        px, py = float(place_pos[0]), float(place_pos[1])
+
+        # Pick phase waypoints
+        hover_pos = [cx, cy, params.hover_z + z_offset]
+        grasp_pos = [cx, cy, params.grasp_z + z_offset]
+        lift_pos = [cx, cy, params.lift_z + z_offset]
+
+        # Place phase waypoints
+        transport_pos = [px, py, params.lift_z + z_offset]
+        pre_place_pos = [px, py, params.place_z + z_offset]
+
+        q_home = home_qpos.copy()
+        q_hover = solve_ik(hover_pos, params.grasp_quat, params.finger_open)
+        q_grasp_open = solve_ik(grasp_pos, params.grasp_quat, params.finger_open)
+        q_grasp_closed = solve_ik(grasp_pos, params.grasp_quat, params.finger_closed)
+        q_lift = solve_ik(lift_pos, params.grasp_quat, params.finger_closed)
+        q_transport = solve_ik(transport_pos, params.grasp_quat, params.finger_closed)
+        q_pre_place = solve_ik(pre_place_pos, params.grasp_quat, params.finger_closed)
+        q_release = solve_ik(pre_place_pos, params.grasp_quat, params.finger_open)
+        q_retreat = solve_ik(transport_pos, params.grasp_quat, params.finger_open)
+
+        traj = []
+        # Pick phase
+        traj += _lerp(q_home, q_hover, params.approach_steps)
+        traj += _lerp(q_hover, q_grasp_open, params.descend_steps)
+        traj += _lerp(q_grasp_open, q_grasp_closed, params.grasp_hold_steps)
+        traj += _lerp(q_grasp_closed, q_lift, params.lift_steps)
+        # Transport phase
+        traj += _lerp(q_lift, q_transport, params.transport_steps)
+        # Place phase
+        traj += _lerp(q_transport, q_pre_place, params.place_descend_steps)
+        traj += _lerp(q_pre_place, q_release, params.release_steps)
+        traj += _lerp(q_release, q_retreat, params.retreat_steps)
+        return traj
 
 
 # ---------- Strategy Registry ----------

@@ -86,18 +86,25 @@ def main():
     ap.add_argument("--cube-y-max", type=float, default=0.2)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--cube-friction", type=float, default=1.5)
+    ap.add_argument("--min-place-dist", type=float, default=0.15,
+                    help="Min XY distance between pick and place for pick_and_place tasks")
     ap.add_argument("--dart-sigma", type=float, default=None,
                     help="DART noise sigma (overrides TaskSpec.dart_sigma)")
     # trajectory params (defaults match legacy pick-cube)
     ap.add_argument("--hover-z", type=float, default=0.25)
     ap.add_argument("--grasp-z", type=float, default=0.135)
     ap.add_argument("--lift-z", type=float, default=0.30)
+    ap.add_argument("--place-z", type=float, default=0.15)
     ap.add_argument("--settle-steps", type=int, default=30)
     ap.add_argument("--approach-steps", type=int, default=40)
     ap.add_argument("--descend-steps", type=int, default=30)
     ap.add_argument("--grasp-hold-steps", type=int, default=20)
     ap.add_argument("--lift-steps", type=int, default=30)
     ap.add_argument("--lift-hold-steps", type=int, default=15)
+    ap.add_argument("--transport-steps", type=int, default=40)
+    ap.add_argument("--place-descend-steps", type=int, default=25)
+    ap.add_argument("--release-steps", type=int, default=15)
+    ap.add_argument("--retreat-steps", type=int, default=25)
     # success detection params (used for logging, predicate is authoritative)
     ap.add_argument("--success-lift-delta", type=float, default=0.02)
     ap.add_argument("--success-sustain-frames", type=int, default=8)
@@ -134,12 +141,19 @@ def main():
         hover_z=args.hover_z,
         grasp_z=args.grasp_z,
         lift_z=args.lift_z,
+        place_z=args.place_z,
         approach_steps=args.approach_steps,
         descend_steps=args.descend_steps,
         grasp_hold_steps=args.grasp_hold_steps,
         lift_steps=args.lift_steps,
         lift_hold_steps=args.lift_hold_steps,
+        transport_steps=args.transport_steps,
+        place_descend_steps=args.place_descend_steps,
+        release_steps=args.release_steps,
+        retreat_steps=args.retreat_steps,
     )
+
+    is_place_task = task_spec.ik_strategy in ("pick_and_place", "stack")
 
     # ---- Genesis setup ----
     ensure_display()
@@ -194,6 +208,7 @@ def main():
         scene.build()
 
         cube = target_obj
+        target_marker = None
         cube_z = resolved.placed_objects[0].position[2] if resolved.placed_objects else table_z
     else:
         cube_z = CUBE_SIZE[2] / 2.0
@@ -212,6 +227,14 @@ def main():
             material=gs.materials.Rigid(friction=args.cube_friction),
             surface=gs.surfaces.Default(color=(1.0, 0.3, 0.3, 1.0)),
         )
+        target_marker = None
+        if is_place_task:
+            TARGET_SIZE = (0.06, 0.06, 0.005)
+            target_marker = scene.add_entity(
+                morph=gs.morphs.Box(size=TARGET_SIZE, pos=(0.55, 0.2, TARGET_SIZE[2] / 2)),
+                material=gs.materials.Rigid(friction=0.5),
+                surface=gs.surfaces.Default(color=(0.3, 0.8, 0.3, 0.8)),
+            )
         franka = scene.add_entity(
             gs.morphs.MJCF(file="xml/franka_emika_panda/panda.xml"),
         )
@@ -237,7 +260,7 @@ def main():
     n_dofs = len(JOINT_NAMES)
     end_effector = franka.get_link("hand")
 
-    def reset_scene(cx, cy):
+    def reset_scene(cx, cy, place_xy=None):
         franka.set_dofs_position(HOME_QPOS, motors_dof)
         franka.control_dofs_position(HOME_QPOS, motors_dof)
         franka.zero_all_dofs_velocity()
@@ -248,6 +271,10 @@ def main():
             torch.tensor([1, 0, 0, 0], dtype=torch.float32,
                          device=gs.device).unsqueeze(0))
         cube.zero_all_dofs_velocity()
+        if target_marker is not None and place_xy is not None:
+            target_marker.set_pos(
+                torch.tensor([place_xy[0], place_xy[1], 0.0025], dtype=torch.float32,
+                             device=gs.device).unsqueeze(0))
         for _ in range(args.settle_steps):
             scene.step()
 
@@ -319,28 +346,48 @@ def main():
     x_range = (args.cube_x_min, args.cube_x_max)
     y_range = (args.cube_y_min, args.cube_y_max)
 
+    def sample_place_target(cx, cy, min_dist):
+        """Sample a place XY that is at least min_dist from pick XY."""
+        for _ in range(100):
+            px = rng.uniform(x_range[0], x_range[1])
+            py = rng.uniform(y_range[0], y_range[1])
+            if np.hypot(px - cx, py - cy) >= min_dist:
+                return (px, py)
+        return (cx + min_dist, cy)
+
     episode_points = []
     for _ in range(args.n_episodes):
         cx = rng.uniform(x_range[0], x_range[1])
         cy = rng.uniform(y_range[0], y_range[1])
-        episode_points.append((cx, cy))
+        if is_place_task:
+            px, py = sample_place_target(cx, cy, args.min_place_dist)
+            episode_points.append((cx, cy, px, py))
+        else:
+            episode_points.append((cx, cy, None, None))
 
-    out_dir = Path(args.save) / "franka_gen_pick"
+    out_dir = Path(args.save) / f"franka_gen_{task_spec.name}"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"[gen] task={task_spec.name}, ik_strategy={task_spec.ik_strategy}")
     print(f"[gen] cube x_range={x_range}, y_range={y_range}")
+    if is_place_task:
+        print(f"[gen] min_place_dist={args.min_place_dist}")
     print(f"[gen] {args.n_episodes} episodes to generate")
 
     frames_per_episode = None
     episode_labels = []
 
     for ep in range(args.n_episodes):
-        cx, cy = episode_points[ep]
-        reset_scene(cx, cy)
+        cx, cy, px, py = episode_points[ep]
+        place_xy = (px, py) if px is not None else None
+        reset_scene(cx, cy, place_xy=place_xy)
 
         target_pos = np.array([cx, cy, cube_z])
-        traj = strategy.plan(target_pos, solve_ik, HOME_QPOS, traj_params, z_offset)
+        place_pos = np.array([px, py, cube_z]) if is_place_task else None
+        traj = strategy.plan(
+            target_pos, solve_ik, HOME_QPOS, traj_params, z_offset,
+            place_pos=place_pos,
+        )
 
         if frames_per_episode is None:
             frames_per_episode = len(traj)
@@ -377,38 +424,28 @@ def main():
             })
 
         # ---- Evaluate success via predicate ----
+        cube_final_pos = to_numpy(cube.get_pos())
         env_state = {
             "object_positions": {
-                "cube": np.array([cx, cy, cube_z_hist[-1] if cube_z_hist else cube_z]),
+                "cube": cube_final_pos.copy(),
             },
             "initial_positions": {
                 "cube": np.array([cx, cy, initial_cube_z]),
             },
         }
+        if is_place_task and px is not None:
+            env_state["object_positions"]["target"] = np.array([px, py, 0.0025])
         predicate_success = evaluate_predicate(
             task_spec.success_fn, env_state, task_spec.success_params
         )
 
-        # Legacy heuristic (kept for backward-compatible logging)
         base_z = initial_cube_z
         cz_max = max(cube_z_hist) if cube_z_hist else base_z
         cz_end = cube_z_hist[-1] if cube_z_hist else base_z
-        lifted = [z >= base_z + args.success_lift_delta for z in cube_z_hist]
-        sustain_max = 0
-        sustain = 0
-        for ok in lifted:
-            sustain = sustain + 1 if ok else 0
-            sustain_max = max(sustain, sustain_max)
-
-        heuristic_success = (
-            (cz_max - base_z) >= args.success_lift_delta
-            and sustain_max >= args.success_sustain_frames
-            and (cz_end - base_z) >= args.success_final_delta
-        )
 
         success = predicate_success
 
-        episode_labels.append({
+        label = {
             "episode_index": ep,
             "task": task_spec.name,
             "cube_xy": [float(cx), float(cy)],
@@ -417,18 +454,40 @@ def main():
             "cube_z_end": float(cz_end),
             "max_lift_delta": float(cz_max - base_z),
             "end_lift_delta": float(cz_end - base_z),
-            "sustain_frames": int(sustain_max),
             "success_predicate": bool(predicate_success),
-            "success_heuristic": bool(heuristic_success),
             "success": bool(success),
-        })
+        }
+        if is_place_task:
+            label["place_xy"] = [float(px), float(py)]
+            cube_end_xy = cube_final_pos[:2]
+            label["place_xy_error"] = float(np.linalg.norm(cube_end_xy - np.array([px, py])))
+        else:
+            lifted = [z >= base_z + args.success_lift_delta for z in cube_z_hist]
+            sustain_max = 0
+            sustain = 0
+            for ok in lifted:
+                sustain = sustain + 1 if ok else 0
+                sustain_max = max(sustain, sustain_max)
+            heuristic_success = (
+                (cz_max - base_z) >= args.success_lift_delta
+                and sustain_max >= args.success_sustain_frames
+                and (cz_end - base_z) >= args.success_final_delta
+            )
+            label["sustain_frames"] = int(sustain_max)
+            label["success_heuristic"] = bool(heuristic_success)
+        episode_labels.append(label)
 
         dataset.save_episode()
         status = "OK" if success else "FAIL"
-        pred_match = "✓" if predicate_success == heuristic_success else "≠"
-        print(f"[gen] ep {ep+1}/{args.n_episodes} [{status}] "
-              f"cube=({cx:.3f},{cy:.3f}) lift={cz_max-base_z:.4f}m "
-              f"sustain={sustain_max} pred={pred_match}")
+        if is_place_task:
+            print(f"[gen] ep {ep+1}/{args.n_episodes} [{status}] "
+                  f"pick=({cx:.3f},{cy:.3f}) place=({px:.3f},{py:.3f}) "
+                  f"xy_err={label['place_xy_error']:.4f}m")
+        else:
+            pred_match = "✓" if predicate_success == label.get("success_heuristic", predicate_success) else "≠"
+            print(f"[gen] ep {ep+1}/{args.n_episodes} [{status}] "
+                  f"cube=({cx:.3f},{cy:.3f}) lift={cz_max-base_z:.4f}m "
+                  f"sustain={label.get('sustain_frames', 0)} pred={pred_match}")
 
     if hasattr(dataset, "consolidate"):
         dataset.consolidate(run_compute_stats=True)

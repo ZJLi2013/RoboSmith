@@ -209,7 +209,7 @@ Per-episode (seed=99 unseen):
 
 ### 假设
 
-将 `collect_data.py` 中 hardcoded 的 pick-cube 逻辑重构为 TaskSpec + PREDICATE_REGISTRY + IK_STRATEGIES 三层抽象后，**数采功能与旧版完全等价**（20ep 快速验证全部成功，轨迹长度一致）。
+将 `collect_data.py` 中 hardcoded 的 pick-cube 逻辑重构为 TaskSpec + PREDICATE_REGISTRY + IK_STRATEGIES 三层抽象后，**数采功能与旧版完全等价**（MI300X 远端 20ep 全部成功 100%，轨迹 135 frames，predicate 与 heuristic 一致）。
 
 ### 实验方案
 
@@ -247,21 +247,81 @@ Per-episode (seed=99 unseen):
 | `object_above` predicate: lifted 0.02m < margin 0.05 | ✅ False |
 | TrajectoryParams defaults match legacy collect_data.py | ✅ |
 
-**Phase 2: 远端 GPU 端到端（待执行）**
+**Phase 2: 远端 GPU 端到端 ✅**
+
+> Node: `banff-cyxtera-s71-4` (MI300X), Docker `robotsmith_b0`, 2026-04-20
 
 ```bash
-python scripts/part2/collect_data.py --task pick_cube --n-episodes 20 --no-videos --save /output
+python scripts/part2/collect_data.py --task pick_cube --n-episodes 20 --no-videos \
+  --repo-id local/taskspec-smoke-20ep --save /datasets/zhengjli/taskspec_smoke
 ```
 
 | 指标 | 预期 | 实际 |
 |------|------|------|
-| 脚本无 crash | ✅ | （待执行） |
-| 轨迹长度 = 135 frames | 135 | （待执行） |
-| 20/20 episodes success | 100% | （待执行） |
-| predicate vs heuristic 一致 | ✓ | （待执行） |
+| 脚本无 crash | ✅ | ✅ (exit 0, 502s) |
+| 轨迹长度 = 135 frames | 135 | 135 |
+| 20/20 episodes success | 100% | **20/20 = 100%** |
+| predicate vs heuristic 一致 | ✓ | ✓ (all `pred=✓`) |
+| 平均 lift 高度 | >0.05m | ~0.1625m |
 
 ### 分析
-（待 Phase 2 远端验证）
+
+TaskSpec 重构后行为与旧版完全一致：
+- 所有 20 episodes 均 `[OK]`，`pred=✓` 表明 `object_above` predicate 判定与 legacy heuristic (`z > 0.05m`) 完全吻合
+- 轨迹长度 135 frames（5+20+5+25+40+40 = 135）与旧版不变
+- lift 高度 ~0.1625m 稳定，远超 0.05m 阈值
+- 耗时 502s / 20ep ≈ **25s/ep**（含 Genesis 渲染 + LeRobot 序列化）
 
 ### 结论与 Next Step
-（待 Phase 2 远端验证）
+
+**假设成立**：TaskSpec + PREDICATE_REGISTRY + IK_STRATEGIES 三层抽象重构成功，数采功能与旧版完全等价。
+
+Next Step → S1.5: `place_cube` pick-and-place IK 策略验证。
+
+---
+
+## S1.5: PickAndPlaceStrategy — place_cube 端到端验证
+
+### Phase 0 确认
+
+- 观测完备性: observation = joint_state(9) + images(up, side)。cube 位置通过 vision 获取，target 位置通过 green marker 可见 → 覆盖 action 所需全部信息
+- 随机化变量: cube XY ∈ [0.4,0.7]×[-0.2,0.2]，target XY 同范围但与 cube 距离 ≥ 0.15m → 均在 camera FOV 内
+
+### 假设
+
+`PickAndPlaceStrategy`（8 阶段：approach → descend → grasp → lift → transport → place-descend → release → retreat）生成的 225-frame 开环 IK 轨迹，可以在 Genesis 中可靠地完成 cube pick-and-place，`object_in_container` predicate 判定成功率 ≥ 90%。
+
+### 实验方案
+
+- 脚本: `scripts/part2/collect_data.py`
+- 关键参数:
+
+| 参数 | 值 |
+|------|:---:|
+| `--task` | `place_cube` |
+| `--n-episodes` | 20 |
+| `--no-videos` | yes |
+| `--repo-id` | `local/place-cube-smoke-20ep` |
+| `--save` | `/datasets/zhengjli/place_cube_smoke` |
+| `--min-place-dist` | 0.15 (default) |
+| hover_z / grasp_z / lift_z / place_z | 0.25 / 0.135 / 0.30 / 0.15 |
+| transport_steps | 40 |
+| place_descend_steps | 25 |
+
+- 对照组: S1.4 `pick_cube` 20ep (100% success, 135 frames, ~25s/ep)
+- 变量: IK strategy `pick` → `pick_and_place`，轨迹长度 135 → 225 frames
+
+### 预期
+
+- 假设成立: 20ep ≥ 18/20 success (≥90%)，`object_in_container` predicate = True，xy_err < 0.06m
+- 假设不成立: 成功率 < 90% → 可能原因：(a) place_z 过低导致碰撞 (b) gripper release 时 cube 弹跳 (c) IK 求解在 transport 阶段失败
+- 脚本无 crash，轨迹长度 = 225 frames
+
+### 结果
+（待实验）
+
+### 分析
+（待实验）
+
+### 结论与 Next Step
+（待实验）

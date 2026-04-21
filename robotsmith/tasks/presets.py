@@ -20,6 +20,16 @@ pick_cube = _register(TaskSpec(
     ik_strategy="pick",
 ))
 
+place_cube = _register(TaskSpec(
+    name="place_cube",
+    instruction="Pick up the cube and place it at the target",
+    scene="tabletop_simple",
+    contact_objects=["cube", "target", "table"],
+    success_fn="object_in_container",
+    success_params={"object": "cube", "container": "target", "xy_threshold": 0.06},
+    ik_strategy="pick_and_place",
+))
+
 mug_in_bowl = _register(TaskSpec(
     name="mug_in_bowl",
     instruction="Place the mug in the bowl",
