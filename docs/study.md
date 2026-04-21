@@ -185,6 +185,70 @@ Genie Sim Benchmark 的 Sim2Real 实验（8 任务）显示：
 
 ---
 
+## 1.5 Action Space 选型：EE Delta vs Joint Position
+
+> 2026 年社区共识：**EE delta (Cartesian) 是 VLA 标准 action space**。
+> RoboSmith 早期选择 joint position（实现简单），需对齐。
+
+### 社区数据
+
+13,000+ 真机 rollouts + 500+ 模型训练实验结论（[arXiv 2602.23408](https://arxiv.org/pdf/2602.23408), 2026）：
+**delta actions consistently outperform absolute representations**。
+
+所有主流 VLA 都使用 EE delta：
+
+| VLA | Action Space | 维度 | 训练数据 |
+|-----|-------------|:---:|---------|
+| Pi0 / Pi0.5 | EE delta + gripper | 7D | OXE / Bridge / LIBERO |
+| StarVLA | EE delta + gripper | 7D | LIBERO |
+| OpenVLA | EE delta + gripper | 7D | OXE |
+| GR00T N1.6 | EE delta + gripper | 7D | LIBERO |
+| Diffusion Policy | EE delta + gripper | 7D | 各种 |
+
+### EE Delta vs Joint Position
+
+| | EE Delta (推荐) | Joint Position (已弃用) |
+|---|---|---|
+| **可学习性** | 小值域 `[-1,1]`，网络易学 | 大值域（rad），难学 |
+| **跨 embodiment 泛化** | 与机器人 DOF 无关 | 绑定具体机器人关节 |
+| **隐式安全** | clipping = 限速 | 无隐式约束 |
+| **VLA 兼容** | 所有主流 VLA | 无主流 VLA 使用 |
+| **实现复杂度** | 需 IK/OSC 控制器 | 直接控制 |
+
+### Genesis 支持
+
+Genesis 原生支持 EE delta → joint position 转换：
+
+```python
+# 当前 EE pose
+ee_pos = franka.get_link('hand').get_pos()
+ee_quat = franka.get_link('hand').get_quat()
+
+# EE delta → target EE pose
+target_pos = ee_pos + delta_pos
+target_quat = apply_delta_rotation(ee_quat, delta_rot)
+
+# IK 求解 → joint position → control
+qpos = franka.inverse_kinematics(link=end_effector, pos=target_pos, quat=target_quat)
+franka.control_dofs_position(qpos, motors_dof)
+```
+
+### 对 RoboSmith 的影响
+
+| 组件 | 当前 (joint position) | 目标 (EE delta) |
+|------|----------------------|-----------------|
+| `collect_data.py` action | 9D `[j1..j7, f1, f2]` | 7D `[Δx, Δy, Δz, Δrx, Δry, Δrz, grip]` |
+| `collect_data.py` state | 9D joint positions | 8D `[eef_pos3, euler/axangle3, gripper2]` |
+| `benchmark.py apply_action()` | 直接 `control_dofs_position` | EE delta → IK → `control_dofs_position` |
+| VLA 兼容 | 仅自训练模型 | Pi0, StarVLA, OpenVLA, GR00T... |
+
+### 结论
+
+**切换到 EE delta，retire joint position action space。**
+IK solver 在底层保留（waypoint 计算仍用 IK），但 LeRobot dataset 中存的 action 改为 EE delta。
+
+---
+
 ## 2. 场景多样性 — 借鉴 GraspVLA-playground
 
 > 参考 [GraspVLA-playground](https://github.com/MiYanDoris/GraspVLA-playground)（MuJoCo/Robosuite）。

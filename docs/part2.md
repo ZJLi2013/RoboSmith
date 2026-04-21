@@ -31,11 +31,24 @@
 | S1.5 | PickAndPlaceStrategy place_cube 20ep | ✅ 100% |
 | S1.6 | StackStrategy stack_blocks 20ep | ✅ 90% |
 
-## 遗留项（不阻塞 Stage 1 收尾）
+## Action Space 迁移
+
+> 详细分析见 [study.md — §1.5 Action Space 选型](study.md#15-action-space-选型ee-delta-vs-joint-position)。
+
+**默认 action space 切换为 EE delta (7D)**，与主流 VLA（Pi0, StarVLA, OpenVLA, GR00T）对齐。
+Joint position (9D) 观测和动作已 **retired** — 不再作为 LeRobot dataset 输出格式。
+
+| | 旧 (retired) | 新 (默认) |
+|---|---|---|
+| action | 9D joint position `[j1..j7, f1, f2]` | 7D EE delta `[Δx, Δy, Δz, Δrx, Δry, Δrz, grip]` |
+| state | 9D joint position | 8D `[eef_pos3, axangle3, gripper2]` |
+
+## 遗留项
 
 | 项目 | 说明 | 归属 |
 |------|------|------|
-| DART 噪声增强 (`--dart-sigma`) | IK solver 内置参数，待集成 | Roadmap Phase 3 |
+| **EE delta action space 实现** | `collect_data.py` + `benchmark.py` 适配 | **下一步** |
+| DART 噪声增强 (`--dart-sigma`) | IK solver 内置参数，待集成 | Roadmap Phase 4 |
 | 场景模式数采 (`--scene`) | 场景加载 OK，pick Z 偏移需适配 | 工程优化 |
 
 ## 代码管线

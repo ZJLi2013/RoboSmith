@@ -104,7 +104,7 @@ python scripts/part1/browse_assets.py     # HTML asset gallery
 |:---:|-------|:---:|
 | 1 | Sim-ready assets (26 objects, 10 categories, TRELLIS.2-4B) | Done |
 | 2 | Multi-task IK data collection (pick, place, stack) | Done |
-| 3 | Eval Engine v1 (server-client + parallel eval) | Next |
+| 3 | Eval Engine v1 (Genesis benchmark plugin for vla-eval-harness) | Next |
 | 4 | DART data backend (`--dart-sigma`) | Planned |
 | 5 | DAgger data backend (policy rollout + IK relabel) | Planned |
 | 6 | Articulated + push/slide tasks (drawer, push-to-target) | Planned |
@@ -134,7 +134,8 @@ scripts/
 │   ├── train_smolvla.py         #   SmolVLA fine-tune (data quality check)
 │   └── eval_policy.py           #   standalone policy evaluation (legacy)
 ├── part3/                       # Eval Engine (vla-eval integration)
-│   └── smolvla_server.py        #   SmolVLA model server for vla-eval
+│   ├── smolvla_server.py        #   SmolVLA lightweight verification (dev only)
+│   └── test_benchmark.py        #   benchmark smoke test
 └── tools/                       # Utilities
     ├── sync_assets.py           #   remote GPU node asset sync
     └── patch_genesis_rocm.py    #   Genesis ROCm compatibility patch
@@ -160,6 +161,7 @@ tests/                           # Tests
 - [TRELLIS.2](https://github.com/ZJLi2013/TRELLIS.2/tree/rocm) — default 3D backend (ROCm fork)
 - [Hunyuan3D-2.1](https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1) — fallback 3D backend
 - `viser >= 1.0` — 3D visualization (`pip install -e ".[viz]"`)
+- `vla-eval >= 0.1` — VLA evaluation harness (Part 3)
 - `pybullet >= 3.2` — physics validation
 
 ## Documentation

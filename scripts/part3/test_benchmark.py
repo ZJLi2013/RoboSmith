@@ -40,10 +40,10 @@ async def test_episode(b):
 
     n_steps = 10
     for step in range(n_steps):
-        action_arr = np.array(
-            [0, -0.3, 0, -2.2, 0, 2.0, 0.79, 0.04, 0.04], dtype=np.float32
-        )
-        action_arr[:7] += np.random.randn(7).astype(np.float32) * 0.01
+        action_arr = np.zeros(7, dtype=np.float32)
+        action_arr[:3] = np.random.randn(3).astype(np.float32) * 0.002  # small pos delta
+        action_arr[3:6] = np.random.randn(3).astype(np.float32) * 0.01  # small rot delta
+        action_arr[6] = 0.04  # gripper open
 
         await b.apply_action({"actions": action_arr})
 

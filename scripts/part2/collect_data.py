@@ -1,7 +1,10 @@
 """RoboSmith — open-loop data collection driven by TaskSpec.
 
 Generates expert demonstrations via IK solver for any registered task.
-Supports DART noise augmentation (--dart-sigma) and scene-based setup.
+Records EE-delta actions (7D) and EE state observations (8D).
+
+Action: [delta_pos(3), delta_axangle(3), gripper(1)]
+State:  [ee_pos(3), ee_axangle(3), gripper_widths(2)]
 
 Usage:
   python scripts/part2/collect_data.py --task pick_cube --n-episodes 100
@@ -20,6 +23,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+from scipy.spatial.transform import Rotation
 
 
 # ---- constants ----
@@ -29,6 +33,17 @@ JOINT_NAMES = [
     "finger_joint1", "finger_joint2",
 ]
 MOTOR_NAMES = [f"{j}.pos" for j in JOINT_NAMES]
+
+ACTION_NAMES = [
+    "delta_x", "delta_y", "delta_z",
+    "delta_ax", "delta_ay", "delta_az",
+    "gripper",
+]
+STATE_NAMES = [
+    "ee_x", "ee_y", "ee_z",
+    "ee_ax", "ee_ay", "ee_az",
+    "gripper_left", "gripper_right",
+]
 
 HOME_QPOS = np.array([0, -0.3, 0, -2.2, 0, 2.0, 0.79, 0.04, 0.04], dtype=np.float32)
 KP = np.array([4500, 4500, 3500, 3500, 2000, 2000, 2000, 100, 100], dtype=np.float32)
@@ -66,6 +81,39 @@ def render_cam(cam):
     if arr.ndim == 4:
         arr = arr[0]
     return arr.astype(np.uint8)
+
+
+def quat_to_axangle(quat_wxyz: np.ndarray) -> np.ndarray:
+    """Convert wxyz quaternion to axis-angle (3D compact rotvec)."""
+    r = Rotation.from_quat([quat_wxyz[1], quat_wxyz[2], quat_wxyz[3], quat_wxyz[0]])
+    return r.as_rotvec().astype(np.float32)
+
+
+def get_ee_state(ee_link, finger_dof_vals: np.ndarray) -> np.ndarray:
+    """Return 8D EE state: [pos(3), axangle(3), gripper(2)]."""
+    pos = to_numpy(ee_link.get_pos()).astype(np.float32)
+    quat = to_numpy(ee_link.get_quat()).astype(np.float32)
+    axangle = quat_to_axangle(quat)
+    gripper = finger_dof_vals[:2].astype(np.float32)
+    return np.concatenate([pos, axangle, gripper])
+
+
+def compute_ee_delta(prev_state: np.ndarray, curr_state: np.ndarray,
+                     gripper_cmd: float) -> np.ndarray:
+    """Compute 7D EE delta action: [delta_pos(3), delta_axangle(3), gripper(1)].
+
+    Delta rotation = R_curr * R_prev^{-1}, represented as compact axis-angle.
+    Gripper is absolute command (0.04 = open, 0.01 = closed).
+    """
+    delta_pos = curr_state[:3] - prev_state[:3]
+    r_prev = Rotation.from_rotvec(prev_state[3:6])
+    r_curr = Rotation.from_rotvec(curr_state[3:6])
+    delta_rot = (r_curr * r_prev.inv()).as_rotvec()
+    return np.concatenate([
+        delta_pos.astype(np.float32),
+        delta_rot.astype(np.float32),
+        np.array([gripper_cmd], dtype=np.float32),
+    ])
 
 
 def main():
@@ -324,6 +372,9 @@ def main():
     except ImportError:
         from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
+    state_dim = 8  # ee_pos(3) + axangle(3) + gripper(2)
+    action_dim = 7  # delta_pos(3) + delta_axangle(3) + gripper(1)
+
     extra_dims = 0
     extra_names = []
     if args.add_goal:
@@ -332,8 +383,8 @@ def main():
     if args.add_phase:
         extra_dims += 1
         extra_names += ["phase_t_over_T"]
-    obs_dim = n_dofs + extra_dims
-    obs_names = MOTOR_NAMES + extra_names
+    obs_dim = state_dim + extra_dims
+    obs_names = STATE_NAMES + extra_names
 
     features = {
         "observation.state": {
@@ -343,8 +394,8 @@ def main():
         },
         "action": {
             "dtype": "float32",
-            "shape": (n_dofs,),
-            "names": MOTOR_NAMES,
+            "shape": (action_dim,),
+            "names": ACTION_NAMES,
         },
         "observation.images.up": {
             "dtype": "image" if args.no_videos else "video",
@@ -459,28 +510,39 @@ def main():
         initial_cube_z = cube_z
         cube_z_hist = []
         total_steps = len(traj)
+
+        finger_vals = to_numpy(franka.get_dofs_position(finger_dof)).astype(np.float32)
+        prev_ee_state = get_ee_state(end_effector, finger_vals)
+
         for step_idx, target in enumerate(traj):
-            joints = to_numpy(franka.get_dofs_position(motors_dof)).astype(np.float32)
-            parts = [joints]
+            finger_vals = to_numpy(franka.get_dofs_position(finger_dof)).astype(np.float32)
+            ee_state = get_ee_state(end_effector, finger_vals)
+            parts = [ee_state]
             if args.add_goal:
                 cube_xy = to_numpy(cube.get_pos())[:2].astype(np.float32)
                 parts.append(cube_xy)
             if args.add_phase:
                 t_norm = np.array([(step_idx + 1) / total_steps], dtype=np.float32)
                 parts.append(t_norm)
-            state = np.concatenate(parts) if len(parts) > 1 else joints
+            state = np.concatenate(parts) if len(parts) > 1 else ee_state
             img_up = render_cam(cam_up)
             img_side = render_cam(cam_side)
 
+            gripper_cmd = float(target[7])
             franka.control_dofs_position(target, motors_dof)
             scene.step()
+
+            finger_vals_next = to_numpy(franka.get_dofs_position(finger_dof)).astype(np.float32)
+            next_ee_state = get_ee_state(end_effector, finger_vals_next)
+            action = compute_ee_delta(prev_ee_state, next_ee_state, gripper_cmd)
+            prev_ee_state = next_ee_state
 
             cz = float(to_numpy(cube.get_pos())[2])
             cube_z_hist.append(cz)
 
             dataset.add_frame({
                 "observation.state": state,
-                "action": np.array(target, dtype=np.float32),
+                "action": action,
                 "observation.images.up": img_up,
                 "observation.images.side": img_side,
                 "task": task_spec.instruction,
@@ -585,7 +647,8 @@ def main():
         "fps": args.fps,
         "robot": "franka_panda",
         "n_dofs": n_dofs,
-        "action_space": "joint_position (rad)",
+        "action_space": "ee_delta_7d [delta_pos(3)+delta_axangle(3)+gripper(1)]",
+        "state_space": "ee_state_8d [pos(3)+axangle(3)+gripper(2)]",
         "cube_xy_range": {"x": list(x_range), "y": list(y_range)},
         "success_episode_ids": success_ids,
         "failure_episode_ids": failure_ids,
