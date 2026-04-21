@@ -122,7 +122,7 @@ class RoboSmithBenchmark(Benchmark):
         self._cube = None
         self._end_effector = None
         self._cam_up = None
-        self._cam_side = None
+        self._cam_wrist = None
         self._motors_dof = None
         self._finger_dof = None
         self._task_spec: TaskSpec | None = None
@@ -178,9 +178,11 @@ class RoboSmithBenchmark(Benchmark):
             res=(640, 480), pos=(0.55, 0.55, 0.55),
             lookat=(0.55, 0.0, 0.10), fov=45, GUI=False,
         )
-        self._cam_side = self._scene.add_camera(
-            res=(640, 480), pos=(0.55, -0.55, cube_z + 0.25),
-            lookat=(0.55, 0.0, cube_z + 0.10), fov=50, GUI=False,
+        self._cam_wrist = self._scene.add_camera(
+            res=(640, 480),
+            pos=(0.05, 0.0, -0.08),
+            lookat=(0.0, 0.0, 0.10),
+            fov=65, GUI=False,
         )
 
         self._scene.build()
@@ -195,6 +197,17 @@ class RoboSmithBenchmark(Benchmark):
         self._franka.set_dofs_force_range(FORCE_LOWER, FORCE_UPPER, self._motors_dof)
 
         self._end_effector = self._franka.get_link("hand")
+
+        from genesis.utils.geom import pos_lookat_up_to_T
+        wrist_offset_T = pos_lookat_up_to_T(
+            torch.tensor([0.05, 0.0, -0.08], dtype=gs.tc_float, device=gs.device),
+            torch.tensor([0.0, 0.0, 0.10], dtype=gs.tc_float, device=gs.device),
+            torch.tensor([0.0, 0.0, -1.0], dtype=gs.tc_float, device=gs.device),
+        )
+        try:
+            self._cam_wrist.attach(rigid_link=self._end_effector, offset_T=wrist_offset_T)
+        except TypeError:
+            self._cam_wrist.attach(self._end_effector, wrist_offset_T)
 
         self._gs_initialized = True
 
@@ -302,12 +315,12 @@ class RoboSmithBenchmark(Benchmark):
         state = np.concatenate([ee_pos, ee_axangle, finger_vals[:2]])
 
         img_up = _render_cam(self._cam_up)
-        img_side = _render_cam(self._cam_side)
+        img_wrist = _render_cam(self._cam_wrist)
 
         return {
             "images": {
                 "up": img_up,
-                "side": img_side,
+                "wrist": img_wrist,
             },
             "state": state,
             "task_description": self._task_spec.instruction if self._task_spec else "",
@@ -362,6 +375,7 @@ class RoboSmithBenchmark(Benchmark):
             "fps": self._fps,
             "action_space": "ee_delta_7d [delta_pos(3)+delta_axangle(3)+gripper(1)]",
             "state_space": "ee_state_8d [pos(3)+axangle(3)+gripper(2)]",
+            "camera_layout": "overhead + wrist (eye-in-hand, attached to hand link)",
         }
 
     def cleanup(self) -> None:

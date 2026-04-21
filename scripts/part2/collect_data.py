@@ -253,9 +253,11 @@ def main():
             res=(640, 480), pos=(0.55, 0.55, table_z + 0.55),
             lookat=(0.55, 0.0, table_z + 0.10), fov=45, GUI=False,
         )
-        cam_side = scene.add_camera(
-            res=(640, 480), pos=(0.55, -0.55, table_z + 0.30),
-            lookat=(0.55, 0.0, table_z + 0.15), fov=50, GUI=False,
+        cam_wrist = scene.add_camera(
+            res=(640, 480),
+            pos=(0.05, 0.0, -0.08),
+            lookat=(0.0, 0.0, 0.10),
+            fov=65, GUI=False,
         )
         scene.build()
 
@@ -307,9 +309,11 @@ def main():
             res=(640, 480), pos=(0.55, 0.55, 0.55),
             lookat=(0.55, 0.0, 0.10), fov=45, GUI=False,
         )
-        cam_side = scene.add_camera(
-            res=(640, 480), pos=(0.55, -0.55, cube_z + 0.25),
-            lookat=(0.55, 0.0, cube_z + 0.10), fov=50, GUI=False,
+        cam_wrist = scene.add_camera(
+            res=(640, 480),
+            pos=(0.05, 0.0, -0.08),
+            lookat=(0.0, 0.0, 0.10),
+            fov=65, GUI=False,
         )
         scene.build()
 
@@ -323,6 +327,18 @@ def main():
 
     n_dofs = len(JOINT_NAMES)
     end_effector = franka.get_link("hand")
+
+    from genesis.utils.geom import pos_lookat_up_to_T
+    wrist_offset_T = pos_lookat_up_to_T(
+        torch.tensor([0.05, 0.0, -0.08], dtype=gs.tc_float, device=gs.device),
+        torch.tensor([0.0, 0.0, 0.10], dtype=gs.tc_float, device=gs.device),
+        torch.tensor([0.0, 0.0, -1.0], dtype=gs.tc_float, device=gs.device),
+    )
+    try:
+        cam_wrist.attach(rigid_link=end_effector, offset_T=wrist_offset_T)
+    except TypeError:
+        cam_wrist.attach(end_effector, wrist_offset_T)
+    print("[cam] wrist camera attached to franka hand link")
 
     def reset_scene(cx, cy, place_xy=None, block_positions=None):
         franka.set_dofs_position(HOME_QPOS, motors_dof)
@@ -402,7 +418,7 @@ def main():
             "shape": (3, 480, 640),
             "names": ["channel", "height", "width"],
         },
-        "observation.images.side": {
+        "observation.images.wrist": {
             "dtype": "image" if args.no_videos else "video",
             "shape": (3, 480, 640),
             "names": ["channel", "height", "width"],
@@ -526,7 +542,7 @@ def main():
                 parts.append(t_norm)
             state = np.concatenate(parts) if len(parts) > 1 else ee_state
             img_up = render_cam(cam_up)
-            img_side = render_cam(cam_side)
+            img_wrist = render_cam(cam_wrist)
 
             gripper_cmd = float(target[7])
             franka.control_dofs_position(target, motors_dof)
@@ -544,7 +560,7 @@ def main():
                 "observation.state": state,
                 "action": action,
                 "observation.images.up": img_up,
-                "observation.images.side": img_side,
+                "observation.images.wrist": img_wrist,
                 "task": task_spec.instruction,
             })
 

@@ -169,26 +169,26 @@ RoboSmithBenchmark 在 MI300X 上端到端跑通，所有 vla-eval Benchmark ABC
 
 Pi0/StarVLA (LIBERO fine-tuned) 无法零样本接入 RoboSmith Genesis benchmark，存在三层 gap：
 
-**1. Action Space — 核心障碍**
+**1. Action Space — ✅ 已解决**
 
 | | Pi0 / StarVLA (LIBERO) | RoboSmith benchmark |
 |---|---|---|
-| 维度 | **7D** | **9D** |
-| 语义 | EE delta `[Δx,Δy,Δz,Δrx,Δry,Δrz,grip]` | joint position `[j1..j7,f1,f2]` |
-| 控制 | 末端增量 | 关节绝对位置 |
+| 维度 | **7D** | **7D** ✅ |
+| 语义 | EE delta `[Δx,Δy,Δz,Δrx,Δry,Δrz,grip]` | EE delta `[Δx,Δy,Δz,Δrx,Δry,Δrz,grip]` ✅ |
+| 控制 | 末端增量 | 末端增量 → IK → joint control ✅ |
 
-RoboSmith 当前输出 joint position，主流 VLA 全部使用 EE delta。
-详见 [study.md — §1.5](study.md#15-action-space-选型ee-delta-vs-joint-position)。
-**决策：Part 2 切换到 EE delta action space，retire joint position。**
+已完成切换。详见 [study.md — §1.5](study.md#15-action-space-选型ee-delta-vs-joint-position)。
 
-**2. Observation Space**
+**2. Observation Space — ✅ 已对齐**
 
 | | LIBERO | RoboSmith |
 |---|---|---|
-| 图像 | `agentview` 256×256 + `wrist` 256×256 | `up` 640×480 + `side` 640×480 |
-| 状态 | 8D: `eef_pos3 + axisangle3 + gripper2` | 9D: `joint_pos7 + finger_width2` |
+| 图像 | `agentview` 256×256 + `wrist`(eye-in-hand) 256×256 | `up`(overhead) 640×480 + `wrist`(eye-in-hand) 640×480 ✅ |
+| 状态 | 8D: `eef_pos3 + axisangle3 + gripper2` | 8D: `eef_pos3 + axisangle3 + gripper2` ✅ |
 
-渲染风格、相机位姿、分辨率、状态表示完全不同。
+Camera 配置已对齐为 overhead + wrist (eye-in-hand, attached to hand link)。
+Wrist cam 参数基于 D040 验证配置：`pos=(0.05, 0, -0.08)`, `lookat=(0, 0, 0.10)`, `fov=65`。
+分辨率差异（640×480 vs 256×256）在 fine-tune 时由 VLA image encoder 处理，非 blocker。
 
 **3. Cross-Sim Distribution Gap**
 
