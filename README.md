@@ -1,28 +1,32 @@
 # RoboSmith
 
-**Embodied data infrastructure**: from 3D assets to robot manipulation data to standardized evaluation — all on AMD ROCm.
+**Embodied data infrastructure**: from 3D assets to robot manipulation data — all on AMD ROCm.
 
-> RoboSmith is a data infrastructure, not a VLA training framework. You define a task, we generate assets, produce expert data, and evaluate your policy. You bring the VLA.
+> RoboSmith is a data infrastructure, not a VLA training framework. You define a task, we generate assets and produce expert data. You bring the VLA.
 
 ## Why RoboSmith
 
 Training VLA models requires diverse, high-quality manipulation data at scale.
-Today's pipelines are fragmented: asset creation, sim setup, data collection, and evaluation live in separate tools with incompatible formats.
-RoboSmith unifies them — a single `TaskSpec` drives asset selection, data production, and evaluation.
+Today's pipelines are fragmented: asset creation, sim setup, and data collection live in separate tools with incompatible formats.
+RoboSmith unifies them — a single `TaskSpec` drives asset selection and data production. Eval is handled by [vla-evaluation-harness](https://github.com/allenai/vla-evaluation-harness) with RoboSmith's benchmark plugin.
 
 ```
-Part 1 ── Sim-Ready Assets          Part 2 ── Data Engine          Part 3 ── Eval Engine
-                                                                    
- Text/Image → TRELLIS.2-4B           TaskSpec → Scene → Genesis      Server-Client policy API
- → URDF + PBR + collision                                           → plug any VLA
- 26 curated + on-demand gen           Data Production Backends:      parallel eval (--num-envs N)
-                                       ├─ IK scripted (default)     subtask progress tracking
+Part 1 ── Sim-Ready Assets          Part 2 ── Data Engine + Eval
+                                    
+ Text/Image → TRELLIS.2-4B           TaskSpec → Scene → Genesis
+ → URDF + PBR + collision           
+ 26 curated + on-demand gen           Data Production Backends:
+                                       ├─ IK scripted (default)
                                        ├─ DART (IK + noise)
-                                       ├─ DAgger (policy + IK)     Built-in + external eval:
-                                       └─ Online RL (planned)       vla-evaluation-harness
+                                       ├─ DAgger (policy + IK)
+                                       └─ Online RL (planned)
                                       → LeRobot dataset
-         │                                     │                              │
-         └─────────────── TaskSpec ─────────────┘──────────────────────────────┘
+                                    
+                                      Eval: vla-eval benchmark plugin
+                                       └─ RoboSmithBenchmark (Genesis scene → vla-eval)
+                                    
+         │                                     │
+         └─────────────── TaskSpec ─────────────┘
                      (composable predicates — define once, use everywhere)
 ```
 
@@ -62,14 +66,13 @@ TaskSpec-driven data production with pluggable backends. IK scripted backend val
 
 Output: [LeRobot](https://github.com/huggingface/lerobot) v3.0 datasets, directly compatible with VLA training (SmolVLA verified).
 
-### Part 3: Eval Engine — designed
+### Eval: vla-eval Benchmark Plugin
 
-Built on [vla-evaluation-harness](https://github.com/allenai/vla-evaluation-harness) — RoboSmith implements `Benchmark` ABC, reuses vla-eval for model serving and orchestration:
+RoboSmith provides `RoboSmithBenchmark` — a [vla-evaluation-harness](https://github.com/allenai/vla-evaluation-harness) `Benchmark` plugin that turns Genesis scenes into eval environments:
 
-- **10+ VLA models auto-available**: OpenVLA, π0, GR00T, CogACT, StarVLA... (zero model serving code in RoboSmith)
-- **`RoboSmithBenchmark`**: Genesis eval scene as a vla-eval benchmark (reset/step/make_obs/is_done)
-- Shares the same TaskSpec + predicates as Data Engine
-- ROCm compatible (serial eval, single env)
+- 10+ VLA models auto-available via vla-eval (Pi0, StarVLA, OpenVLA, GR00T...)
+- Same TaskSpec + predicates as data collection
+- Action: 7D EE delta, Observation: 8D EE state + overhead + wrist cameras
 
 ## Quick Start
 
@@ -103,11 +106,10 @@ python scripts/part1/browse_assets.py     # HTML asset gallery
 | Phase | Focus | Status |
 |:---:|-------|:---:|
 | 1 | Sim-ready assets (26 objects, 10 categories, TRELLIS.2-4B) | Done |
-| 2 | Multi-task IK data collection (pick, place, stack) | Done |
-| 3 | Eval Engine v1 (Genesis benchmark plugin for vla-eval-harness) | Next |
-| 4 | DART data backend (`--dart-sigma`) | Planned |
-| 5 | DAgger data backend (policy rollout + IK relabel) | Planned |
-| 6 | Articulated + push/slide tasks (drawer, push-to-target) | Planned |
+| 2 | Multi-task IK data (pick/place/stack) + vla-eval benchmark plugin | Done |
+| 3 | DART data backend (`--dart-sigma`) | Planned |
+| 4 | DAgger data backend (policy rollout + IK relabel) | Planned |
+| 5 | Articulated + push/slide tasks (drawer, push-to-target) | Planned |
 
 ## Project Structure
 
@@ -117,7 +119,7 @@ robotsmith/                      # Python package (pip install -e .)
 ├── gen/                         #   Part 1: 3D generation (TRELLIS.2 / Hunyuan3D backends, mesh_to_urdf)
 ├── scenes/                      #   Part 2: scene building (SceneConfig, genesis_loader, presets)
 ├── tasks/                       #   Part 2: task definition (TaskSpec, predicates, IK strategies)
-├── eval/                        #   Part 3: vla-eval benchmark (RoboSmithBenchmark)
+├── eval/                        #   vla-eval benchmark plugin (RoboSmithBenchmark)
 ├── validate/                    #   physics validation (PyBullet)
 ├── viz/                         #   visualization (Viser asset browser + scene viewer)
 └── cli.py                       #   CLI entry point (robotsmith list/search/generate/view/...)
@@ -128,14 +130,11 @@ scripts/
 │   ├── compute_stable_poses.py  #   compute stable placement poses
 │   ├── browse_assets.py         #   generate HTML asset gallery
 │   └── render_mesh_local.py     #   local mesh → PNG rendering
-├── part2/                       # Data collection + VLA verification
+├── part2/                       # Data collection + eval
 │   ├── collect_data.py          #   IK data collection (+ --dart-sigma DART augmentation)
 │   ├── snapshot_scene.py        #   scene layout screenshot
 │   ├── train_smolvla.py         #   SmolVLA fine-tune (data quality check)
-│   └── eval_policy.py           #   standalone policy evaluation (legacy)
-├── part3/                       # Eval Engine (vla-eval integration)
-│   ├── smolvla_server.py        #   SmolVLA lightweight verification (dev only)
-│   └── test_benchmark.py        #   benchmark smoke test
+│   └── test_benchmark.py        #   vla-eval benchmark smoke test
 └── tools/                       # Utilities
     ├── sync_assets.py           #   remote GPU node asset sync
     └── patch_genesis_rocm.py    #   Genesis ROCm compatibility patch
@@ -143,8 +142,7 @@ scripts/
 configs/
 └── eval/                        # vla-eval benchmark configs
     ├── robotsmith_pick_cube.yaml
-    ├── robotsmith_smoke_test.yaml
-    └── smolvla_server.yaml
+    └── robotsmith_smoke_test.yaml
 
 assets/                          # Asset storage (objects/ + generated/ + catalog.json)
 docs/                            # Documentation
@@ -156,22 +154,21 @@ tests/                           # Tests
 **Core (no GPU):** `trimesh >= 4.0`, `numpy >= 1.24`
 
 **Optional:**
-- `genesis-world >= 0.2` — Genesis simulator (Part 2/3)
+- `genesis-world >= 0.2` — Genesis simulator (Part 2)
 - `torch >= 2.0` — 3D generation + sim (ROCm / CUDA)
 - [TRELLIS.2](https://github.com/ZJLi2013/TRELLIS.2/tree/rocm) — default 3D backend (ROCm fork)
 - [Hunyuan3D-2.1](https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1) — fallback 3D backend
 - `viser >= 1.0` — 3D visualization (`pip install -e ".[viz]"`)
-- `vla-eval >= 0.1` — VLA evaluation harness (Part 3)
+- `vla-eval >= 0.1` — VLA evaluation harness (benchmark plugin)
 - `pybullet >= 3.2` — physics validation
 
 ## Documentation
 
-- [docs/design.md](docs/design.md) — Architecture design (Part 1/2/3 + core abstractions)
+- [docs/design.md](docs/design.md) — Architecture design (Part 1/2 + core abstractions)
 - [docs/study.md](docs/study.md) — Research notes (RoboLab, 3D generation, benchmarks)
 - [docs/part1-exp.md](docs/part1-exp.md) — Part 1 experiment results (asset pipeline)
-- [docs/part2.md](docs/part2.md) — Part 2 summary (data engine)
-- [docs/part2-exp.md](docs/part2-exp.md) — Part 2 experiment results (data engine)
-- [docs/part3-exp.md](docs/part3-exp.md) — Part 3 experiment plan (eval engine)
+- [docs/part2.md](docs/part2.md) — Part 2 summary (data engine + eval)
+- [docs/part2-exp.md](docs/part2-exp.md) — Part 2 experiment results
 - [docs/background.md](docs/background.md) — Technical background (watertight mesh, URDF, convex hull)
 
 ## Acknowledgments

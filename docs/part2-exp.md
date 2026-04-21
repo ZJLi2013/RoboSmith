@@ -256,3 +256,55 @@ Per-episode (seed=99 unseen):
 | `stack_blocks` | 90% (18/20) | 675 frames |
 
 Next Step: DART 噪声集成（`--dart-sigma`），从 pick_cube 开始验证。
+
+---
+
+## S2: Action Space + Camera 对齐
+
+### S2.1 EE Delta Action Space
+
+Action space 从 9D joint position 切换到 7D EE delta，observation state 从 9D 切换到 8D EE state。
+详见 [study.md — §1.5](study.md#15-action-space-选型ee-delta-vs-joint-position)。
+
+| | 旧 (retired) | 新 (默认) |
+|---|---|---|
+| action | 9D joint position `[j1..j7, f1, f2]` | 7D EE delta `[Δx, Δy, Δz, Δrx, Δry, Δrz, grip]` |
+| state | 9D joint position | 8D `[eef_pos3, axangle3, gripper2]` |
+
+MI300X 验证: 2ep pick_cube, 100% 成功率, action pos-delta norms ∈ [0.000006, 0.009]m (30fps).
+
+### S2.2 Wrist Camera (eye-in-hand)
+
+Camera 从固定 side cam 切换到 eye-in-hand wrist cam，attached to hand link。
+参数基于 D040 验证配置（workshop overhead+wrist 实验 2.1x 优于 overhead+side）。
+
+| Camera | 参数 |
+|--------|------|
+| overhead (固定) | `pos=(0.55, 0.55, 0.55)`, `lookat=(0.55, 0, 0.10)`, `fov=45` |
+| wrist (eye-in-hand) | `pos=(0.05, 0, -0.08)`, `lookat=(0, 0, 0.10)`, `up=(0, 0, -1)`, `fov=65`, hand link |
+
+MI300X 验证: benchmark smoke test + collect_data 2ep, 均通过。
+
+### S2.3 vla-eval Benchmark Plugin
+
+`RoboSmithBenchmark` 实现 vla-eval `Benchmark` ABC，MI300X smoke test 通过:
+- Genesis scene 构建 + Franka + cube + overhead + wrist cameras: ✅
+- EE delta action → IK → joint control pipeline: ✅
+- 8D EE state observation: ✅
+- Predicate-based success detection: ✅
+
+---
+
+## VLA 兼容性分析
+
+Action/obs space 已与主流 VLA (Pi0, StarVLA, OpenVLA) 对齐:
+
+| 维度 | LIBERO (主流 VLA 训练源) | RoboSmith |
+|------|---|---|
+| action | 7D EE delta | 7D EE delta ✅ |
+| state | 8D `[eef_pos3, axangle3, gripper2]` | 8D `[eef_pos3, axangle3, gripper2]` ✅ |
+| camera | overhead + wrist (eye-in-hand) | overhead + wrist (eye-in-hand) ✅ |
+| 数据格式 | LeRobot | LeRobot ✅ |
+
+Cross-sim distribution gap (渲染风格、物理引擎差异) 仍然存在，但 fine-tune 路径下模型会适应。
+StarVLA 在 SimplerEnv 跨 sim 迁移可达 64.6%，RoboSmith pick_cube (简单任务) 预期 zero-shot 非 0%。

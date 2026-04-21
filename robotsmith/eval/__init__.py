@@ -1,1 +1,1 @@
-"""Part 3: Eval Engine — RoboSmith as a vla-eval benchmark."""
+"""Eval — RoboSmith as a vla-eval benchmark plugin."""

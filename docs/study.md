@@ -403,7 +403,7 @@ handle = load_resolved_scene(resolved, gs_module=gs, fps=30)
 > [RoboLab](https://github.com/NVLabs/RoboLab)（NVIDIA, arXiv 2604.09860）是 120 task 的评估 benchmark，
 > 与 RoboSmith 互补（RoboLab = 评估端，RoboSmith = 数据端）。以下是对 RoboSmith 有启发的设计点。
 >
-> 已吸收到 design.md 的部分：composable predicates → §2.3, server-client → Part 3。
+> 已吸收到 design.md 的部分：composable predicates → §2.3, eval → vla-eval benchmark plugin。
 
 ### 3.1 Composable Predicates 任务成功判定（已吸收 → §2.3）
 
@@ -423,7 +423,7 @@ success = DoneTerm(
 **RoboSmith 状态**：§2.3 的 TaskSpec + composable predicates 设计已吸收此思路。
 待实现：`object_above`, `object_in_container`, `stacked` 等具体谓词函数。
 
-### 3.2 Server-Client Policy 架构（已吸收 → Part 3）
+### 3.2 Server-Client Policy 架构（已吸收 → vla-eval plugin）
 
 RoboLab 把 policy inference 和 sim 评估完全解耦：
 - Policy 作为独立 server 运行（WebSocket / ZMQ）
@@ -431,7 +431,7 @@ RoboLab 把 policy inference 和 sim 评估完全解耦：
 
 这让它可以评估任意 policy（Pi0.5, GR00T, PaliGemma...）而不需要改 sim 代码。
 
-**RoboSmith 状态**：Part 3 Eval Engine 已采用此架构（`InferenceServer` ABC）。
+**RoboSmith 状态**：Eval 通过 vla-eval-harness 实现，RoboSmith 只提供 `RoboSmithBenchmark` plugin。
 
 ```python
 class InferenceClient(ABC):
@@ -454,20 +454,20 @@ RoboLab 提供 `/robolab-scenegen` 和 `/robolab-taskgen` 两个 Claude Code ski
     3. collect_data.py 的参数
 ```
 
-### 3.4 多环境并行评估（已吸收 → Part 3 §3.3）
+### 3.4 多环境并行评估
 
 RoboLab 支持 `--num-envs 12` 并行跑 12 个 episode，且每个 env 独立终止
 （vectorized conditionals）。100 tasks × 多轮评估时将评估时间从线性降到近常数。
 
-**RoboSmith 状态**：Part 3 已设计 Genesis batch 并行评估方案。
+**RoboSmith 状态**：并行评估由 vla-eval-harness 负责，RoboSmith 不自建。
 
-### 3.5 Subtask Progress Tracking（已吸收 → Part 3 §3.4）
+### 3.5 Subtask Progress Tracking
 
 RoboLab 的 subtask 系统可以追踪任务内部的进度
 （比如 pick-and-place 分解为 grabbed → lifted → moved → placed），
 即使最终失败也能知道"做到了哪一步"。
 
-**RoboSmith 状态**：Part 3 已设计 milestone predicates 方案。
+**RoboSmith 状态**：milestone predicates 设计已完成，后续扩展。
 
 ### 3.6 指令变体（Instruction Variants）
 
@@ -488,9 +488,9 @@ instruction = {
 | 优先级 | 借鉴点 | 对应 RoboSmith 阶段 | 实现成本 | 状态 |
 |:---:|------|:---:|:---:|:---:|
 | **P0** | Composable predicates 成功判定 | Stage 2 前 | 低 | §2.3 已设计，待实现 |
-| **P0** | Server-client policy 架构 | Stage 3 前 | 中 | Part 3 已设计 |
-| **P1** | 并行评估 (vectorized eval) | Stage 2 | 中 | Part 3 已设计 |
-| **P1** | Subtask progress tracking | Stage 3 | 低 | Part 3 已设计 |
+| **P0** | Server-client policy 架构 | — | 中 | 由 vla-eval-harness 提供 |
+| **P1** | 并行评估 (vectorized eval) | — | 中 | 由 vla-eval-harness 提供 |
+| **P1** | Subtask progress tracking | 后续扩展 | 低 | milestone predicates 已设计 |
 | **P1** | AI-enabled task/scene gen (Cursor skill) | 任何时候 | 低 | 📋 |
 | **P2** | 资产工具链增强 (batch physics update) | 持续 | 低 | 📋 |
 | **P2** | Instruction variants | Stage 2+ | 低 | 📋 |
@@ -498,21 +498,18 @@ instruction = {
 ### 3.8 两者定位对比
 
 ```
-RoboLab (纯评估端)                     RoboSmith (数采 + 评估 闭环)
-120 tasks × 成功判定                    gen2sim → 数据采集 → VLA 训练 → 评估 → 闭环
+RoboLab (纯评估端)                     RoboSmith (Data Infra)
+120 tasks × 成功判定                    gen2sim → 数据采集 → LeRobot dataset
 Isaac Lab + NVIDIA GPU (only)           Genesis + AMD ROCm
-server-client policy 接口               server-client policy 接口 (借鉴)
-"你的 policy 在标准任务上多强？"           "帮你生成数据 + 评估效果 + 指导补采"
+server-client policy 接口               vla-eval benchmark plugin (RoboSmithBenchmark)
+"你的 policy 在标准任务上多强？"           "帮你生成数据，eval 走 vla-eval-harness"
 无数据采集能力                            Part 2 Data Engine
-无训练能力                               VLA 训练 (SmolVLA / StarVLA)
-                                       Part 3 Eval Engine (自建, 参考 RoboLab 设计)
 ```
 
-**融合策略**：不是接入 RoboLab（NVIDIA only），而是将 RoboLab 的设计精髓
-（composable predicates, server-client, parallel eval, subtask tracking）
-迁移到 RoboSmith Part 3，在 AMD 平台上自建评估引擎。
-这样 RoboSmith 同时覆盖数据端和评估端，形成 **数据飞轮闭环** — 这是 RoboLab 不做的事。
-详见 [design.md — Part 3：标准化评估引擎](design.md#part-3标准化评估引擎)。
+**策略**：RoboSmith 不自建 eval engine，评估通过 vla-eval-harness 完成。
+RoboSmith 提供 `RoboSmithBenchmark` 作为 vla-eval benchmark plugin。
+RoboLab 的设计精髓（composable predicates, subtask tracking）已吸收到 data engine 的 predicate 体系中。
+详见 [design.md — Eval：vla-eval Benchmark Plugin](design.md#evalvla-eval-benchmark-plugin)。
 
 ---
 

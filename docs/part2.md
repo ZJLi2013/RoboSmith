@@ -1,6 +1,7 @@
-# Part 2：Data Engine — done
+# Part 2：Data Engine + Eval — done
 
 > TaskSpec + 多任务 IK solver + composable predicates 数采框架，pick / place / stack 三类任务端到端验证通过。
+> Eval 通过 vla-eval-harness benchmark plugin 提供，不自建 eval engine。
 
 ---
 
@@ -47,9 +48,17 @@ Joint position (9D) 观测和动作已 **retired** — 不再作为 LeRobot data
 
 | 项目 | 说明 | 归属 |
 |------|------|------|
-| **EE delta action space 实现** | `collect_data.py` + `benchmark.py` 适配 | **下一步** |
-| DART 噪声增强 (`--dart-sigma`) | IK solver 内置参数，待集成 | Roadmap Phase 4 |
+| DART 噪声增强 (`--dart-sigma`) | IK solver 内置参数，待集成 | Roadmap Phase 3 |
 | 场景模式数采 (`--scene`) | 场景加载 OK，pick Z 偏移需适配 | 工程优化 |
+
+## Eval: vla-eval Benchmark Plugin
+
+`RoboSmithBenchmark` (`robotsmith/eval/benchmark.py`) 实现 vla-eval `Benchmark` ABC，将 Genesis scene 作为 benchmark plugin：
+
+- Action: 7D EE delta → IK → joint control
+- Observation: 8D EE state + overhead + wrist (eye-in-hand) images
+- 10+ VLA models 通过 vla-eval 自动可用（Pi0, StarVLA, OpenVLA, GR00T...）
+- MI300X smoke test 通过
 
 ## 代码管线
 
@@ -58,7 +67,10 @@ scripts/part2/
 ├── collect_data.py          # IK 数采 (--task pick_cube/place_cube/stack_blocks)
 ├── snapshot_scene.py        # 场景布局截图验证
 ├── train_smolvla.py         # SmolVLA fine-tune (数据质量验证)
-└── eval_policy.py           # 闭环策略评估
+└── test_benchmark.py        # vla-eval benchmark smoke test
+
+robotsmith/eval/
+└── benchmark.py             # RoboSmithBenchmark — vla-eval Benchmark ABC
 ```
 
 ## 关键参数
