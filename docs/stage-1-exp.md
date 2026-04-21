@@ -405,10 +405,33 @@ Next Step → S1.6: `stack_blocks` 3-block 堆叠验证。
 - 脚本无 crash，轨迹长度 = 675 frames
 
 ### 结果
-（待实验）
+
+| 指标 | 值 |
+|------|:---:|
+| 成功率 | **18/20 = 90%** |
+| 轨迹长度 | 675 frames (3 × 225) |
+| 运行时间 | ~2401s (总), ~120s/ep |
+| 成功 block_zs | `[0.019, 0.058~0.059, 0.097~0.098]` |
+| 失败 block_zs | `[0.020, 0.020, 0.059]` (ep 13, 19) |
+| predicate | `stacked` (z 递增判定) |
 
 ### 分析
-（待实验）
+
+- **18/20 成功**：超过 80% 假设阈值。纯 IK 开环堆叠在刚性 block 上效果良好。
+- **2 次失败模式一致**：block_zs = `[0.020, 0.020, 0.059]`，说明 round 1 pick 失败（block_red 未被拾起，留在 z=0.020），round 2 和 round 3 继续执行但在空中放置了 block_green 和 block_blue。
+- **失败原因**：与 pick 精度有关，非堆叠对齐问题。可能是特定随机位置下 gripper 抓取不够稳定（block 较小 4cm，gripper 闭合间距仅留 1cm margin）。
+- **堆叠精度极高**：成功案例中 block 间距一致 ~0.039m（理论 0.04m），说明 IK 放置精度在 1mm 以内。
 
 ### 结论与 Next Step
-（待实验）
+
+**假设成立**：`StackStrategy` 3-block 纯 IK 开环堆叠 90% 成功率，超过 80% 阈值。Phase 1 "抓握三件套" 全部验证通过。
+
+| 任务 | 成功率 | 轨迹长度 |
+|------|:---:|:---:|
+| `pick_cube` | 100% (20/20) | 135 frames |
+| `place_cube` | 100% (20/20) | 225 frames |
+| `stack_blocks` | 90% (18/20) | 675 frames |
+
+Next Step:
+1. DART 噪声集成（`--dart-sigma`），从 pick_cube 开始验证
+2. 可选：调优 gripper 参数提升 stack 成功率至 95%+
