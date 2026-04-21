@@ -160,8 +160,6 @@ class RoboSmithBenchmark(Benchmark):
             gs.morphs.MJCF(file="xml/franka_emika_panda/panda.xml"),
         )
 
-        self._scene.build()
-
         self._cam_up = self._scene.add_camera(
             res=(640, 480), pos=(0.55, 0.55, 0.55),
             lookat=(0.55, 0.0, 0.10), fov=45, GUI=False,
@@ -170,6 +168,8 @@ class RoboSmithBenchmark(Benchmark):
             res=(640, 480), pos=(0.55, -0.55, cube_z + 0.25),
             lookat=(0.55, 0.0, cube_z + 0.10), fov=50, GUI=False,
         )
+
+        self._scene.build()
 
         self._motors_dof = [
             self._franka.get_joint(name).dofs_idx_local[0]
