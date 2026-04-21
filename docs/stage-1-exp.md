@@ -318,10 +318,50 @@ Next Step → S1.5: `place_cube` pick-and-place IK 策略验证。
 - 脚本无 crash，轨迹长度 = 225 frames
 
 ### 结果
-（待实验）
+
+> Node: `banff-cyxtera-s71-4` (MI300X), Docker `robotsmith_b0`, 2026-04-21
+
+**Smoke test (2ep)**：2/2 OK, xy_err = 0.0056m / 0.0041m, exit code 0
+
+**Full test (20ep)**:
+
+```bash
+python scripts/part2/collect_data.py --task place_cube --n-episodes 20 --no-videos \
+  --repo-id local/place-cube-smoke-20ep --save /datasets/zhengjli/place_cube_smoke
+```
+
+| 指标 | 预期 | 实际 |
+|------|------|------|
+| 脚本无 crash | ✅ | ✅ (exit 0, 777s) |
+| 轨迹长度 | 225 frames | 225 |
+| 成功率 | ≥90% (18/20) | **20/20 = 100%** |
+| xy_err | < 0.06m | 0.0037 ~ 0.0060m (avg ~0.0047m) |
+
+| ep | pick (x,y) | place (x,y) | xy_err (m) | status |
+|----|------------|-------------|:---:|:---:|
+| 1 | (0.592,-0.190) | (0.621,0.071) | 0.0056 | OK |
+| 2 | (0.668,-0.165) | (0.466,0.002) | 0.0041 | OK |
+| 3 | (0.408,-0.120) | (0.595,0.018) | 0.0060 | OK |
+| 4 | (0.466,0.036) | (0.643,-0.197) | 0.0057 | OK |
+| 5 | (0.642,0.079) | (0.502,-0.138) | 0.0047 | OK |
+| ... | ... | ... | 0.0037~0.0060 | all OK |
+| 20 | (0.605,0.015) | (0.433,-0.026) | 0.0039 | OK |
 
 ### 分析
-（待实验）
+
+**假设成立**，且结果大幅超出预期：
+
+- 20/20 = 100% 成功率（预期 ≥90%），`PickAndPlaceStrategy` 的 8 阶段 IK 轨迹在整个 workspace 范围内均稳定
+- **xy_err 极低**：avg ~4.7mm，max 6.0mm（threshold 60mm），说明 IK solver 的 transport + place 精度远超需求
+- 耗时 777s / 20ep ≈ **39s/ep**（vs pick_cube 25s/ep），额外 14s 来自 transport+place 阶段的 90 frames 多出的仿真步
+- 与 S1.4 `pick_cube` 对比：pick 阶段行为完全一致（相同 seed 产生相同 pick 位置），新增的 transport/place/release/retreat 阶段平稳过渡
+
+**关键发现**：纯开环 IK 对 pick_and_place 完全足够，place_z=0.15m 留出了充足的安全余量，release 后 cube 平稳落地无弹跳。
 
 ### 结论与 Next Step
-（待实验）
+
+**假设成立**：`PickAndPlaceStrategy` 端到端验证通过，pick_and_place 纯 IK 开环数采可靠。
+
+Next Step:
+1. 实现 `StackStrategy`（多轮 pick_and_place）
+2. DART 噪声集成（`--dart-sigma`），从 pick_cube 开始验证
