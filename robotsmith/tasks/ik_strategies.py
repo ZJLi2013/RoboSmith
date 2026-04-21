@@ -144,9 +144,64 @@ class PickAndPlaceStrategy(IKStrategy):
         return traj
 
 
+class StackStrategy(IKStrategy):
+    """N rounds of pick_and_place to stack blocks on top of each other.
+
+    Expects target_pos to be a list of N block positions (pick sources).
+    place_pos is the XY center of the stack. Each round places at increasing Z.
+    """
+
+    def plan(self, target_pos, solve_ik, home_qpos, params, z_offset=0.0, place_pos=None):
+        if place_pos is None:
+            raise ValueError("StackStrategy requires place_pos (stack center XY)")
+
+        block_positions = target_pos
+        if not isinstance(block_positions, list):
+            raise ValueError("StackStrategy expects target_pos as list of block positions")
+
+        sx, sy = float(place_pos[0]), float(place_pos[1])
+        block_h = 0.04
+        pnp = PickAndPlaceStrategy()
+
+        traj = []
+        for i, bpos in enumerate(block_positions):
+            stack_place_z = params.place_z + i * block_h
+            round_params = TrajectoryParams(
+                hover_z=params.hover_z,
+                grasp_z=params.grasp_z,
+                lift_z=params.lift_z,
+                place_z=stack_place_z,
+                approach_steps=params.approach_steps,
+                descend_steps=params.descend_steps,
+                grasp_hold_steps=params.grasp_hold_steps,
+                lift_steps=params.lift_steps,
+                lift_hold_steps=0,
+                transport_steps=params.transport_steps,
+                place_descend_steps=params.place_descend_steps,
+                release_steps=params.release_steps,
+                retreat_steps=params.retreat_steps,
+                grasp_quat=params.grasp_quat,
+                finger_open=params.finger_open,
+                finger_closed=params.finger_closed,
+            )
+
+            block_pos = np.array(bpos, dtype=np.float64)
+            stack_target = np.array([sx, sy, block_pos[2]], dtype=np.float64)
+
+            start_qpos = traj[-1] if traj else home_qpos
+            round_traj = pnp.plan(
+                block_pos, solve_ik, start_qpos, round_params, z_offset,
+                place_pos=stack_target,
+            )
+            traj += round_traj
+
+        return traj
+
+
 # ---------- Strategy Registry ----------
 
 IK_STRATEGIES: dict[str, IKStrategy] = {
     "pick": PickStrategy(),
     "pick_and_place": PickAndPlaceStrategy(),
+    "stack": StackStrategy(),
 }

@@ -362,6 +362,53 @@ python scripts/part2/collect_data.py --task place_cube --n-episodes 20 --no-vide
 
 **假设成立**：`PickAndPlaceStrategy` 端到端验证通过，pick_and_place 纯 IK 开环数采可靠。
 
-Next Step:
-1. 实现 `StackStrategy`（多轮 pick_and_place）
-2. DART 噪声集成（`--dart-sigma`），从 pick_cube 开始验证
+Next Step → S1.6: `stack_blocks` 3-block 堆叠验证。
+
+---
+
+## S1.6: StackStrategy — 3-block 堆叠端到端验证
+
+### Phase 0 确认
+
+- 观测完备性: observation = joint_state(9) + images(up, side)。3 blocks 颜色不同（红/绿/蓝）通过 vision 可区分，堆叠位置通过 camera FOV 可见
+- 随机化变量: 3 blocks 各自 XY 随机（pairwise 距离 ≥ 0.10m），stack 中心 XY 随机（与首块距离 ≥ 0.15m）
+
+### 假设
+
+`StackStrategy`（3 轮 `PickAndPlaceStrategy`，每轮 place_z 递增 0.04m）生成的 675-frame 开环 IK 轨迹，可在 Genesis 中完成 3-block 堆叠，`stacked` predicate 判定成功率 ≥ 80%。
+
+> 预期低于 pick/place（100%），因为：(a) 长 horizon 累积误差 (b) 上层 block 放置需对齐下层 (c) 物理碰撞可能导致倒塌
+
+### 实验方案
+
+- 脚本: `scripts/part2/collect_data.py`
+- 关键参数:
+
+| 参数 | 值 |
+|------|:---:|
+| `--task` | `stack_blocks` |
+| `--n-episodes` | 20 |
+| `--no-videos` | yes |
+| `--repo-id` | `local/stack-blocks-smoke-20ep` |
+| `--save` | `/datasets/zhengjli/stack_smoke` |
+| N_BLOCKS | 3 (red, green, blue) |
+| 轨迹长度 | 675 frames (3 × 225) |
+| place_z | round 0: 0.15, round 1: 0.19, round 2: 0.23 |
+
+- 对照组: S1.5 `place_cube` 20ep (100% success, 225 frames)
+- 变量: 单轮 pick_and_place → 3 轮串行堆叠
+
+### 预期
+
+- 假设成立: ≥16/20 success (≥80%)，`stacked` predicate = True (block_zs 递增)
+- 假设不成立: 成功率 < 80% → 可能原因：(a) 第 2-3 层放置精度不足 (b) block 碰撞/倒塌 (c) IK 累积误差
+- 脚本无 crash，轨迹长度 = 675 frames
+
+### 结果
+（待实验）
+
+### 分析
+（待实验）
+
+### 结论与 Next Step
+（待实验）

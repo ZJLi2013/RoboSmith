@@ -154,6 +154,10 @@ def main():
     )
 
     is_place_task = task_spec.ik_strategy in ("pick_and_place", "stack")
+    is_stack_task = task_spec.ik_strategy == "stack"
+    N_BLOCKS = 3 if is_stack_task else 1
+    BLOCK_COLORS = [(1.0, 0.3, 0.3, 1.0), (0.3, 0.8, 0.3, 1.0), (0.3, 0.3, 1.0, 1.0)]
+    BLOCK_NAMES = ["block_red", "block_green", "block_blue"]
 
     # ---- Genesis setup ----
     ensure_display()
@@ -222,13 +226,25 @@ def main():
             show_viewer=False,
         )
         scene.add_entity(gs.morphs.Plane())
-        cube = scene.add_entity(
-            morph=gs.morphs.Box(size=CUBE_SIZE, pos=(0.55, 0.0, cube_z)),
-            material=gs.materials.Rigid(friction=args.cube_friction),
-            surface=gs.surfaces.Default(color=(1.0, 0.3, 0.3, 1.0)),
-        )
+        blocks = []
+        if is_stack_task:
+            for bi in range(N_BLOCKS):
+                b = scene.add_entity(
+                    morph=gs.morphs.Box(size=CUBE_SIZE,
+                                        pos=(0.55 + 0.08 * bi, 0.0, cube_z)),
+                    material=gs.materials.Rigid(friction=args.cube_friction),
+                    surface=gs.surfaces.Default(color=BLOCK_COLORS[bi]),
+                )
+                blocks.append(b)
+            cube = blocks[0]
+        else:
+            cube = scene.add_entity(
+                morph=gs.morphs.Box(size=CUBE_SIZE, pos=(0.55, 0.0, cube_z)),
+                material=gs.materials.Rigid(friction=args.cube_friction),
+                surface=gs.surfaces.Default(color=(1.0, 0.3, 0.3, 1.0)),
+            )
         target_marker = None
-        if is_place_task:
+        if is_place_task and not is_stack_task:
             TARGET_SIZE = (0.06, 0.06, 0.005)
             target_marker = scene.add_entity(
                 morph=gs.morphs.Box(size=TARGET_SIZE, pos=(0.55, 0.2, TARGET_SIZE[2] / 2)),
@@ -260,17 +276,27 @@ def main():
     n_dofs = len(JOINT_NAMES)
     end_effector = franka.get_link("hand")
 
-    def reset_scene(cx, cy, place_xy=None):
+    def reset_scene(cx, cy, place_xy=None, block_positions=None):
         franka.set_dofs_position(HOME_QPOS, motors_dof)
         franka.control_dofs_position(HOME_QPOS, motors_dof)
         franka.zero_all_dofs_velocity()
-        cube.set_pos(
-            torch.tensor([cx, cy, cube_z], dtype=torch.float32,
-                         device=gs.device).unsqueeze(0))
-        cube.set_quat(
-            torch.tensor([1, 0, 0, 0], dtype=torch.float32,
-                         device=gs.device).unsqueeze(0))
-        cube.zero_all_dofs_velocity()
+        if is_stack_task and block_positions is not None:
+            for bi, bpos in enumerate(block_positions):
+                blocks[bi].set_pos(
+                    torch.tensor([bpos[0], bpos[1], cube_z], dtype=torch.float32,
+                                 device=gs.device).unsqueeze(0))
+                blocks[bi].set_quat(
+                    torch.tensor([1, 0, 0, 0], dtype=torch.float32,
+                                 device=gs.device).unsqueeze(0))
+                blocks[bi].zero_all_dofs_velocity()
+        else:
+            cube.set_pos(
+                torch.tensor([cx, cy, cube_z], dtype=torch.float32,
+                             device=gs.device).unsqueeze(0))
+            cube.set_quat(
+                torch.tensor([1, 0, 0, 0], dtype=torch.float32,
+                             device=gs.device).unsqueeze(0))
+            cube.zero_all_dofs_velocity()
         if target_marker is not None and place_xy is not None:
             target_marker.set_pos(
                 torch.tensor([place_xy[0], place_xy[1], 0.0025], dtype=torch.float32,
@@ -355,14 +381,38 @@ def main():
                 return (px, py)
         return (cx + min_dist, cy)
 
+    def sample_spaced_positions(n, min_dist=0.10):
+        """Sample n positions with pairwise distance >= min_dist."""
+        pts = []
+        for _ in range(n):
+            for _try in range(200):
+                x = rng.uniform(x_range[0], x_range[1])
+                y = rng.uniform(y_range[0], y_range[1])
+                if all(np.hypot(x - px, y - py) >= min_dist for px, py in pts):
+                    pts.append((x, y))
+                    break
+            else:
+                pts.append((x, y))
+        return pts
+
     episode_points = []
     for _ in range(args.n_episodes):
-        cx = rng.uniform(x_range[0], x_range[1])
-        cy = rng.uniform(y_range[0], y_range[1])
-        if is_place_task:
+        if is_stack_task:
+            block_xys = sample_spaced_positions(N_BLOCKS, min_dist=0.10)
+            sx, sy = sample_place_target(
+                block_xys[0][0], block_xys[0][1], args.min_place_dist)
+            episode_points.append({
+                "block_xys": block_xys,
+                "stack_xy": (sx, sy),
+            })
+        elif is_place_task:
+            cx = rng.uniform(x_range[0], x_range[1])
+            cy = rng.uniform(y_range[0], y_range[1])
             px, py = sample_place_target(cx, cy, args.min_place_dist)
             episode_points.append((cx, cy, px, py))
         else:
+            cx = rng.uniform(x_range[0], x_range[1])
+            cy = rng.uniform(y_range[0], y_range[1])
             episode_points.append((cx, cy, None, None))
 
     out_dir = Path(args.save) / f"franka_gen_{task_spec.name}"
@@ -372,18 +422,31 @@ def main():
     print(f"[gen] cube x_range={x_range}, y_range={y_range}")
     if is_place_task:
         print(f"[gen] min_place_dist={args.min_place_dist}")
+    if is_stack_task:
+        print(f"[gen] N_BLOCKS={N_BLOCKS}")
     print(f"[gen] {args.n_episodes} episodes to generate")
 
     frames_per_episode = None
     episode_labels = []
 
     for ep in range(args.n_episodes):
-        cx, cy, px, py = episode_points[ep]
-        place_xy = (px, py) if px is not None else None
-        reset_scene(cx, cy, place_xy=place_xy)
+        if is_stack_task:
+            ep_data = episode_points[ep]
+            block_xys = ep_data["block_xys"]
+            sx, sy = ep_data["stack_xy"]
+            cx, cy = block_xys[0]
+            px, py = sx, sy
+            block_positions_3d = [[bx, by, cube_z] for bx, by in block_xys]
+            reset_scene(cx, cy, block_positions=block_positions_3d)
+            target_pos = block_positions_3d
+            place_pos = np.array([sx, sy, cube_z])
+        else:
+            cx, cy, px, py = episode_points[ep]
+            place_xy = (px, py) if px is not None else None
+            reset_scene(cx, cy, place_xy=place_xy)
+            target_pos = np.array([cx, cy, cube_z])
+            place_pos = np.array([px, py, cube_z]) if is_place_task else None
 
-        target_pos = np.array([cx, cy, cube_z])
-        place_pos = np.array([px, py, cube_z]) if is_place_task else None
         traj = strategy.plan(
             target_pos, solve_ik, HOME_QPOS, traj_params, z_offset,
             place_pos=place_pos,
@@ -424,17 +487,22 @@ def main():
             })
 
         # ---- Evaluate success via predicate ----
-        cube_final_pos = to_numpy(cube.get_pos())
-        env_state = {
-            "object_positions": {
-                "cube": cube_final_pos.copy(),
-            },
-            "initial_positions": {
-                "cube": np.array([cx, cy, initial_cube_z]),
-            },
-        }
-        if is_place_task and px is not None:
-            env_state["object_positions"]["target"] = np.array([px, py, 0.0025])
+        if is_stack_task:
+            env_state = {"object_positions": {}, "initial_positions": {}}
+            for bi in range(N_BLOCKS):
+                bname = BLOCK_NAMES[bi]
+                bpos = to_numpy(blocks[bi].get_pos())
+                env_state["object_positions"][bname] = bpos.copy()
+                env_state["initial_positions"][bname] = np.array(
+                    [block_xys[bi][0], block_xys[bi][1], cube_z])
+        else:
+            cube_final_pos = to_numpy(cube.get_pos())
+            env_state = {
+                "object_positions": {"cube": cube_final_pos.copy()},
+                "initial_positions": {"cube": np.array([cx, cy, initial_cube_z])},
+            }
+            if is_place_task and px is not None:
+                env_state["object_positions"]["target"] = np.array([px, py, 0.0025])
         predicate_success = evaluate_predicate(
             task_spec.success_fn, env_state, task_spec.success_params
         )
@@ -448,20 +516,26 @@ def main():
         label = {
             "episode_index": ep,
             "task": task_spec.name,
-            "cube_xy": [float(cx), float(cy)],
-            "base_z": float(base_z),
-            "cube_z_max": float(cz_max),
-            "cube_z_end": float(cz_end),
-            "max_lift_delta": float(cz_max - base_z),
-            "end_lift_delta": float(cz_end - base_z),
             "success_predicate": bool(predicate_success),
             "success": bool(success),
         }
-        if is_place_task:
+        if is_stack_task:
+            block_final_zs = [float(to_numpy(blocks[bi].get_pos())[2])
+                              for bi in range(N_BLOCKS)]
+            label["stack_xy"] = [float(sx), float(sy)]
+            label["block_xys"] = [[float(bx), float(by)] for bx, by in block_xys]
+            label["block_final_zs"] = block_final_zs
+        elif is_place_task:
+            cube_final_pos = to_numpy(cube.get_pos())
+            label["cube_xy"] = [float(cx), float(cy)]
             label["place_xy"] = [float(px), float(py)]
-            cube_end_xy = cube_final_pos[:2]
-            label["place_xy_error"] = float(np.linalg.norm(cube_end_xy - np.array([px, py])))
+            label["place_xy_error"] = float(
+                np.linalg.norm(cube_final_pos[:2] - np.array([px, py])))
         else:
+            label["cube_xy"] = [float(cx), float(cy)]
+            label["base_z"] = float(base_z)
+            label["cube_z_max"] = float(cz_max)
+            label["cube_z_end"] = float(cz_end)
             lifted = [z >= base_z + args.success_lift_delta for z in cube_z_hist]
             sustain_max = 0
             sustain = 0
@@ -479,7 +553,12 @@ def main():
 
         dataset.save_episode()
         status = "OK" if success else "FAIL"
-        if is_place_task:
+        if is_stack_task:
+            zs = label["block_final_zs"]
+            print(f"[gen] ep {ep+1}/{args.n_episodes} [{status}] "
+                  f"stack=({sx:.3f},{sy:.3f}) "
+                  f"block_zs=[{', '.join(f'{z:.3f}' for z in zs)}]")
+        elif is_place_task:
             print(f"[gen] ep {ep+1}/{args.n_episodes} [{status}] "
                   f"pick=({cx:.3f},{cy:.3f}) place=({px:.3f},{py:.3f}) "
                   f"xy_err={label['place_xy_error']:.4f}m")
