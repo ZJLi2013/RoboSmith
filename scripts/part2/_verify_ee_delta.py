@@ -1,6 +1,10 @@
 """Verify EE delta dataset shapes and values."""
-from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
 import numpy as np
+
+try:
+    from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
+except ImportError:
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
 ds = LeRobotDataset("local/ee-delta-test")
 print("num_episodes:", ds.meta.total_episodes)
