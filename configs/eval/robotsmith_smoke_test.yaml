@@ -1,0 +1,18 @@
+# RoboSmith smoke test — 2 episodes, quick validation
+#
+# Usage:
+#   vla-eval run --config configs/eval/robotsmith_smoke_test.yaml --no-docker
+
+server:
+  url: "ws://localhost:8000"
+
+output_dir: "./results/robotsmith_smoke"
+
+benchmarks:
+  - benchmark: "robotsmith.eval.benchmark:RoboSmithBenchmark"
+    mode: sync
+    episodes_per_task: 2
+    max_steps: 50
+    params:
+      tasks: [pick_cube]
+      seed: 42

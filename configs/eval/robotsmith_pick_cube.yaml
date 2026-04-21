@@ -1,0 +1,19 @@
+# RoboSmith pick_cube eval config for vla-eval-harness
+#
+# Usage:
+#   vla-eval serve --config configs/eval/smolvla_server.yaml
+#   vla-eval run --config configs/eval/robotsmith_pick_cube.yaml --no-docker
+
+server:
+  url: "ws://localhost:8000"
+
+output_dir: "./results/robotsmith_pick_cube"
+
+benchmarks:
+  - benchmark: "robotsmith.eval.benchmark:RoboSmithBenchmark"
+    mode: sync
+    episodes_per_task: 10
+    max_steps: 200
+    params:
+      tasks: [pick_cube]
+      seed: 99
