@@ -50,6 +50,20 @@ mug_in_bowl = _register(TaskSpec(
     motion_type="pick_and_place",
 ))
 
+BOWL_HEIGHT = 0.03   # scaled bowl (~6cm real → 3cm at 0.5x)
+BOWL_RADIUS = 0.035  # scaled diameter ~7cm → radius 3.5cm
+
+pick_bowl = _register(TaskSpec(
+    name="pick_bowl",
+    instruction="Pick up the bowl",
+    scene="tabletop_simple",
+    contact_objects=["bowl", "table"],
+    success_fn="object_above",
+    success_params={"object": "bowl", "reference": "table", "z_margin": 0.02},
+    skills=[Skill("pick", "bowl", "bowl", {"object_height": BOWL_HEIGHT})],
+    motion_type="pick",
+))
+
 stack_blocks = _register(TaskSpec(
     name="stack_blocks",
     instruction="Stack the red, green, and blue blocks",

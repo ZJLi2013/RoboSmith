@@ -513,6 +513,133 @@ RoboLab 的设计精髓（composable predicates, subtask tracking）已吸收到
 
 ---
 
+## 3.5 Grasp 生成方案全景
+
+> 不规则物体（碗、盘、瓶、玩具等）的 grasp pose 生成是 RoboSmith Part 3 的核心问题。
+> 详细技术文章见 [general_object_grasp_solution.md](general_object_grasp_solution.md)。
+> 本节聚焦方案对比与 RoboSmith 选型结论。
+
+### 3.5.1 方案分类
+
+Grasp 生成方案按方法论分为三类：
+
+```
+纯几何（无 ML）         学习型（ML）              端到端 Policy
+────────────          ─────────────           ────────────────
+Antipodal Sampling     Contact-GraspNet        GraspLDP
+Force Closure Metric   GraspGen                AnchorDP3
+                       AnyGrasp                Spatial RoboGrasp
+                       DexNet / GQ-CNN
+
+输出: grasp pose set   输出: grasp pose set    输出: action trajectory
+```
+
+### 3.5.2 主流方案对比
+
+| 方案 | 方法 | 输入 | 训练数据 | License | ROCm | 推理速度 | 精度 |
+|------|------|------|---------|---------|:---:|:---:|:---:|
+| **Antipodal Sampling** | 表面点配对 + force closure | mesh | 无需 | 自有 | ✅ | ~1s/物体 | 中 |
+| **DexNet 2.0** (Berkeley) | GQ-CNN 回归 | depth image | 6.7M grasps | BSD | ⚠️ TF | ~0.3s | 中-高 |
+| **Contact-GraspNet** (NVlabs, ICRA'21) | Per-point 4-DoF 回归 (PointNet++) | 场景点云 | 17M grasps | ❌ NVIDIA proprietary | ❌ TF + CUDA ops | ~200ms | 高 (>90%) |
+| **AnyGrasp** (清华, T-RO'23) | 大规模点云检测 | 场景点云 | 大规模 | ❌ 商业 SDK | ❌ CUDA | ~100ms | 高 |
+| **GraspGen** (NVlabs, ICRA'26) | DiT Diffusion + Discriminator | 物体点云 | 53M grasps | ❌ NVIDIA proprietary | ❌ pointnet2_ops CUDA | ~50ms (20Hz) | SOTA |
+| **GraspLDP** (CVPR'26) | Latent Diffusion + Grasp Prior → action chunk | wrist RGB | demos | 未公开 | 未知 | real-time | 高 |
+| **VGN** (ETH) | 3D CNN → voxel grid 回归 | TSDF volume | 5M grasps | BSD-2 | ✅ PyTorch | ~10ms | 中 |
+
+### 3.5.3 License + ROCm 约束下的选型
+
+RoboSmith 有两个硬约束：**AMD ROCm 全栈** + **可开源再分发**。
+大幅缩小了可选范围：
+
+| 方案 | License OK | ROCm OK | 可集成 |
+|------|:---:|:---:|:---:|
+| Antipodal Sampling | ✅ 自有代码 | ✅ NumPy/trimesh | **✅** |
+| DexNet 2.0 | ✅ BSD | ⚠️ TF 老版本 | ⚠️ 迁移成本高 |
+| Contact-GraspNet | ❌ NVIDIA proprietary | ❌ TF + CUDA kernel | **❌** |
+| AnyGrasp | ❌ 商业 SDK | ❌ CUDA | **❌** |
+| GraspGen | ❌ NVIDIA proprietary | ❌ pointnet2_ops CUDA | **❌** |
+| VGN | ✅ BSD-2 | ✅ PyTorch | **✅** |
+| GraspFactory 方法论 | ✅ Apache-2.0 (Autodesk) | ✅ Isaac Sim 生成，模型可重训 | **✅ 方法论可用** |
+
+**结论**：
+
+- **短期（Phase 3.2）**：`SamplerGraspPlanner` — antipodal sampling + force closure，纯 NumPy/trimesh，
+  参考 [GraspFactory](https://github.com/AutodeskRoboticsLab/graspfactory) (Apache-2.0) 的 sampling 方法论
+- **中期**：如需更高质量，可用 GraspFactory 的数据格式 + 自训一个轻量 grasp quality model（PyTorch, ROCm 友好）
+- **学术对比**：Contact-GraspNet / GraspGen 可作为 baseline 对比（license 允许内部研究使用），但不打包进 RoboSmith
+
+### 3.5.4 Antipodal Sampling 技术细节
+
+`SamplerGraspPlanner` 的核心算法：
+
+```
+输入: mesh (trimesh.Trimesh), gripper_max_opening (0.08m), μ (摩擦系数, 0.5)
+
+1. 表面采样
+   points, normals = mesh.sample(N=10000, return_index=True)
+   → N 个 (point, face_normal) 对
+
+2. Antipodal 配对
+   对每个 p1, 找 p2 满足:
+   - ||p1 - p2|| < gripper_max_opening
+   - n1 · n2 < -cos(30°)                    ← 法线近似反向
+   - 连线 (p2-p1) 在两点的摩擦锥内          ← force closure 条件
+   用 KD-Tree 加速邻域搜索
+
+3. Grasp 参数化
+   grasp_center = (p1 + p2) / 2
+   grasp_axis = normalize(p2 - p1)           ← 两指方向
+   approach = 选择与 grasp_axis 正交且朝上的方向
+   finger_width = ||p2 - p1||
+
+4. Force Closure 评分
+   q = min(
+     角度余量: |acos(-n1·n2)| / π,
+     摩擦余量: min(friction_cone_margin(p1), friction_cone_margin(p2))
+   )
+
+5. 碰撞过滤
+   将 gripper mesh 放到候选 pose
+   trimesh.collision.CollisionManager 检查 gripper ∩ object
+   碰撞的去掉
+
+6. 聚类去重
+   对 survivors 在 SE(3) 空间做 agglomerative clustering
+   每 cluster 取 quality 最高的
+
+输出: list[GraspPlan], 按 quality 降序
+```
+
+**社区参考**：
+- [GraspFactory](https://github.com/AutodeskRoboticsLab/graspfactory) (Autodesk, Apache-2.0) — 109M grasps，
+  用 antipodal sampling + Isaac Sim 物理验证，Franka Panda 子集 12.2M grasps
+- [DexNet](https://github.com/BerkeleyAutomation/dex-net) (Berkeley, BSD) — `PointGraspMetrics3D` 类实现了
+  完整的 force closure / wrench space 分析
+- GraspGen 的 [GRASP_DATASET_FORMAT.md](https://github.com/NVlabs/GraspGen/blob/main/docs/GRASP_DATASET_FORMAT.md) —
+  数据格式参考（grasp pose + success label + gripper config）
+
+### 3.5.5 NVlabs Grasp 系列 License 详解
+
+Contact-GraspNet 和 GraspGen 都来自 NVlabs，license 需要特别说明：
+
+| 项目 | License 文件 | 声明 | 实际含义 |
+|------|-------------|------|---------|
+| Contact-GraspNet | `License.pdf` (NVIDIA Source Code License) | 仅限非商业研究 | 不可再分发、不可 production |
+| GraspGen | `LICENSE` | "Copyright © 2025 NVIDIA. All rights reserved." | 同上 + 商业需走 NVIDIA Research Licensing |
+| GraspGen 数据集 | HuggingFace `nvidia/PhysicalAI-Robotics-GraspGen` | CC-BY-NC-4.0 | 数据仅限非商业 |
+| GraspGen checkpoints | HuggingFace `adithyamurali/GraspGenModels` | 同代码 license | 权重不可再分发 |
+
+**ROCm 迁移障碍**：两者都依赖 `pointnet2_ops`（手写 CUDA kernel: grouping / interpolation / sampling），
+需要 `hipify-perl` 翻译 `.cu` → `.hip`。GraspGen 额外依赖 `torch-cluster` / `torch-scatter` (PyG)，
+PyG 对 ROCm 支持不稳定。
+
+**PyTorch 社区移植**（Contact-GraspNet）：
+- [elchun/contact_graspnet_pytorch](https://github.com/elchun/contact_graspnet_pytorch) (80 stars) — 最活跃
+- [sebbyjp/cgn_pytorch](https://github.com/sebbyjp/cgn_pytorch) — pip 可装 (`pip install cgn-pytorch`)
+- License 均标记 "Other (NOASSERTION)" — 从 NVlabs 移植，license 继承不清
+
+---
+
 ## 4. 3D 生成模型全景调研
 
 > 行业正从"生成好看的 3D"过渡到"生成仿真可用的 3D"。

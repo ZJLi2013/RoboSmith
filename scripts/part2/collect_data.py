@@ -52,6 +52,8 @@ FORCE_LOWER = np.array([-87, -87, -87, -87, -12, -12, -12, -100, -100], dtype=np
 FORCE_UPPER = np.array([87, 87, 87, 87, 12, 12, 12, 100, 100], dtype=np.float32)
 
 CUBE_SIZE = (0.04, 0.04, 0.04)
+BOWL_RADIUS = 0.035   # 7cm diameter (scaled bowl)
+BOWL_HEIGHT = 0.03    # 3cm tall (scaled bowl)
 
 
 def ensure_display():
@@ -180,9 +182,11 @@ def main():
 
     is_place_task = task_spec.motion_type == "pick_and_place"
     is_stack_task = task_spec.is_stack
+    is_bowl_task = task_spec.name == "pick_bowl"
     N_BLOCKS = task_spec.n_stack if is_stack_task else 1
     BLOCK_COLORS = [(1.0, 0.3, 0.3, 1.0), (0.3, 0.8, 0.3, 1.0), (0.3, 0.3, 1.0, 1.0)]
     BLOCK_NAMES = ["block_red", "block_green", "block_blue"]
+    pick_obj_name = task_spec.skills[0].target if task_spec.skills else "cube"
 
     # ---- MotionParams from CLI ----
     motion_params = MotionParams(
@@ -254,7 +258,11 @@ def main():
         target_marker = None
         cube_z = resolved.placed_objects[0].position[2] if resolved.placed_objects else table_z
     else:
-        cube_z = CUBE_SIZE[2] / 2.0
+        if is_bowl_task:
+            obj_z = BOWL_HEIGHT / 2.0
+        else:
+            obj_z = CUBE_SIZE[2] / 2.0
+        cube_z = obj_z
 
         scene = gs.Scene(
             sim_options=gs.options.SimOptions(dt=1.0 / args.fps, substeps=4),
@@ -276,6 +284,15 @@ def main():
                 )
                 blocks.append(b)
             cube = blocks[0]
+        elif is_bowl_task:
+            cube = scene.add_entity(
+                morph=gs.morphs.Cylinder(
+                    radius=BOWL_RADIUS, height=BOWL_HEIGHT,
+                    pos=(0.55, 0.0, cube_z),
+                ),
+                material=gs.materials.Rigid(friction=args.cube_friction),
+                surface=gs.surfaces.Default(color=(0.6, 0.4, 0.2, 1.0)),
+            )
         else:
             cube = scene.add_entity(
                 morph=gs.morphs.Box(size=CUBE_SIZE, pos=(0.55, 0.0, cube_z)),
@@ -512,7 +529,7 @@ def main():
                 positions[BLOCK_NAMES[bi]] = np.array([bx, by, cube_z])
             positions["stack_center"] = np.array([sx, sy, cube_z])
         else:
-            positions["cube"] = np.array([cx, cy, cube_z])
+            positions[pick_obj_name] = np.array([cx, cy, cube_z])
             if px is not None:
                 positions["target"] = np.array([px, py, cube_z])
 
@@ -579,8 +596,8 @@ def main():
         else:
             cube_final_pos = to_numpy(cube.get_pos())
             env_state = {
-                "object_positions": {"cube": cube_final_pos.copy()},
-                "initial_positions": {"cube": np.array([cx, cy, initial_cube_z])},
+                "object_positions": {pick_obj_name: cube_final_pos.copy()},
+                "initial_positions": {pick_obj_name: np.array([cx, cy, initial_cube_z])},
             }
             if is_place_task and px is not None:
                 env_state["object_positions"]["target"] = np.array([px, py, 0.0025])

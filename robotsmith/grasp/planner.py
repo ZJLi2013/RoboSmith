@@ -22,6 +22,7 @@ class GraspPlanner(ABC):
         *,
         category: str = "block",
         asset: Any = None,
+        object_height: float | None = None,
     ) -> list[GraspPlan]:
         """Return GraspPlan(s) sorted by quality (descending)."""
         ...

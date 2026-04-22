@@ -66,7 +66,11 @@ def run_skills(
         obj_pos = scene_state["positions"][skill.target]
 
         if skill.name == "pick":
-            plan = planner.plan(obj_pos, category=skill.category)[0]
+            plan = planner.plan(
+                obj_pos,
+                category=skill.category,
+                object_height=skill.params.get("object_height"),
+            )[0]
             next_is_place = (i + 1 < n and skills[i + 1].name == "place")
             pick_params = MotionParams(
                 approach_steps=params.approach_steps,
