@@ -52,8 +52,8 @@ FORCE_LOWER = np.array([-87, -87, -87, -87, -12, -12, -12, -100, -100], dtype=np
 FORCE_UPPER = np.array([87, 87, 87, 87, 12, 12, 12, 100, 100], dtype=np.float32)
 
 CUBE_SIZE = (0.04, 0.04, 0.04)
-BOWL_RADIUS = 0.018   # 3.6cm diameter (scaled bowl, fits Franka gripper)
-BOWL_HEIGHT = 0.035   # 3.5cm tall (scaled bowl)
+BOWL_SIZE = (0.035, 0.035, 0.035)  # box approximation of bowl (3.5cm)
+BOWL_HEIGHT = 0.035
 
 
 def ensure_display():
@@ -259,7 +259,7 @@ def main():
         cube_z = resolved.placed_objects[0].position[2] if resolved.placed_objects else table_z
     else:
         if is_bowl_task:
-            obj_z = BOWL_HEIGHT / 2.0
+            obj_z = BOWL_SIZE[2] / 2.0
         else:
             obj_z = CUBE_SIZE[2] / 2.0
         cube_z = obj_z
@@ -286,8 +286,8 @@ def main():
             cube = blocks[0]
         elif is_bowl_task:
             cube = scene.add_entity(
-                morph=gs.morphs.Cylinder(
-                    radius=BOWL_RADIUS, height=BOWL_HEIGHT,
+                morph=gs.morphs.Box(
+                    size=BOWL_SIZE,
                     pos=(0.55, 0.0, cube_z),
                 ),
                 material=gs.materials.Rigid(friction=args.cube_friction),

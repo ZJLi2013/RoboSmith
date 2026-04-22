@@ -51,7 +51,7 @@ mug_in_bowl = _register(TaskSpec(
 ))
 
 BOWL_HEIGHT = 0.035  # scaled bowl height
-BOWL_RADIUS = 0.018  # 3.6cm diameter — small enough for Franka finger clamp
+BOWL_SIZE = (0.035, 0.035, 0.035)  # box approximation of bowl (3.5cm cube-ish)
 
 pick_bowl = _register(TaskSpec(
     name="pick_bowl",
