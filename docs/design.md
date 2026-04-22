@@ -5,11 +5,14 @@
 >
 > Part 1: Sim-ready 3D gen (done)
 > Part 2: Data Engine — TaskSpec + 可插拔数据生产后端 (IK ✅ / DART / DAgger / Online RL) + vla-eval benchmark plugin
+> Part 3: Irregular Object Grasping — Grasp Affordance Layer (next)
 >
 > 相关文档：
 > - [README.md](../README.md) — 项目概览与当前状态
 > - [study.md](study.md) — 技术调研、前沿分析、实现笔记、参考链接
 > - [part2.md](part2.md) — Part 2 Data Engine + Eval 总结
+> - [part3.md](part3.md) — Part 3 异形物体抓取数据生成设计
+> - [general_object_grasp_solution.md](general_object_grasp_solution.md) — 不规则物体抓取技术方案全景（三层框架 + 横向对比）
 > - [background.md](background.md) — 技术背景（水密网格、URDF、凸包近似等）
 
 ---
@@ -63,6 +66,7 @@ Part 2 ── Data Engine + Eval ✅ (IK)
 | 引擎 | 目标 | 状态 |
 |------|------|:---:|
 | **Data Engine — IK** | TaskSpec + IK solver: pick / place / stack → LeRobot 数据集 | ✅ |
+| **Grasp Affordance Layer** | 不规则物品（碗/杯/瓶等）的 grasp template → IK 参数自适应 | 🔴 **Next** |
 | **Data Engine — DART** | IK + noise 注入 + IK 重求解 → recovery data | 📋 |
 | **Eval Engine** | Server-client 接口 → 并行评估 → composable predicate → eval report | 📋 |
 | **闭环验证** | eval report → 诊断 → 针对性补采 / 切换后端 → 验证提升 | 📋 |
@@ -538,6 +542,13 @@ RECAP 用 advantage signal 标注 policy action（"你做的好不好"），让 
 
 # Next Step：Grasp Affordance Gap 与演进路线
 
+> **2025-04-22 发现**：IK 数据生成只适合规则物品（cube, box），对实际场景中的不规则物品
+> （碗、碟子、杯子、螺丝刀、各种造型的玩具等）缺乏 grasp point / approach direction 等定义。
+> **这是 RoboSmith 从 demo 升级到实用工具的关键瓶颈** — Part 1 的差异化价值（custom asset 生成）
+> 无法传递到 Part 2（数据生产），整个 pipeline 的核心价值主张不成立。
+>
+> **优先级：最高。已列入 README Roadmap Phase 3。**
+
 ## 核心矛盾
 
 RoboSmith 当前存在一个结构性 gap：
@@ -647,6 +658,47 @@ Asset (Part 1) → match category → GraspTemplate → TrajectoryParams → IK 
 2. **中期 (B)**：逐步加 grasp template，从 bowl (top-down, scaled) 开始，最简单
 3. **长期**：接入 GraspNet/AnyGrasp 自动预测 grasp pose，去掉人工 annotation
 
+## 架构重构：Grasp Planner + Motion Executor 分离
+
+> **2025-04-22 设计决策**：Part 2 的 `IKStrategy` 同时承担"抓哪里"（Grasp Planning）和
+> "怎么到达"（Motion Execution）两个职责。这是导致无法扩展到新品类的架构根因。
+> 重构方向：分离为 `GraspPlanner`（决策）+ `MotionExecutor`（执行），IK solver 降级为纯执行层。
+>
+> 详细设计、数据结构、代码重构计划见 [part3.md](part3.md)。
+
+### 新模块结构
+
+```
+robotsmith/
+├── grasp/                    # Grasp Planning Layer（新增）
+│   ├── plan.py               #   GraspPlan dataclass
+│   ├── planner.py            #   GraspPlanner ABC
+│   └── template_planner.py   #   TemplateGraspPlanner + GRASP_TEMPLATES
+│
+├── motion/                   # Motion Execution Layer（从 ik_strategies 提取）
+│   ├── executor.py           #   MotionExecutor (pick, pick_and_place)
+│   └── params.py             #   MotionParams (纯运动时间参数)
+│
+├── tasks/                    # 简化：不再持有 IK 决策逻辑
+│   ├── task_spec.py          #   TaskSpec (motion_type 替代 ik_strategy)
+│   ├── predicates.py         #   不变
+│   └── presets.py            #   更新 presets
+```
+
+### 核心抽象关系
+
+```
+GraspPlanner.plan(asset, pos, quat)  →  GraspPlan
+                                           │
+                                           ▼
+MotionExecutor.pick(grasp_plan, solve_ik)  →  joint trajectory
+                                                   │
+                                                   ▼
+                                          DataBackend.collect() 执行 + 录制
+```
+
+`GraspPlan` 是两层之间的唯一契约 — planner 不关心 IK，executor 不关心物体语义。
+
 ---
 
 # 核心抽象
@@ -662,19 +714,25 @@ Asset (Part 1) → match category → GraspTemplate → TrajectoryParams → IK 
                             │  (声明式任务定义)       │
                             └──────┬────────────────┘
                                    │
-          ┌────────────────────────┼────────────────┐
-          │                        │                │
-   ┌──────▼──────┐         ┌──────▼──────┐  ┌──────▼──────────┐
-   │ Part 1      │         │ Part 2      │  │ Eval            │
-   │ Asset Layer │         │ Data Engine │  │ (vla-eval plugin)│
-   └─────────────┘         └─────────────┘  └─────────────────┘
-   Asset                    DataBackend (ABC)  RoboSmithBenchmark
-   AssetMetadata             ├ IKScripted ✅    (vla-eval Benchmark ABC)
-   AssetLibrary              ├ DART 📋
-   GenBackend                ├ DAgger 📋
-                             └ OnlineRL 📋
-                            SceneConfig
-                            IKStrategy
+     ┌─────────────────────────────┼─────────────────────────┐
+     │                             │                         │
+┌────▼─────┐   ┌─────────────────▼──────────────────┐  ┌───▼─────────────┐
+│ Part 1   │   │         Data Gen Pipeline           │  │ Eval            │
+│ Assets   │   │                                     │  │ (vla-eval)      │
+└──────────┘   │  GraspPlanner → GraspPlan           │  └─────────────────┘
+Asset          │       │                             │  RoboSmithBenchmark
+AssetMetadata  │       ▼                             │
+AssetLibrary   │  MotionExecutor → joint trajectory  │
+GenBackend     │       │                             │
+               │  DataBackend.collect() 执行 + 录制   │
+               │    ├ IKScripted ✅                   │
+               │    ├ DART 📋                        │
+               │    ├ DAgger 📋                      │
+               │    └ OnlineRL 📋                    │
+               │       │                             │
+               │       ▼                             │
+               │  LeRobot Dataset                    │
+               └─────────────────────────────────────┘
 ```
 
 ## Part 1：Asset Layer
@@ -714,6 +772,102 @@ robotsmith/gen/backend.py
 | `TripoSGBackend` | `triposg_backend.py` | 📋 stub |
 
 注册表模式：`register_backend` / `get_backend` / `list_backends`。
+
+## Grasp Planning Layer
+
+> Part 3 新增。将 "抓哪里" 的决策从 IKStrategy 中分离为独立模块。
+
+### `GraspPlan`
+
+```
+robotsmith/grasp/plan.py
+```
+
+两层之间的唯一契约 — planner 不关心 IK，executor 不关心物体语义。
+
+```python
+@dataclass
+class GraspPlan:
+    grasp_pos: np.ndarray          # 抓取点 (world frame)
+    grasp_quat: np.ndarray         # EE 姿态 (wxyz)
+    pre_grasp_pos: np.ndarray      # 预抓取悬停点
+    pre_grasp_quat: np.ndarray
+    retreat_pos: np.ndarray        # 撤退点（抓起后）
+    retreat_quat: np.ndarray
+    finger_open: float             # 接近时 finger width
+    finger_closed: float           # 夹紧时 finger width
+    quality: float = 1.0           # 抓取质量评分 (0–1)
+    metadata: dict                 # 来源信息 (template/sampler/model)
+```
+
+### `GraspPlanner` (ABC) + 实现
+
+```
+robotsmith/grasp/planner.py            — GraspPlanner ABC
+robotsmith/grasp/template_planner.py   — TemplateGraspPlanner + GRASP_TEMPLATES
+```
+
+| 实现 | 方法 | 状态 |
+|------|------|:---:|
+| `TemplateGraspPlanner` | per-category 人工模板 → `GraspPlan` | ✅ |
+| `SamplerGraspPlanner` | mesh antipodal sampling → N 个 candidates | 📋 |
+| `LearnedGraspPlanner` | AnyGrasp / model prediction | 📋 |
+
+```python
+class GraspPlanner(ABC):
+    @abstractmethod
+    def plan(self, asset: Asset, object_pos, object_quat, rng) -> list[GraspPlan]: ...
+```
+
+**TemplateGraspPlanner** 从 `GRASP_TEMPLATES[category]` 查找模板，将 template + 运行时 object pose 转为 `GraspPlan`。block/cube template 复现旧 `TrajectoryParams` 的默认行为。
+
+### 与旧 `IKStrategy` 的映射
+
+| Part 2 旧代码 | 重构后 | 变化 |
+|--------------|--------|------|
+| `TrajectoryParams.grasp_quat` | `GraspPlan.grasp_quat` | 全局常量 → per-object |
+| `TrajectoryParams.grasp_z` | `GraspPlan.grasp_pos[2]` | 固定值 → planner 计算 |
+| `TrajectoryParams.finger_open/closed` | `GraspPlan.finger_open/closed` | 固定值 → per-object |
+| `PickStrategy` 内部 hardcode 姿态 | `GraspPlanner` 输出不同 `GraspPlan` | 差异在 planner，executor 通用 |
+| 每种物体需新 `IKStrategy` | 每种物体只需新 `GraspTemplate` 或新 planner | **可扩展** |
+
+不同物体的差异体现在 `GraspPlanner` 输出不同的 `GraspPlan`，而非不同的 `IKStrategy`：
+
+```
+碗:   TemplateGraspPlanner → GraspPlan(top-down, scaled)  → MotionExecutor.pick()
+杯子: TemplateGraspPlanner → GraspPlan(side, handle)      → MotionExecutor.pick()
+瓶子: SamplerGraspPlanner  → GraspPlan(side, mid-body)    → MotionExecutor.pick()
+玩具: LearnedGraspPlanner  → GraspPlan(best candidate)    → MotionExecutor.pick()
+                                                              ↑ 同一个执行器
+```
+
+## Motion Execution Layer
+
+> Part 3 重构。从旧 `IKStrategy` 中提取纯运动执行逻辑。
+
+### `MotionParams`
+
+```
+robotsmith/motion/params.py
+```
+
+纯运动时间参数（step counts），不含抓取决策。等价于旧 `TrajectoryParams` 中的 `*_steps` 字段。
+
+### `MotionExecutor`
+
+```
+robotsmith/motion/executor.py
+```
+
+给定 `GraspPlan` + `MotionParams` + IK solver，生成 joint-space 轨迹。
+对所有物体通用 — 只关心 "从 pre_grasp 到 grasp_pos 用什么姿态"。
+
+| 方法 | 轨迹结构 | 等价旧代码 |
+|------|---------|-----------|
+| `pick()` | home → pre_grasp → grasp (close) → retreat | `PickStrategy.plan()` |
+| `pick_and_place()` | pick + transport → pre_place → place (open) → retreat | `PickAndPlaceStrategy.plan()` |
+
+旧 `StackStrategy` 不再是独立 class — 调用方循环 N 次 `pick_and_place()`。
 
 ## Part 2：Scene + Data Engine
 
@@ -782,7 +936,7 @@ robotsmith/tasks/data_backend.py  (planned)
 | `DAggerBackend` | Policy rollout + IK expert relabel | 📋 |
 | `OnlineRLBackend` | Policy exploration + reward | 📋 |
 
-所有后端共享同一 `TaskSpec` + `IKStrategy` + `SceneConfig`，产出统一 LeRobot 数据集。
+所有后端共享同一 `TaskSpec` + `GraspPlanner` + `MotionExecutor` + `SceneConfig`，产出统一 LeRobot 数据集。
 后端选择对下游 VLA 训练透明 — 不同后端数据可自由混合。
 
 ## TaskSpec：全局枢纽
@@ -792,7 +946,6 @@ robotsmith/tasks/data_backend.py  (planned)
 ```
 robotsmith/tasks/task_spec.py    — TaskSpec dataclass
 robotsmith/tasks/predicates.py   — PREDICATE_REGISTRY + evaluate_predicate()
-robotsmith/tasks/ik_strategies.py — IK_STRATEGIES + PickStrategy
 robotsmith/tasks/presets.py      — TASK_PRESETS (pick_cube, mug_in_bowl, stack_blocks)
 ```
 
@@ -805,13 +958,17 @@ class TaskSpec:
     contact_objects: list[str]
     success_fn: str                    # PREDICATE_REGISTRY key（非 Callable）
     success_params: dict               # 纯 dict，JSON 可序列化
-    ik_strategy: str                   # IK_STRATEGIES key
+    motion_type: str = "pick"          # "pick" | "pick_and_place"
     episode_length: int = 200
     dart_sigma: float = 0.0
+    grasp_planner: str = "template"    # GraspPlanner 后端名
 ```
 
-**状态**：✅ Phase 1 已实现。`collect_data.py` 通过 `--task pick_cube` 使用 TaskSpec dispatch。
-有 5 个结构性缺陷需要在扩展前解决。
+> **演进记录**：`ik_strategy` 字段已在 Part 3 重构中替换为 `motion_type`。
+> 旧 `ik_strategy="stack"` 映射为 `motion_type="pick_and_place"`（调用方循环 N 次）。
+> 新增 `grasp_planner` 字段，允许 TaskSpec 声明使用哪种 grasp planner。
+
+**状态**：✅ Phase 1 已实现，Phase 3 架构重构完成。
 
 ### 社区参考
 

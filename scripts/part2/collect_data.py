@@ -100,11 +100,7 @@ def get_ee_state(ee_link, finger_dof_vals: np.ndarray) -> np.ndarray:
 
 def compute_ee_delta(prev_state: np.ndarray, curr_state: np.ndarray,
                      gripper_cmd: float) -> np.ndarray:
-    """Compute 7D EE delta action: [delta_pos(3), delta_axangle(3), gripper(1)].
-
-    Delta rotation = R_curr * R_prev^{-1}, represented as compact axis-angle.
-    Gripper is absolute command (0.04 = open, 0.01 = closed).
-    """
+    """Compute 7D EE delta action: [delta_pos(3), delta_axangle(3), gripper(1)]."""
     delta_pos = curr_state[:3] - prev_state[:3]
     r_prev = Rotation.from_rotvec(prev_state[3:6])
     r_curr = Rotation.from_rotvec(curr_state[3:6])
@@ -117,8 +113,11 @@ def compute_ee_delta(prev_state: np.ndarray, curr_state: np.ndarray,
 
 
 def main():
-    from robotsmith.tasks import TASK_PRESETS, IK_STRATEGIES, TrajectoryParams
+    from robotsmith.tasks import TASK_PRESETS
     from robotsmith.tasks import evaluate_predicate
+    from robotsmith.tasks.task_spec import TaskSpec
+    from robotsmith.grasp import TemplateGraspPlanner
+    from robotsmith.motion import MotionExecutor, MotionParams
 
     ap = argparse.ArgumentParser(description="TaskSpec-driven data collection")
     ap.add_argument("--task", default="pick_cube",
@@ -138,11 +137,7 @@ def main():
                     help="Min XY distance between pick and place for pick_and_place tasks")
     ap.add_argument("--dart-sigma", type=float, default=None,
                     help="DART noise sigma (overrides TaskSpec.dart_sigma)")
-    # trajectory params (defaults match legacy pick-cube)
-    ap.add_argument("--hover-z", type=float, default=0.25)
-    ap.add_argument("--grasp-z", type=float, default=0.135)
-    ap.add_argument("--lift-z", type=float, default=0.30)
-    ap.add_argument("--place-z", type=float, default=0.15)
+    # motion timing (passed to MotionParams)
     ap.add_argument("--settle-steps", type=int, default=30)
     ap.add_argument("--approach-steps", type=int, default=40)
     ap.add_argument("--descend-steps", type=int, default=30)
@@ -153,7 +148,7 @@ def main():
     ap.add_argument("--place-descend-steps", type=int, default=25)
     ap.add_argument("--release-steps", type=int, default=15)
     ap.add_argument("--retreat-steps", type=int, default=25)
-    # success detection params (used for logging, predicate is authoritative)
+    # success detection params
     ap.add_argument("--success-lift-delta", type=float, default=0.02)
     ap.add_argument("--success-sustain-frames", type=int, default=8)
     ap.add_argument("--success-final-delta", type=float, default=0.01)
@@ -162,6 +157,9 @@ def main():
     ap.add_argument("--add-goal", action="store_true")
     ap.add_argument("--no-bbox-detection", action="store_true")
     ap.add_argument("--no-videos", action="store_true")
+    # grasp planner override
+    ap.add_argument("--grasp-planner", default=None,
+                    help="Grasp planner backend (default: from TaskSpec)")
     # scene mode
     ap.add_argument("--scene", default=None,
                     help="Scene preset or JSON path. If not set, uses legacy cube.")
@@ -176,20 +174,17 @@ def main():
     if args.dart_sigma is not None:
         task_spec = TaskSpec(**{**task_spec.to_dict(), "dart_sigma": args.dart_sigma})
     print(f"[task] {task_spec.name}: {task_spec.instruction}")
-    print(f"[task] success_fn={task_spec.success_fn}, ik_strategy={task_spec.ik_strategy}")
+    print(f"[task] motion_type={task_spec.motion_type}, "
+          f"grasp_planner={task_spec.grasp_planner}")
 
-    # ---- Resolve IK strategy ----
-    if task_spec.ik_strategy not in IK_STRATEGIES:
-        print(f"[error] Unknown ik_strategy '{task_spec.ik_strategy}'. "
-              f"Available: {list(IK_STRATEGIES.keys())}")
-        sys.exit(1)
-    strategy = IK_STRATEGIES[task_spec.ik_strategy]
+    is_place_task = task_spec.motion_type == "pick_and_place"
+    is_stack_task = task_spec.is_stack
+    N_BLOCKS = task_spec.n_stack if is_stack_task else 1
+    BLOCK_COLORS = [(1.0, 0.3, 0.3, 1.0), (0.3, 0.8, 0.3, 1.0), (0.3, 0.3, 1.0, 1.0)]
+    BLOCK_NAMES = ["block_red", "block_green", "block_blue"]
 
-    traj_params = TrajectoryParams(
-        hover_z=args.hover_z,
-        grasp_z=args.grasp_z,
-        lift_z=args.lift_z,
-        place_z=args.place_z,
+    # ---- MotionParams from CLI ----
+    motion_params = MotionParams(
         approach_steps=args.approach_steps,
         descend_steps=args.descend_steps,
         grasp_hold_steps=args.grasp_hold_steps,
@@ -200,19 +195,12 @@ def main():
         release_steps=args.release_steps,
         retreat_steps=args.retreat_steps,
     )
-
-    is_place_task = task_spec.ik_strategy in ("pick_and_place", "stack")
-    is_stack_task = task_spec.ik_strategy == "stack"
-    N_BLOCKS = 3 if is_stack_task else 1
-    BLOCK_COLORS = [(1.0, 0.3, 0.3, 1.0), (0.3, 0.8, 0.3, 1.0), (0.3, 0.3, 1.0, 1.0)]
-    BLOCK_NAMES = ["block_red", "block_green", "block_blue"]
+    executor = MotionExecutor()
 
     # ---- Genesis setup ----
     ensure_display()
     import genesis as gs
     import torch
-
-    from robotsmith.tasks.task_spec import TaskSpec
 
     gs.init(backend=(gs.cpu if args.cpu else gs.gpu), logging_level="warning")
 
@@ -368,7 +356,17 @@ def main():
         for _ in range(args.settle_steps):
             scene.step()
 
-    def solve_ik(pos, quat=traj_params.grasp_quat, finger_pos=traj_params.finger_open):
+    # ---- GraspPlanner setup ----
+    z_offset = (scene_config.table_height + scene_config.table_size[2] / 2.0) if use_scene else 0.0
+    planner = TemplateGraspPlanner(z_offset=z_offset)
+
+    # IK solver uses the planner's grasp_quat as default for backward compat
+    default_template = planner._templates.get("block") or next(
+        iter(planner._templates.values()))
+    _default_quat = default_template.ee_quat
+    _default_finger_open = default_template.finger_open
+
+    def solve_ik(pos, quat=_default_quat, finger_pos=_default_finger_open):
         qpos = to_numpy(franka.inverse_kinematics(
             link=end_effector,
             pos=np.array(pos, dtype=np.float32),
@@ -380,16 +378,14 @@ def main():
         target[8] = finger_pos
         return target
 
-    z_offset = (scene_config.table_height + scene_config.table_size[2] / 2.0) if use_scene else 0.0
-
     # ---- create LeRobot dataset ----
     try:
         from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
     except ImportError:
         from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
-    state_dim = 8  # ee_pos(3) + axangle(3) + gripper(2)
-    action_dim = 7  # delta_pos(3) + delta_axangle(3) + gripper(1)
+    state_dim = 8
+    action_dim = 7
 
     extra_dims = 0
     extra_names = []
@@ -440,7 +436,6 @@ def main():
     y_range = (args.cube_y_min, args.cube_y_max)
 
     def sample_place_target(cx, cy, min_dist):
-        """Sample a place XY that is at least min_dist from pick XY."""
         for _ in range(100):
             px = rng.uniform(x_range[0], x_range[1])
             py = rng.uniform(y_range[0], y_range[1])
@@ -449,7 +444,6 @@ def main():
         return (cx + min_dist, cy)
 
     def sample_spaced_positions(n, min_dist=0.10):
-        """Sample n positions with pairwise distance >= min_dist."""
         pts = []
         for _ in range(n):
             for _try in range(200):
@@ -485,7 +479,7 @@ def main():
     out_dir = Path(args.save) / f"franka_gen_{task_spec.name}"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"[gen] task={task_spec.name}, ik_strategy={task_spec.ik_strategy}")
+    print(f"[gen] task={task_spec.name}, motion_type={task_spec.motion_type}")
     print(f"[gen] cube x_range={x_range}, y_range={y_range}")
     if is_place_task:
         print(f"[gen] min_place_dist={args.min_place_dist}")
@@ -505,19 +499,52 @@ def main():
             px, py = sx, sy
             block_positions_3d = [[bx, by, cube_z] for bx, by in block_xys]
             reset_scene(cx, cy, block_positions=block_positions_3d)
-            target_pos = block_positions_3d
-            place_pos = np.array([sx, sy, cube_z])
+
+            # Stack: N rounds of pick_and_place with increasing place Z
+            block_h = 0.04
+            traj = []
+            for i, bpos in enumerate(block_positions_3d):
+                bpos_arr = np.array(bpos, dtype=np.float64)
+                pick_plans = planner.plan(bpos_arr, category="block")
+                pick_plan = pick_plans[0]
+
+                stack_place_z = default_template.place_z + i * block_h
+                place_plan = planner.plan_place(
+                    np.array([sx, sy, bpos_arr[2]], dtype=np.float64),
+                    category="block",
+                    place_z_override=stack_place_z,
+                )
+
+                round_params = MotionParams(
+                    approach_steps=motion_params.approach_steps,
+                    descend_steps=motion_params.descend_steps,
+                    grasp_hold_steps=motion_params.grasp_hold_steps,
+                    lift_steps=motion_params.lift_steps,
+                    lift_hold_steps=0,
+                    transport_steps=motion_params.transport_steps,
+                    place_descend_steps=motion_params.place_descend_steps,
+                    release_steps=motion_params.release_steps,
+                    retreat_steps=motion_params.retreat_steps,
+                )
+                start_qpos = traj[-1] if traj else HOME_QPOS
+                traj += executor.pick_and_place(
+                    pick_plan, place_plan, solve_ik, start_qpos, round_params)
         else:
             cx, cy, px, py = episode_points[ep]
             place_xy = (px, py) if px is not None else None
             reset_scene(cx, cy, place_xy=place_xy)
-            target_pos = np.array([cx, cy, cube_z])
-            place_pos = np.array([px, py, cube_z]) if is_place_task else None
 
-        traj = strategy.plan(
-            target_pos, solve_ik, HOME_QPOS, traj_params, z_offset,
-            place_pos=place_pos,
-        )
+            target_pos = np.array([cx, cy, cube_z])
+            pick_plans = planner.plan(target_pos, category="block")
+            pick_plan = pick_plans[0]
+
+            if is_place_task:
+                place_pos = np.array([px, py, cube_z])
+                place_plan = planner.plan_place(place_pos, category="block")
+                traj = executor.pick_and_place(
+                    pick_plan, place_plan, solve_ik, HOME_QPOS, motion_params)
+            else:
+                traj = executor.pick(pick_plan, solve_ik, HOME_QPOS, motion_params)
 
         if frames_per_episode is None:
             frames_per_episode = len(traj)

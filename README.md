@@ -107,9 +107,26 @@ python scripts/part1/browse_assets.py     # HTML asset gallery
 |:---:|-------|:---:|
 | 1 | Sim-ready assets (26 objects, 10 categories, TRELLIS.2-4B) | Done |
 | 2 | Multi-task IK data (pick/place/stack) + vla-eval benchmark plugin | Done |
-| 3 | DART data backend (`--dart-sigma`) | Planned |
-| 4 | DAgger data backend (policy rollout + IK relabel) | Planned |
-| 5 | Articulated + push/slide tasks (drawer, push-to-target) | Planned |
+| **3** | **Irregular object grasping — Grasp Affordance Layer** (see below) | **Next** |
+| 4 | DART data backend (`--dart-sigma`) | Planned |
+| 5 | DAgger data backend (policy rollout + IK relabel) | Planned |
+| 6 | Articulated + push/slide tasks (drawer, push-to-target) | Planned |
+
+### Phase 3: Irregular Object Grasping (Next Step)
+
+**Problem:** Part 1 generates diverse assets (bowls, mugs, bottles, screwdrivers, toys...), but Part 2 can only manipulate cubes/blocks — all IK grasp parameters (orientation, height, finger width) are hardcoded for small boxes. The objects that *most need* RoboSmith's data pipeline are exactly the ones it cannot handle yet.
+
+**Why it matters:** Without this, RoboSmith remains a demo for primitive shapes. Solving this is the single highest-leverage step to make the project practically useful.
+
+**Approach (progressive):**
+
+| Step | What | Effort |
+|------|------|:---:|
+| 3a | Per-category `GraspTemplate` — one-time human annotation per category (approach direction, grasp offset, EE orientation, finger width) replacing hardcoded `TrajectoryParams` | Medium |
+| 3b | Template-driven `IKStrategy` — read grasp params from `GraspTemplate` matched by asset category, enabling IK data gen for bowls, mugs, bottles, etc. | Medium |
+| 3c | Auto grasp prediction — integrate GraspNet/AnyGrasp to predict grasp poses from mesh, removing per-category annotation | Long-term |
+
+See [docs/design.md — Grasp Affordance Gap](docs/design.md#next-stepgrasp-affordance-gap-与演进路线) for detailed technical analysis.
 
 ## Project Structure
 
@@ -169,6 +186,7 @@ tests/                           # Tests
 - [docs/part1-exp.md](docs/part1-exp.md) — Part 1 experiment results (asset pipeline)
 - [docs/part2.md](docs/part2.md) — Part 2 summary (data engine + eval)
 - [docs/part2-exp.md](docs/part2-exp.md) — Part 2 experiment results
+- [docs/part3.md](docs/part3.md) — Part 3 design: irregular object grasping data generation
 - [docs/background.md](docs/background.md) — Technical background (watertight mesh, URDF, convex hull)
 
 ## Acknowledgments

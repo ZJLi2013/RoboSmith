@@ -17,7 +17,7 @@ pick_cube = _register(TaskSpec(
     contact_objects=["cube", "table"],
     success_fn="object_above",
     success_params={"object": "cube", "reference": "table", "z_margin": 0.05},
-    ik_strategy="pick",
+    motion_type="pick",
 ))
 
 place_cube = _register(TaskSpec(
@@ -27,7 +27,7 @@ place_cube = _register(TaskSpec(
     contact_objects=["cube", "target", "table"],
     success_fn="object_in_container",
     success_params={"object": "cube", "container": "target", "xy_threshold": 0.06},
-    ik_strategy="pick_and_place",
+    motion_type="pick_and_place",
 ))
 
 mug_in_bowl = _register(TaskSpec(
@@ -37,7 +37,7 @@ mug_in_bowl = _register(TaskSpec(
     contact_objects=["mug", "bowl", "table"],
     success_fn="object_in_container",
     success_params={"object": "mug", "container": "bowl"},
-    ik_strategy="pick_and_place",
+    motion_type="pick_and_place",
 ))
 
 stack_blocks = _register(TaskSpec(
@@ -47,5 +47,7 @@ stack_blocks = _register(TaskSpec(
     contact_objects=["block_red", "block_green", "block_blue", "table"],
     success_fn="stacked",
     success_params={"objects": ["block_red", "block_green", "block_blue"]},
-    ik_strategy="stack",
+    motion_type="pick_and_place",
+    is_stack=True,
+    n_stack=3,
 ))

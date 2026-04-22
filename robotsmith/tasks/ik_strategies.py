@@ -1,7 +1,10 @@
-"""IK waypoint generation strategies, dispatched by TaskSpec.ik_strategy.
+"""IK waypoint generation strategies — DEPRECATED.
 
-Each strategy is a class with a `plan()` method that returns a list of
-joint-space targets given a robot context and target object state.
+This module is superseded by:
+  - robotsmith.grasp   (GraspPlanner / GraspPlan — "where to grasp")
+  - robotsmith.motion  (MotionExecutor / MotionParams — "how to reach it")
+
+Kept for backward compatibility. New code should use the grasp + motion modules.
 """
 
 from __future__ import annotations
