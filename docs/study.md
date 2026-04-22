@@ -536,36 +536,46 @@ Force Closure Metric   GraspGen                AnchorDP3
 
 ### 3.5.2 主流方案对比
 
-| 方案 | 方法 | 输入 | 训练数据 | License | ROCm | 推理速度 | 精度 |
+> CUDA → ROCm 技术迁移不是阻碍因素（hipify / PyTorch ROCm 均可解决），因此不作为选型维度。
+> 核心筛选维度：**License 可再分发** + **Parallel-jaw gripper 适用** + **技术成熟度**。
+
+| 方案 | 方法 | 输入 | 训练数据 | License | 推理速度 | 精度 | Parallel-jaw |
 |------|------|------|---------|---------|:---:|:---:|:---:|
-| **Antipodal Sampling** | 表面点配对 + force closure | mesh | 无需 | 自有 | ✅ | ~1s/物体 | 中 |
-| **DexNet 2.0** (Berkeley) | GQ-CNN 回归 | depth image | 6.7M grasps | BSD | ⚠️ TF | ~0.3s | 中-高 |
-| **Contact-GraspNet** (NVlabs, ICRA'21) | Per-point 4-DoF 回归 (PointNet++) | 场景点云 | 17M grasps | ❌ NVIDIA proprietary | ❌ TF + CUDA ops | ~200ms | 高 (>90%) |
-| **AnyGrasp** (清华, T-RO'23) | 大规模点云检测 | 场景点云 | 大规模 | ❌ 商业 SDK | ❌ CUDA | ~100ms | 高 |
-| **GraspGen** (NVlabs, ICRA'26) | DiT Diffusion + Discriminator | 物体点云 | 53M grasps | ❌ NVIDIA proprietary | ❌ pointnet2_ops CUDA | ~50ms (20Hz) | SOTA |
-| **GraspLDP** (CVPR'26) | Latent Diffusion + Grasp Prior → action chunk | wrist RGB | demos | 未公开 | 未知 | real-time | 高 |
-| **VGN** (ETH) | 3D CNN → voxel grid 回归 | TSDF volume | 5M grasps | BSD-2 | ✅ PyTorch | ~10ms | 中 |
+| **Antipodal Sampling** | 表面点配对 + force closure | mesh | 无需 | 自有 | ~1s/物体 | 中 | ✅ |
+| **DexNet 2.0** (Berkeley) | GQ-CNN 回归 | depth image | 6.7M grasps | BSD | ~0.3s | 中-高 | ✅ |
+| **VGN** (ETH, CoRL'20) | 3D CNN → voxel grid 回归 | TSDF volume | 5M grasps | **BSD-3** | **10ms** | 中-高 (92% 真机) | ✅ |
+| **Contact-GraspNet** (NVlabs, ICRA'21) | Per-point 4-DoF 回归 (PointNet++) | 场景点云 | 17M grasps | ❌ NVIDIA proprietary | ~200ms | 高 (>90%) | ✅ |
+| **GraspNet-Baseline** (清华, CVPR'20) | 点云 grasp 检测 | 点云+RGB | GraspNet-1B | ⚠️ NOASSERTION | ~50ms | 高 | ✅ |
+| **AnyGrasp** (清华, T-RO'23) | 大规模点云检测 | 场景点云 | 大规模 | ❌ 商业 SDK | ~100ms | 高 | ✅ |
+| **GraspGen** (NVlabs, ICRA'26) | DiT Diffusion + Discriminator | 物体点云 | 53M grasps | ❌ NVIDIA proprietary | ~50ms (20Hz) | SOTA | ✅ |
+| **GraspLDP** (CVPR'26) | Latent Diffusion + Grasp Prior → action chunk | wrist RGB | demos | 未公开 | real-time | 高 | ✅ |
+| **GraspLoCoMo** (IROS'18) | Local Contact Moment 匹配 | 点云+法线 | 无需 | **BSD-3** | — | 中 | ✅ |
+| **GenDexGrasp** (ICRA'23) | Contact Map CVAE → 多指优化 | 物体点云 | MultiDex | 无 LICENSE | — | — | ❌ **灵巧手专用** |
 
-### 3.5.3 License + ROCm 约束下的选型
+### 3.5.3 License 约束下的选型
 
-RoboSmith 有两个硬约束：**AMD ROCm 全栈** + **可开源再分发**。
-大幅缩小了可选范围：
+RoboSmith 的硬约束：**可开源再分发**（CUDA→ROCm 技术迁移不是问题，但版权问题是）。
 
-| 方案 | License OK | ROCm OK | 可集成 |
-|------|:---:|:---:|:---:|
-| Antipodal Sampling | ✅ 自有代码 | ✅ NumPy/trimesh | **✅** |
-| DexNet 2.0 | ✅ BSD | ⚠️ TF 老版本 | ⚠️ 迁移成本高 |
-| Contact-GraspNet | ❌ NVIDIA proprietary | ❌ TF + CUDA kernel | **❌** |
-| AnyGrasp | ❌ 商业 SDK | ❌ CUDA | **❌** |
-| GraspGen | ❌ NVIDIA proprietary | ❌ pointnet2_ops CUDA | **❌** |
-| VGN | ✅ BSD-2 | ✅ PyTorch | **✅** |
-| GraspFactory 方法论 | ✅ Apache-2.0 (Autodesk) | ✅ Isaac Sim 生成，模型可重训 | **✅ 方法论可用** |
+| 方案 | License | 可集成进 RoboSmith | 备注 |
+|------|:---:|:---:|------|
+| Antipodal Sampling | ✅ 自有代码 | **✅** | 纯几何，无外部依赖 |
+| DexNet 2.0 | ✅ BSD | **✅** | TF 老版本，方法论可参考 |
+| **VGN** | **✅ BSD-3** | **✅** | **唯一 license 干净 + learned + parallel-jaw 方案** |
+| GraspFactory 方法论 | ✅ MIT (Autodesk) | **✅** | 数据集 + sampling 方法论 |
+| GraspLoCoMo | ✅ BSD-3 | ⚠️ | C++ 实现，集成成本高，小众 |
+| GraspNet-Baseline | ⚠️ NOASSERTION | ⚠️ | license 不清，需联系作者确认 |
+| Contact-GraspNet | ❌ NVIDIA proprietary | **❌** | 不可再分发、不可 production |
+| GraspGen | ❌ NVIDIA proprietary | **❌** | 同上 + 商用需走 NVIDIA Licensing |
+| AnyGrasp | ❌ 商业 SDK | **❌** | 商用需授权 |
+| GenDexGrasp | 无 LICENSE | **❌** | 且仅支持灵巧手，不适用 parallel-jaw |
 
-**结论**：
+**结论（两条腿走路）**：
 
-- **短期（Phase 3.2）**：`SamplerGraspPlanner` — antipodal sampling + force closure，纯 NumPy/trimesh，
-  参考 [GraspFactory](https://github.com/AutodeskRoboticsLab/graspfactory) (Apache-2.0) 的 sampling 方法论
-- **中期**：如需更高质量，可用 GraspFactory 的数据格式 + 自训一个轻量 grasp quality model（PyTorch, ROCm 友好）
+- **Phase 3.2(a) — SamplerGraspPlanner**（antipodal sampling + force closure，纯 NumPy/trimesh）
+  快速 baseline，无外部依赖，参考 [GraspFactory](https://github.com/AutodeskRoboticsLab/graspfactory) (MIT) 方法论，~3 天
+- **Phase 3.2(b) — VGN 集成**（[ethz-asl/vgn](https://github.com/ethz-asl/vgn), BSD-3, PyTorch）
+  Learned model，精度天花板更高（92% 真机），10ms inference，无 custom CUDA ops，~3-4 天
+- **Phase 3.3**：对比 (a) vs (b)，择优作为默认 planner
 - **学术对比**：Contact-GraspNet / GraspGen 可作为 baseline 对比（license 允许内部研究使用），但不打包进 RoboSmith
 
 ### 3.5.4 Antipodal Sampling 技术细节
@@ -629,9 +639,8 @@ Contact-GraspNet 和 GraspGen 都来自 NVlabs，license 需要特别说明：
 | GraspGen 数据集 | HuggingFace `nvidia/PhysicalAI-Robotics-GraspGen` | CC-BY-NC-4.0 | 数据仅限非商业 |
 | GraspGen checkpoints | HuggingFace `adithyamurali/GraspGenModels` | 同代码 license | 权重不可再分发 |
 
-**ROCm 迁移障碍**：两者都依赖 `pointnet2_ops`（手写 CUDA kernel: grouping / interpolation / sampling），
-需要 `hipify-perl` 翻译 `.cu` → `.hip`。GraspGen 额外依赖 `torch-cluster` / `torch-scatter` (PyG)，
-PyG 对 ROCm 支持不稳定。
+**技术栈备注**：两者都依赖 `pointnet2_ops`（手写 CUDA kernel），GraspGen 额外依赖 PyG 生态（torch-cluster / torch-scatter）。
+CUDA→ROCm 迁移技术上可行（hipify / PyTorch ROCm），但 **license 是硬伤，迁移了也不能分发**。
 
 **PyTorch 社区移植**（Contact-GraspNet）：
 - [elchun/contact_graspnet_pytorch](https://github.com/elchun/contact_graspnet_pytorch) (80 stars) — 最活跃
