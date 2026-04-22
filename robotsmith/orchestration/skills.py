@@ -57,19 +57,27 @@ def run_skills(
     ``scene_state`` must contain:
       - ``"home_qpos"``: np.ndarray — robot home joint positions
       - ``"positions"``: dict[str, np.ndarray] — object name → world-frame pos
+
+    Optional:
+      - ``"object_heights"``: dict[str, float] — object name → height in meters
     """
     traj: list[np.ndarray] = []
     qpos = scene_state["home_qpos"].copy()
+    heights = scene_state.get("object_heights", {})
     n = len(skills)
 
     for i, skill in enumerate(skills):
         obj_pos = scene_state["positions"][skill.target]
 
         if skill.name == "pick":
+            obj_h = (
+                skill.params.get("object_height")
+                or heights.get(skill.target)
+            )
             plan = planner.plan(
                 obj_pos,
                 category=skill.category,
-                object_height=skill.params.get("object_height"),
+                object_height=obj_h,
             )[0]
             next_is_place = (i + 1 < n and skills[i + 1].name == "place")
             pick_params = MotionParams(

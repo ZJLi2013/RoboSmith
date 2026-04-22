@@ -4,9 +4,9 @@
   "restitution": 0.1,
   "density_kg_m3": 1000.0,
   "size_cm": [
-    5,
-    5,
-    5
+    4,
+    4,
+    4
   ],
   "tags": [
     "block",
@@ -19,7 +19,7 @@
   "description": "Blue wooden block",
   "stable_poses": [
     {
-      "z": 0.025,
+      "z": 0.02,
       "quat": [
         1.0,
         0.0,

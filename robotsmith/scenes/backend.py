@@ -33,6 +33,15 @@ class PlacedObject:
     rotation: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
     quaternion: list[float] = field(default_factory=lambda: [1.0, 0.0, 0.0, 0.0])
     """Orientation as [w, x, y, z] quaternion (from stable pose)."""
+    scale: float = 1.0
+    """Uniform scale applied to the URDF mesh."""
+    name: str = ""
+    """Logical name for skill-target matching (e.g. 'cube', 'bowl')."""
+
+    @property
+    def object_height_m(self) -> float:
+        """Effective object height in meters after scaling."""
+        return self.asset.metadata.size_cm[2] / 100.0 * self.scale
 
 
 @dataclass
@@ -48,7 +57,11 @@ class ResolvedScene:
         lines = [f"Scene: {self.config.name} ({len(self.placed_objects)} objects)"]
         for po in self.placed_objects:
             pos = [round(v, 3) for v in po.position]
-            lines.append(f"  {po.asset.name:20s} pos={pos}")
+            scale_str = f" scale={po.scale:.3f}" if po.scale != 1.0 else ""
+            lines.append(
+                f"  {po.name:20s} ({po.asset.name}) pos={pos} "
+                f"h={po.object_height_m:.4f}m{scale_str}"
+            )
         return "\n".join(lines)
 
 
@@ -169,14 +182,24 @@ class ProgrammaticSceneBackend(SceneBackend):
                 print(f"[scene] WARNING: no asset for query={obj_spec.asset_query!r}")
                 continue
 
+            scale = obj_spec.scale
+
             for i in range(obj_spec.count):
                 asset = assets[i % len(assets)]
                 mesh = _load_collision_mesh(asset)
                 if mesh is None:
                     continue
 
+                if scale != 1.0:
+                    mesh = mesh.copy()
+                    mesh.apply_scale(scale)
+
                 z_offset, quat = _pick_stable_pose(self.rng, asset)
+                if scale != 1.0:
+                    z_offset *= scale
                 euler = _quat_to_euler(quat)
+
+                logical_name = obj_spec.name_override or f"{asset.name}_{i}"
 
                 if obj_spec.fixed_position:
                     pos = list(obj_spec.fixed_position)
@@ -184,11 +207,11 @@ class ProgrammaticSceneBackend(SceneBackend):
                         translate=pos,
                         angles=euler,
                     )
-                    obj_name = f"{asset.name}_{i}"
-                    collision_mgr.add_object(obj_name, mesh, transform)
+                    collision_mgr.add_object(logical_name, mesh, transform)
                     placed.append(PlacedObject(
                         asset=asset, position=pos,
                         rotation=euler, quaternion=quat,
+                        scale=scale, name=logical_name,
                     ))
                     continue
 
@@ -217,11 +240,11 @@ class ProgrammaticSceneBackend(SceneBackend):
                         dist = collision_mgr.min_distance_single(mesh, transform)
 
                     if dist >= margin:
-                        obj_name = f"{asset.name}_{i}"
-                        collision_mgr.add_object(obj_name, mesh, transform)
+                        collision_mgr.add_object(logical_name, mesh, transform)
                         placed.append(PlacedObject(
                             asset=asset, position=pos,
                             rotation=euler, quaternion=quat,
+                            scale=scale, name=logical_name,
                         ))
                         success = True
                         break

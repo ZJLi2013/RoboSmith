@@ -14,7 +14,7 @@ def _register(spec: TaskSpec) -> TaskSpec:
 pick_cube = _register(TaskSpec(
     name="pick_cube",
     instruction="Pick up the cube",
-    scene="tabletop_simple",
+    scene="pick_cube",
     contact_objects=["cube", "table"],
     success_fn="object_above",
     success_params={"object": "cube", "reference": "table", "z_margin": 0.05},
@@ -25,7 +25,7 @@ pick_cube = _register(TaskSpec(
 place_cube = _register(TaskSpec(
     name="place_cube",
     instruction="Pick up the cube and place it at the target",
-    scene="tabletop_simple",
+    scene="place_cube",
     contact_objects=["cube", "target", "table"],
     success_fn="object_in_container",
     success_params={"object": "cube", "container": "target", "xy_threshold": 0.06},
@@ -50,24 +50,21 @@ mug_in_bowl = _register(TaskSpec(
     motion_type="pick_and_place",
 ))
 
-BOWL_HEIGHT = 0.035  # scaled bowl height
-BOWL_SIZE = (0.035, 0.035, 0.035)  # box approximation of bowl (3.5cm cube-ish)
-
 pick_bowl = _register(TaskSpec(
     name="pick_bowl",
     instruction="Pick up the bowl",
-    scene="tabletop_simple",
+    scene="pick_bowl",
     contact_objects=["bowl", "table"],
     success_fn="object_above",
     success_params={"object": "bowl", "reference": "table", "z_margin": 0.02},
-    skills=[Skill("pick", "bowl", "bowl", {"object_height": 0.035})],
+    skills=[Skill("pick", "bowl", "bowl")],
     motion_type="pick",
 ))
 
 stack_blocks = _register(TaskSpec(
     name="stack_blocks",
     instruction="Stack the red, green, and blue blocks",
-    scene="tabletop_simple",
+    scene="stack_blocks",
     contact_objects=["block_red", "block_green", "block_blue", "table"],
     success_fn="stacked",
     success_params={"objects": ["block_red", "block_green", "block_blue"]},

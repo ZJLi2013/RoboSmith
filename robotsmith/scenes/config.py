@@ -23,6 +23,13 @@ class ObjectPlacement:
         default_factory=lambda: [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
     )
     fixed_position: Optional[list[float]] = None
+    scale: float = 1.0
+    """Uniform scale applied to the URDF at load time (e.g. 0.25 to shrink a
+    14 cm asset to ~3.5 cm).  Also applied to collision mesh during placement."""
+    name_override: Optional[str] = None
+    """Override the asset name in PlacedObject for skill-target matching.
+    Useful when you need a specific name like 'cube' or 'bowl' regardless
+    of the underlying asset (e.g. 'block_red')."""
 
 
 @dataclass
@@ -66,6 +73,8 @@ class SceneConfig:
                     "count": o.count,
                     "position_range": o.position_range,
                     "fixed_position": o.fixed_position,
+                    "scale": o.scale,
+                    "name_override": o.name_override,
                 }
                 for o in self.objects
             ],

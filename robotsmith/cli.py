@@ -103,13 +103,11 @@ def cmd_generate(args):
 
 
 def _load_scene_presets() -> dict:
-    presets = {}
     try:
-        from robotsmith.scenes.presets.tabletop_simple import tabletop_simple
-        presets["tabletop_simple"] = tabletop_simple
+        from robotsmith.scenes.presets import SCENE_PRESETS
+        return dict(SCENE_PRESETS)
     except ImportError:
-        pass
-    return presets
+        return {}
 
 
 def cmd_scene(args):

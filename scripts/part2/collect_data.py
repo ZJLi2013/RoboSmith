@@ -8,8 +8,8 @@ State:  [ee_pos(3), ee_axangle(3), gripper_widths(2)]
 
 Usage:
   python scripts/part2/collect_data.py --task pick_cube --n-episodes 100
+  python scripts/part2/collect_data.py --task pick_bowl --n-episodes 10
   python scripts/part2/collect_data.py --task pick_cube --n-episodes 100 --dart-sigma 0.005
-  python scripts/part2/collect_data.py --task pick_cube --n-episodes 2 --scene tabletop_simple
 """
 from __future__ import annotations
 
@@ -51,9 +51,7 @@ KV = np.array([450, 450, 350, 350, 200, 200, 200, 10, 10], dtype=np.float32)
 FORCE_LOWER = np.array([-87, -87, -87, -87, -12, -12, -12, -100, -100], dtype=np.float32)
 FORCE_UPPER = np.array([87, 87, 87, 87, 12, 12, 12, 100, 100], dtype=np.float32)
 
-CUBE_SIZE = (0.04, 0.04, 0.04)
-BOWL_SIZE = (0.035, 0.035, 0.035)  # box approximation of bowl (3.5cm)
-BOWL_HEIGHT = 0.035
+TARGET_MARKER_SIZE = (0.06, 0.06, 0.005)
 
 
 def ensure_display():
@@ -121,6 +119,10 @@ def main():
     from robotsmith.grasp import TemplateGraspPlanner
     from robotsmith.motion import MotionExecutor, MotionParams
     from robotsmith.orchestration import run_skills
+    from robotsmith.assets.library import AssetLibrary
+    from robotsmith.scenes.backend import ProgrammaticSceneBackend
+    from robotsmith.scenes.genesis_loader import load_resolved_scene
+    from robotsmith.scenes.presets import SCENE_PRESETS
 
     ap = argparse.ArgumentParser(description="TaskSpec-driven data collection")
     ap.add_argument("--task", default="pick_cube",
@@ -163,9 +165,9 @@ def main():
     # grasp planner override
     ap.add_argument("--grasp-planner", default=None,
                     help="Grasp planner backend (default: from TaskSpec)")
-    # scene mode
+    # scene override (defaults to TaskSpec.scene)
     ap.add_argument("--scene", default=None,
-                    help="Scene preset or JSON path. If not set, uses legacy cube.")
+                    help="Override scene preset name (default: from TaskSpec)")
     ap.add_argument("--assets-root", default=None)
     args = ap.parse_args()
 
@@ -182,11 +184,6 @@ def main():
 
     is_place_task = task_spec.motion_type == "pick_and_place"
     is_stack_task = task_spec.is_stack
-    is_bowl_task = task_spec.name == "pick_bowl"
-    N_BLOCKS = task_spec.n_stack if is_stack_task else 1
-    BLOCK_COLORS = [(1.0, 0.3, 0.3, 1.0), (0.3, 0.8, 0.3, 1.0), (0.3, 0.3, 1.0, 1.0)]
-    BLOCK_NAMES = ["block_red", "block_green", "block_blue"]
-    pick_obj_name = task_spec.skills[0].target if task_spec.skills else "cube"
 
     # ---- MotionParams from CLI ----
     motion_params = MotionParams(
@@ -209,119 +206,72 @@ def main():
 
     gs.init(backend=(gs.cpu if args.cpu else gs.gpu), logging_level="warning")
 
-    use_scene = args.scene is not None
+    # ---- Scene pipeline ----
+    scene_name = args.scene or task_spec.scene
+    if scene_name not in SCENE_PRESETS:
+        print(f"[error] Unknown scene '{scene_name}'. Available: {list(SCENE_PRESETS.keys())}")
+        sys.exit(1)
+    scene_config = SCENE_PRESETS[scene_name]
 
-    if use_scene:
-        from robotsmith.assets.library import AssetLibrary
-        from robotsmith.scenes.backend import ProgrammaticSceneBackend
-        from robotsmith.scenes.genesis_loader import load_resolved_scene
+    assets_root = args.assets_root or str(
+        Path(__file__).resolve().parent.parent.parent / "assets"
+    )
+    library = AssetLibrary(assets_root)
 
-        assets_root = args.assets_root or str(
-            Path(__file__).resolve().parent.parent.parent / "assets"
-        )
-        library = AssetLibrary(assets_root)
+    backend = ProgrammaticSceneBackend(seed=args.seed)
+    resolved = backend.resolve(scene_config, library)
+    print(f"[scene] {resolved.summary()}")
 
-        if args.scene == "tabletop_simple":
-            from robotsmith.scenes.presets.tabletop_simple import tabletop_simple
-            scene_config = tabletop_simple
-        else:
-            raise ValueError(f"Unknown scene preset: {args.scene}")
+    handle = load_resolved_scene(
+        resolved,
+        gs_module=gs,
+        fps=args.fps,
+        box_box_detection=(not args.no_bbox_detection),
+    )
+    scene = handle.scene
+    franka = handle.franka
 
-        backend = ProgrammaticSceneBackend(seed=args.seed)
-        resolved = backend.resolve(scene_config, library)
-        print(f"[scene] {resolved.summary()}")
+    table_z = scene_config.table_height + scene_config.table_size[2] / 2.0
 
-        handle = load_resolved_scene(
-            resolved,
-            gs_module=gs,
-            fps=args.fps,
-            box_box_detection=(not args.no_bbox_detection),
-        )
-        scene = handle.scene
-        franka = handle.franka
-        target_obj = handle.objects[0] if handle.objects else None
+    # Build name→entity and name→PlacedObject maps
+    entity_map: dict[str, object] = {}
+    placed_map: dict = {}
+    for name, entity, po in zip(handle.object_names, handle.objects, handle.placed):
+        entity_map[name] = entity
+        placed_map[name] = po
 
-        table_z = scene_config.table_height + scene_config.table_size[2] / 2.0
-        cam_up = scene.add_camera(
-            res=(640, 480), pos=(0.55, 0.55, table_z + 0.55),
-            lookat=(0.55, 0.0, table_z + 0.10), fov=45, GUI=False,
-        )
-        cam_wrist = scene.add_camera(
-            res=(640, 480),
-            pos=(0.05, 0.0, -0.08),
-            lookat=(0.0, 0.0, 0.10),
-            fov=65, GUI=False,
-        )
-        scene.build()
+    # Derive object heights from scene metadata (for GraspPlanner relative Z)
+    object_heights: dict[str, float] = {}
+    for name, po in placed_map.items():
+        object_heights[name] = po.object_height_m
 
-        cube = target_obj
-        target_marker = None
-        cube_z = resolved.placed_objects[0].position[2] if resolved.placed_objects else table_z
-    else:
-        if is_bowl_task:
-            obj_z = BOWL_SIZE[2] / 2.0
-        else:
-            obj_z = CUBE_SIZE[2] / 2.0
-        cube_z = obj_z
+    # Determine the primary pick target object entity
+    pick_obj_name = task_spec.skills[0].target if task_spec.skills else "cube"
+    primary_entity = entity_map.get(pick_obj_name)
 
-        scene = gs.Scene(
-            sim_options=gs.options.SimOptions(dt=1.0 / args.fps, substeps=4),
-            rigid_options=gs.options.RigidOptions(
-                enable_collision=True, enable_joint_limit=True,
-                box_box_detection=(not args.no_bbox_detection),
+    # Target marker for place tasks (not a URDF asset — added as primitive)
+    target_marker = None
+    if is_place_task and not is_stack_task:
+        target_marker = scene.add_entity(
+            morph=gs.morphs.Box(
+                size=TARGET_MARKER_SIZE,
+                pos=(0.55, 0.2, TARGET_MARKER_SIZE[2] / 2),
             ),
-            show_viewer=False,
-        )
-        scene.add_entity(gs.morphs.Plane())
-        blocks = []
-        if is_stack_task:
-            for bi in range(N_BLOCKS):
-                b = scene.add_entity(
-                    morph=gs.morphs.Box(size=CUBE_SIZE,
-                                        pos=(0.55 + 0.08 * bi, 0.0, cube_z)),
-                    material=gs.materials.Rigid(friction=args.cube_friction),
-                    surface=gs.surfaces.Default(color=BLOCK_COLORS[bi]),
-                )
-                blocks.append(b)
-            cube = blocks[0]
-        elif is_bowl_task:
-            cube = scene.add_entity(
-                morph=gs.morphs.Box(
-                    size=BOWL_SIZE,
-                    pos=(0.55, 0.0, cube_z),
-                ),
-                material=gs.materials.Rigid(friction=args.cube_friction),
-                surface=gs.surfaces.Default(color=(0.6, 0.4, 0.2, 1.0)),
-            )
-        else:
-            cube = scene.add_entity(
-                morph=gs.morphs.Box(size=CUBE_SIZE, pos=(0.55, 0.0, cube_z)),
-                material=gs.materials.Rigid(friction=args.cube_friction),
-                surface=gs.surfaces.Default(color=(1.0, 0.3, 0.3, 1.0)),
-            )
-        target_marker = None
-        if is_place_task and not is_stack_task:
-            TARGET_SIZE = (0.06, 0.06, 0.005)
-            target_marker = scene.add_entity(
-                morph=gs.morphs.Box(size=TARGET_SIZE, pos=(0.55, 0.2, TARGET_SIZE[2] / 2)),
-                material=gs.materials.Rigid(friction=0.5),
-                surface=gs.surfaces.Default(color=(0.3, 0.8, 0.3, 0.8)),
-            )
-        franka = scene.add_entity(
-            gs.morphs.MJCF(file="xml/franka_emika_panda/panda.xml"),
+            material=gs.materials.Rigid(friction=0.5),
+            surface=gs.surfaces.Default(color=(0.3, 0.8, 0.3, 0.8)),
         )
 
-        cam_up = scene.add_camera(
-            res=(640, 480), pos=(0.55, 0.55, 0.55),
-            lookat=(0.55, 0.0, 0.10), fov=45, GUI=False,
-        )
-        cam_wrist = scene.add_camera(
-            res=(640, 480),
-            pos=(0.05, 0.0, -0.08),
-            lookat=(0.0, 0.0, 0.10),
-            fov=65, GUI=False,
-        )
-        scene.build()
+    cam_up = scene.add_camera(
+        res=(640, 480), pos=(0.55, 0.55, table_z + 0.55),
+        lookat=(0.55, 0.0, table_z + 0.10), fov=45, GUI=False,
+    )
+    cam_wrist = scene.add_camera(
+        res=(640, 480),
+        pos=(0.05, 0.0, -0.08),
+        lookat=(0.0, 0.0, 0.10),
+        fov=65, GUI=False,
+    )
+    scene.build()
 
     motors_dof = [franka.get_joint(name).dofs_idx_local[0] for name in JOINT_NAMES]
     arm_dof = motors_dof[:7]
@@ -346,27 +296,35 @@ def main():
         cam_wrist.attach(end_effector, wrist_offset_T)
     print("[cam] wrist camera attached to franka hand link")
 
-    def reset_scene(cx, cy, place_xy=None, block_positions=None):
+    # Collect entity lists by name for reset
+    all_obj_names = list(entity_map.keys())
+
+    def _get_initial_z(name: str) -> float:
+        """Get the Z position this object was initially placed at."""
+        po = placed_map.get(name)
+        return po.position[2] if po else 0.02
+
+    def reset_scene(obj_positions: dict[str, tuple[float, float]],
+                    place_xy=None):
+        """Reset robot and all objects to given XY positions.
+
+        obj_positions: name → (x, y) for each object that needs repositioning.
+        """
         franka.set_dofs_position(HOME_QPOS, motors_dof)
         franka.control_dofs_position(HOME_QPOS, motors_dof)
         franka.zero_all_dofs_velocity()
-        if is_stack_task and block_positions is not None:
-            for bi, bpos in enumerate(block_positions):
-                blocks[bi].set_pos(
-                    torch.tensor([bpos[0], bpos[1], cube_z], dtype=torch.float32,
-                                 device=gs.device).unsqueeze(0))
-                blocks[bi].set_quat(
-                    torch.tensor([1, 0, 0, 0], dtype=torch.float32,
-                                 device=gs.device).unsqueeze(0))
-                blocks[bi].zero_all_dofs_velocity()
-        else:
-            cube.set_pos(
-                torch.tensor([cx, cy, cube_z], dtype=torch.float32,
+        for name, (x, y) in obj_positions.items():
+            ent = entity_map.get(name)
+            if ent is None:
+                continue
+            z = _get_initial_z(name)
+            ent.set_pos(
+                torch.tensor([x, y, z], dtype=torch.float32,
                              device=gs.device).unsqueeze(0))
-            cube.set_quat(
+            ent.set_quat(
                 torch.tensor([1, 0, 0, 0], dtype=torch.float32,
                              device=gs.device).unsqueeze(0))
-            cube.zero_all_dofs_velocity()
+            ent.zero_all_dofs_velocity()
         if target_marker is not None and place_xy is not None:
             target_marker.set_pos(
                 torch.tensor([place_xy[0], place_xy[1], 0.0025], dtype=torch.float32,
@@ -375,7 +333,7 @@ def main():
             scene.step()
 
     # ---- GraspPlanner setup ----
-    z_offset = (scene_config.table_height + scene_config.table_size[2] / 2.0) if use_scene else 0.0
+    z_offset = table_z
     planner = TemplateGraspPlanner(z_offset=z_offset)
 
     # IK solver uses the planner's grasp_quat as default for backward compat
@@ -474,6 +432,11 @@ def main():
                 pts.append((x, y))
         return pts
 
+    # Identify block names for stack tasks from entity_map
+    N_BLOCKS = task_spec.n_stack if is_stack_task else 1
+    block_names = [n for n in all_obj_names if n.startswith("block_")]
+    block_names.sort()
+
     episode_points = []
     for _ in range(args.n_episodes):
         if is_stack_task:
@@ -498,11 +461,12 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"[gen] task={task_spec.name}, motion_type={task_spec.motion_type}")
-    print(f"[gen] cube x_range={x_range}, y_range={y_range}")
+    print(f"[gen] workspace x_range={x_range}, y_range={y_range}")
     if is_place_task:
         print(f"[gen] min_place_dist={args.min_place_dist}")
     if is_stack_task:
         print(f"[gen] N_BLOCKS={N_BLOCKS}")
+    print(f"[gen] object_heights={object_heights}")
     print(f"[gen] {args.n_episodes} episodes to generate")
 
     frames_per_episode = None
@@ -515,25 +479,33 @@ def main():
             sx, sy = ep_data["stack_xy"]
             cx, cy = block_xys[0]
             px, py = sx, sy
-            block_positions_3d = [[bx, by, cube_z] for bx, by in block_xys]
-            reset_scene(cx, cy, block_positions=block_positions_3d)
+            obj_pos_map = {}
+            for bi, (bx, by) in enumerate(block_xys):
+                obj_pos_map[block_names[bi]] = (bx, by)
+            reset_scene(obj_pos_map)
         else:
             cx, cy, px, py = episode_points[ep]
             place_xy = (px, py) if px is not None else None
-            reset_scene(cx, cy, place_xy=place_xy)
+            reset_scene({pick_obj_name: (cx, cy)}, place_xy=place_xy)
 
         # Build scene_state positions for run_skills()
         positions: dict[str, np.ndarray] = {}
         if is_stack_task:
             for bi, (bx, by) in enumerate(block_xys):
-                positions[BLOCK_NAMES[bi]] = np.array([bx, by, cube_z])
-            positions["stack_center"] = np.array([sx, sy, cube_z])
+                z = _get_initial_z(block_names[bi])
+                positions[block_names[bi]] = np.array([bx, by, z])
+            positions["stack_center"] = np.array([sx, sy, _get_initial_z(block_names[0])])
         else:
-            positions[pick_obj_name] = np.array([cx, cy, cube_z])
+            z = _get_initial_z(pick_obj_name)
+            positions[pick_obj_name] = np.array([cx, cy, z])
             if px is not None:
-                positions["target"] = np.array([px, py, cube_z])
+                positions["target"] = np.array([px, py, z])
 
-        scene_state = {"home_qpos": HOME_QPOS, "positions": positions}
+        scene_state = {
+            "home_qpos": HOME_QPOS,
+            "positions": positions,
+            "object_heights": object_heights,
+        }
         traj = run_skills(
             task_spec.skills, planner, executor, solve_ik,
             scene_state, motion_params,
@@ -543,20 +515,20 @@ def main():
             frames_per_episode = len(traj)
             print(f"[gen] trajectory: {frames_per_episode} frames/episode")
 
-        initial_cube_z = cube_z
-        cube_z_hist = []
+        initial_obj_z = _get_initial_z(pick_obj_name)
+        obj_z_hist = []
         total_steps = len(traj)
 
         finger_vals = to_numpy(franka.get_dofs_position(finger_dof)).astype(np.float32)
         prev_ee_state = get_ee_state(end_effector, finger_vals)
 
-        for step_idx, target in enumerate(traj):
+        for step_idx, target_qpos in enumerate(traj):
             finger_vals = to_numpy(franka.get_dofs_position(finger_dof)).astype(np.float32)
             ee_state = get_ee_state(end_effector, finger_vals)
             parts = [ee_state]
-            if args.add_goal:
-                cube_xy = to_numpy(cube.get_pos())[:2].astype(np.float32)
-                parts.append(cube_xy)
+            if args.add_goal and primary_entity is not None:
+                obj_xy = to_numpy(primary_entity.get_pos())[:2].astype(np.float32)
+                parts.append(obj_xy)
             if args.add_phase:
                 t_norm = np.array([(step_idx + 1) / total_steps], dtype=np.float32)
                 parts.append(t_norm)
@@ -564,8 +536,8 @@ def main():
             img_up = render_cam(cam_up)
             img_wrist = render_cam(cam_wrist)
 
-            gripper_cmd = float(target[7])
-            franka.control_dofs_position(target, motors_dof)
+            gripper_cmd = float(target_qpos[7])
+            franka.control_dofs_position(target_qpos, motors_dof)
             scene.step()
 
             finger_vals_next = to_numpy(franka.get_dofs_position(finger_dof)).astype(np.float32)
@@ -573,8 +545,9 @@ def main():
             action = compute_ee_delta(prev_ee_state, next_ee_state, gripper_cmd)
             prev_ee_state = next_ee_state
 
-            cz = float(to_numpy(cube.get_pos())[2])
-            cube_z_hist.append(cz)
+            if primary_entity is not None:
+                cz = float(to_numpy(primary_entity.get_pos())[2])
+                obj_z_hist.append(cz)
 
             dataset.add_frame({
                 "observation.state": state,
@@ -588,16 +561,16 @@ def main():
         if is_stack_task:
             env_state = {"object_positions": {}, "initial_positions": {}}
             for bi in range(N_BLOCKS):
-                bname = BLOCK_NAMES[bi]
-                bpos = to_numpy(blocks[bi].get_pos())
+                bname = block_names[bi]
+                bpos = to_numpy(entity_map[bname].get_pos())
                 env_state["object_positions"][bname] = bpos.copy()
                 env_state["initial_positions"][bname] = np.array(
-                    [block_xys[bi][0], block_xys[bi][1], cube_z])
+                    [block_xys[bi][0], block_xys[bi][1], _get_initial_z(bname)])
         else:
-            cube_final_pos = to_numpy(cube.get_pos())
+            final_pos = to_numpy(primary_entity.get_pos())
             env_state = {
-                "object_positions": {pick_obj_name: cube_final_pos.copy()},
-                "initial_positions": {pick_obj_name: np.array([cx, cy, initial_cube_z])},
+                "object_positions": {pick_obj_name: final_pos.copy()},
+                "initial_positions": {pick_obj_name: np.array([cx, cy, initial_obj_z])},
             }
             if is_place_task and px is not None:
                 env_state["object_positions"]["target"] = np.array([px, py, 0.0025])
@@ -605,9 +578,9 @@ def main():
             task_spec.success_fn, env_state, task_spec.success_params
         )
 
-        base_z = initial_cube_z
-        cz_max = max(cube_z_hist) if cube_z_hist else base_z
-        cz_end = cube_z_hist[-1] if cube_z_hist else base_z
+        base_z = initial_obj_z
+        cz_max = max(obj_z_hist) if obj_z_hist else base_z
+        cz_end = obj_z_hist[-1] if obj_z_hist else base_z
 
         success = predicate_success
 
@@ -618,23 +591,23 @@ def main():
             "success": bool(success),
         }
         if is_stack_task:
-            block_final_zs = [float(to_numpy(blocks[bi].get_pos())[2])
+            block_final_zs = [float(to_numpy(entity_map[block_names[bi]].get_pos())[2])
                               for bi in range(N_BLOCKS)]
             label["stack_xy"] = [float(sx), float(sy)]
             label["block_xys"] = [[float(bx), float(by)] for bx, by in block_xys]
             label["block_final_zs"] = block_final_zs
         elif is_place_task:
-            cube_final_pos = to_numpy(cube.get_pos())
-            label["cube_xy"] = [float(cx), float(cy)]
+            final_pos = to_numpy(primary_entity.get_pos())
+            label["pick_xy"] = [float(cx), float(cy)]
             label["place_xy"] = [float(px), float(py)]
             label["place_xy_error"] = float(
-                np.linalg.norm(cube_final_pos[:2] - np.array([px, py])))
+                np.linalg.norm(final_pos[:2] - np.array([px, py])))
         else:
-            label["cube_xy"] = [float(cx), float(cy)]
+            label["obj_xy"] = [float(cx), float(cy)]
             label["base_z"] = float(base_z)
-            label["cube_z_max"] = float(cz_max)
-            label["cube_z_end"] = float(cz_end)
-            lifted = [z >= base_z + args.success_lift_delta for z in cube_z_hist]
+            label["obj_z_max"] = float(cz_max)
+            label["obj_z_end"] = float(cz_end)
+            lifted = [z >= base_z + args.success_lift_delta for z in obj_z_hist]
             sustain_max = 0
             sustain = 0
             for ok in lifted:
@@ -663,7 +636,7 @@ def main():
         else:
             pred_match = "✓" if predicate_success == label.get("success_heuristic", predicate_success) else "≠"
             print(f"[gen] ep {ep+1}/{args.n_episodes} [{status}] "
-                  f"cube=({cx:.3f},{cy:.3f}) lift={cz_max-base_z:.4f}m "
+                  f"obj=({cx:.3f},{cy:.3f}) lift={cz_max-base_z:.4f}m "
                   f"sustain={label.get('sustain_frames', 0)} pred={pred_match}")
 
     if hasattr(dataset, "consolidate"):
@@ -685,7 +658,7 @@ def main():
         "n_dofs": n_dofs,
         "action_space": "ee_delta_7d [delta_pos(3)+delta_axangle(3)+gripper(1)]",
         "state_space": "ee_state_8d [pos(3)+axangle(3)+gripper(2)]",
-        "cube_xy_range": {"x": list(x_range), "y": list(y_range)},
+        "workspace_xy_range": {"x": list(x_range), "y": list(y_range)},
         "success_episode_ids": success_ids,
         "failure_episode_ids": failure_ids,
         "success_rate": sr,

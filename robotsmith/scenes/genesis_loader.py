@@ -19,6 +19,10 @@ class GenesisSceneHandle:
     scene: object  # gs.Scene
     franka: object  # gs.Entity
     objects: list[object] = field(default_factory=list)
+    object_names: list[str] = field(default_factory=list)
+    """Parallel to ``objects`` — logical names from PlacedObject.name."""
+    placed: list = field(default_factory=list)
+    """The PlacedObject list from the ResolvedScene, for metadata access."""
     cameras: dict[str, object] = field(default_factory=dict)
     table: Optional[object] = None
 
@@ -94,20 +98,25 @@ def load_resolved_scene(
         )
 
     obj_entities = []
+    obj_names = []
     for po in resolved.placed_objects:
         pos = tuple(po.position)
         quat = _quat_wxyz_to_xyzw(po.quaternion)
 
         friction = po.asset.metadata.friction
+        urdf_kwargs = dict(
+            file=str(po.asset.urdf_path),
+            pos=pos,
+            quat=quat,
+        )
+        if po.scale != 1.0:
+            urdf_kwargs["scale"] = po.scale
         entity = scene.add_entity(
-            morph=gs.morphs.URDF(
-                file=str(po.asset.urdf_path),
-                pos=pos,
-                quat=quat,
-            ),
+            morph=gs.morphs.URDF(**urdf_kwargs),
             material=gs.materials.Rigid(friction=friction),
         )
         obj_entities.append(entity)
+        obj_names.append(po.name)
 
     table_surface_z = config.table_height + config.table_size[2] / 2.0
     # Franka base sits on the table surface (not floating)
@@ -132,6 +141,8 @@ def load_resolved_scene(
         scene=scene,
         franka=franka,
         objects=obj_entities,
+        object_names=obj_names,
+        placed=resolved.placed_objects,
         cameras=cameras,
         table=table_entity,
     )
