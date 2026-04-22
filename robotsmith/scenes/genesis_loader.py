@@ -108,6 +108,7 @@ def load_resolved_scene(
             file=str(po.asset.urdf_path),
             pos=pos,
             quat=quat,
+            default_armature=0.0,
         )
         if po.scale != 1.0:
             urdf_kwargs["scale"] = po.scale
