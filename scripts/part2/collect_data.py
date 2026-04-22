@@ -52,8 +52,8 @@ FORCE_LOWER = np.array([-87, -87, -87, -87, -12, -12, -12, -100, -100], dtype=np
 FORCE_UPPER = np.array([87, 87, 87, 87, 12, 12, 12, 100, 100], dtype=np.float32)
 
 CUBE_SIZE = (0.04, 0.04, 0.04)
-BOWL_RADIUS = 0.030   # 6cm diameter (scaled bowl)
-BOWL_HEIGHT = 0.03    # 3cm tall (scaled bowl)
+BOWL_RADIUS = 0.018   # 3.6cm diameter (scaled bowl, fits Franka gripper)
+BOWL_HEIGHT = 0.035   # 3.5cm tall (scaled bowl)
 
 
 def ensure_display():

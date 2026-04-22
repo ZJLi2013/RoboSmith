@@ -636,7 +636,7 @@ Contact-GraspNet 和 GraspGen 都来自 NVlabs，license 需要特别说明：
 |------|-------------|------|---------|
 | Contact-GraspNet | `License.pdf` (NVIDIA Source Code License) | 仅限非商业研究 | 不可再分发、不可 production |
 | GraspGen | `LICENSE` | "Copyright © 2025 NVIDIA. All rights reserved." | 同上 + 商业需走 NVIDIA Research Licensing |
-| GraspGen 数据集 | HuggingFace `nvidia/PhysicalAI-Robotics-GraspGen` | CC-BY-NC-4.0 | 数据仅限非商业 |
+| GraspGen 数据集 | HuggingFace `nvidia/PhysicalAI-Robotics-GraspGen` | **CC-BY 4.0** | **数据可商用**（仅需标注出处） |
 | GraspGen checkpoints | HuggingFace `adithyamurali/GraspGenModels` | 同代码 license | 权重不可再分发 |
 
 **技术栈备注**：两者都依赖 `pointnet2_ops`（手写 CUDA kernel），GraspGen 额外依赖 PyG 生态（torch-cluster / torch-scatter）。
@@ -646,6 +646,82 @@ CUDA→ROCm 迁移技术上可行（hipify / PyTorch ROCm），但 **license 是
 - [elchun/contact_graspnet_pytorch](https://github.com/elchun/contact_graspnet_pytorch) (80 stars) — 最活跃
 - [sebbyjp/cgn_pytorch](https://github.com/sebbyjp/cgn_pytorch) — pip 可装 (`pip install cgn-pytorch`)
 - License 均标记 "Other (NOASSERTION)" — 从 NVlabs 移植，license 继承不清
+
+### 3.5.6 从 0 训练一个 AMD 版本的 GraspGen 模型
+
+GraspGen 的 **代码/权重** 是 NVIDIA 专有 license（不可再分发），但 **数据集** 是 CC-BY 4.0（可商用）。
+这打开了一条路：用开源数据从头训练一个架构相似的模型，完全绕开 NV 的版权。
+
+#### 开源 Grasp 数据集全景
+
+| 数据集 | 规模 | Gripper | 物体来源 | License | 可训练商用模型 |
+|--------|------|---------|---------|---------|:---:|
+| **GraspGen Dataset** (NV) | 57M grasps, 8515 物体 | Franka Panda / Robotiq-2f-140 / Suction | Objaverse XL (LVIS) | **CC-BY 4.0** | **✅** |
+| **GraspFactory** (Autodesk) | 109M grasps, 33710 物体 | Franka Panda / Robotiq 2F-85 | ABC Dataset (CAD) | **MIT** | **✅** |
+| **ACRONYM** (NV) | 17.7M grasps, 8872 物体 | Franka Panda | ShapeNet | CC-BY-NC 4.0 | ⚠️ 仅非商业 |
+| **GraspNet-1Billion** (清华) | 1.2B+ grasps, 88 物体 | Panda | 真实扫描 | API: MIT / 数据: 学术 | ⚠️ 需确认 |
+
+**可用数据总量**：GraspGen 57M + GraspFactory 109M = **166M grasps**（均含 Franka Panda），超过 GraspGen 原版训练集。
+
+#### 壁垒分析
+
+| 壁垒 | 难度 | 说明 |
+|------|:---:|------|
+| **数据** | ✅ 已解决 | 166M 开源 grasps，比 GraspGen 原版训练数据还多 |
+| **模型架构** | 中 | GraspGen = DiT (Diffusion Transformer) + Discriminator，论文描述清楚，但需从头实现（不能复制 NV 代码） |
+| **点云 Encoder** | 低 | `pointnet2_ops` 有多个开源替代：[Pointnet2_PyTorch](https://github.com/erikwijmans/Pointnet2_PyTorch) (MIT)、PointNeXt、MinkowskiEngine |
+| **训练基础设施** | 低 | 标准 PyTorch + DiT，MI300X 192GB HBM3 无压力 |
+| **On-generator Training** | 中-高 | GraspGen 核心创新：用 generator 产出的样本在线训练 discriminator，论文有描述但实现细节需自行摸索 |
+| **复现精度** | 高 | 完全复现 SOTA 需大量 tuning；80-90% 水平更现实，但对 sim SDG 够用 |
+
+#### 数据格式统一
+
+两个数据集格式不同，需要统一：
+
+```
+GraspGen (WebDataset, HuggingFace):
+  每个 object: object_pointcloud + list[grasp_pose_4x4 + success_label]
+  gripper config: Franka Panda / Robotiq-2f-140 / Suction
+
+GraspFactory (npz + obj, GitHub):
+  每个 object: mesh (.obj) + list[grasp_pose_4x4 + success_label]
+  gripper config: Franka Panda / Robotiq 2F-85
+
+统一目标格式:
+  (object_pointcloud, grasp_pose_4x4, success_label, gripper_type)
+  GraspFactory 需要额外一步：mesh → 表面采样 → point cloud
+```
+
+#### 实施路线
+
+```
+Phase A: 数据准备（~2 天）
+  ├─ 下载 GraspGen dataset (HuggingFace, WebDataset 格式)
+  ├─ 下载 GraspFactory dataset (GitHub, npz 格式)
+  ├─ GraspFactory mesh → point cloud 转换
+  └─ 统一为 (pointcloud, pose, label, gripper) 格式
+
+Phase B: 轻量 baseline — PointNet++ 回归（~1 周）
+  ├─ PointNet++ encoder (开源实现, MIT) → MLP → grasp pose 回归 + quality score
+  ├─ 验证数据 pipeline 正确性
+  └─ 评估 baseline 精度，如果满足 sim SDG 需求则可停在此处
+
+Phase C: DiT Diffusion model（~2-3 周）
+  ├─ 参考 GraspGen 论文自行实现 DiT 架构（不复制 NV 代码）
+  ├─ 标准 DDPM loss 训练
+  └─ 对比 Phase B baseline
+
+Phase D: On-generator Discriminator（~1-2 周）
+  ├─ GraspGen 核心创新：generator 产出 → discriminator 在线学习 → 过滤低质量 grasp
+  └─ 按论文描述实现，需要较多调试
+```
+
+#### 务实建议
+
+- **先跑 Phase A + B**（~1.5 周）。如果 PointNet++ 回归 baseline 在 sim 中精度够用（成功率 > 85%），
+  就不用走到 Diffusion — sim 中无传感器噪声，简单模型往往够了
+- **Phase C/D 是 stretch goal**，适合在 SamplerGraspPlanner + VGN 跑通后、有余力时推进
+- 训练出的模型完全属于 RoboSmith，可任意 license 分发（数据 CC-BY 4.0 只要求标注出处）
 
 ---
 

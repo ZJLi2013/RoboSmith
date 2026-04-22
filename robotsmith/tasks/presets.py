@@ -50,8 +50,8 @@ mug_in_bowl = _register(TaskSpec(
     motion_type="pick_and_place",
 ))
 
-BOWL_HEIGHT = 0.03   # scaled bowl (~6cm real → 3cm at 0.5x)
-BOWL_RADIUS = 0.030  # scaled diameter ~6cm → radius 3cm (fits Franka gripper)
+BOWL_HEIGHT = 0.035  # scaled bowl height
+BOWL_RADIUS = 0.018  # 3.6cm diameter — small enough for Franka finger clamp
 
 pick_bowl = _register(TaskSpec(
     name="pick_bowl",
@@ -60,7 +60,7 @@ pick_bowl = _register(TaskSpec(
     contact_objects=["bowl", "table"],
     success_fn="object_above",
     success_params={"object": "bowl", "reference": "table", "z_margin": 0.02},
-    skills=[Skill("pick", "bowl", "bowl", {"object_height": BOWL_HEIGHT})],
+    skills=[Skill("pick", "bowl", "bowl", {"object_height": 0.035})],
     motion_type="pick",
 ))
 
