@@ -1,6 +1,6 @@
 {
   "mass_kg": 0.05,
-  "friction": 0.6,
+  "friction": 1.5,
   "restitution": 0.1,
   "density_kg_m3": 1000.0,
   "size_cm": [
