@@ -34,9 +34,10 @@ class GraspTemplate:
 
     place_z: float = 0.15              # absolute Z of place point (for pick_and_place)
 
-    # Relative Z mode (bowl, etc.) — Z values computed from object height at runtime
+    # Relative Z mode (bowl, etc.) — Z values computed from object height at runtime.
+    # grasp_z = z_offset + object_height + ee_above_object (EE height above object top)
     grasp_z_mode: str = "absolute"      # "absolute" | "relative"
-    grasp_z_ratio: float = 0.5          # relative: grasp_z = z_offset + height * ratio
+    ee_above_object: float = 0.10       # relative: EE Z = table + obj_height + this offset
     hover_clearance: float = 0.12       # relative: hover_z = grasp_z + clearance
     retreat_clearance: float = 0.17     # relative: retreat_z = grasp_z + clearance
 
@@ -93,7 +94,7 @@ _register(GraspTemplate(
     finger_open=0.04,
     finger_closed=0.01,
     grasp_z_mode="relative",
-    grasp_z_ratio=0.7,
+    ee_above_object=0.095,
     hover_clearance=0.12,
     retreat_clearance=0.17,
     requires_scale=True,
@@ -142,7 +143,7 @@ class TemplateGraspPlanner(GraspPlanner):
                     f"Template '{cat}' uses relative Z mode but no object_height "
                     f"provided (pass object_height= or asset with metadata.size_cm)"
                 )
-            gz = zo + h * template.grasp_z_ratio
+            gz = zo + h + template.ee_above_object
             hz = gz + template.hover_clearance
             rz = gz + template.retreat_clearance
         else:
