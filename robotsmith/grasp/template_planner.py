@@ -1,11 +1,8 @@
 """TemplateGraspPlanner — per-category human-defined grasp templates.
 
 Each category (block, bowl, mug, ...) has one GraspTemplate that specifies
-approach direction, EE orientation, finger width, etc.  The planner converts
-a template + runtime object pose into a concrete GraspPlan.
-
-The block/cube template reproduces the exact behavior of the old
-TrajectoryParams defaults so that pick_cube remains unchanged.
+approach direction, EE orientation, finger width, and key Z-heights.
+The planner converts a template + runtime object pose into a concrete GraspPlan.
 """
 
 from __future__ import annotations

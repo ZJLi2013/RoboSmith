@@ -40,11 +40,7 @@ assets/objects/**/*.jpg
 assets/objects/**/*.mtl
 
 # Internal docs (experiment logs, design docs, experiment plans)
-docs/design.md
-docs/stage-1.md
-docs/stage-2.md
-docs/*_exp.md
-experiments.md
+docs/
 
 # Internal scripts (experiment runners, benchmarks, node-specific tools)
 scripts/tools/sync_assets.py

@@ -1,7 +1,7 @@
 # Part 2 实验记录 — Data Engine
 
 > TaskSpec-driven 多任务 IK 数采、SmolVLA 训练验证、I/O 性能优化。
-> 实验计划见 [part2.md](part2.md)。
+> 架构设计见 [design.md — Part 2](design.md#part-2data-engine--可插拔数据生产)。
 
 ---
 

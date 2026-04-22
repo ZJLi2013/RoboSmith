@@ -5,8 +5,8 @@
 > 并给出横向对比与 RoboSmith 集成建议。
 >
 > 相关文档：
-> - [part3.md](part3.md) — RoboSmith Part 3 异形物体抓取设计
-> - [design.md — Grasp Affordance Gap](design.md#next-stepgrasp-affordance-gap-与演进路线) — 核心矛盾分析
+> - [design.md — Grasp Planning 设计原理](design.md#25-grasp-planning-设计原理) — 规划与执行分离、品类覆盖
+> - [design.md — 品类扩展](design.md#graspplanner-品类扩展) — 品类扩展路线
 
 ---
 
@@ -115,7 +115,7 @@
 **选型建议**：
 - 只需 "给我一个抓取 pose" 的 SDG 场景 → **Contact-GraspNet**（成熟、开源、部署简单）或 **GraspGen**（更高性能、多 gripper）
 - 需要端到端 policy（直接输出轨迹）→ **GraspLDP**（Layer 1+2 一体）
-- 不想训练模型，想要 template/rule-based → RoboSmith **TemplateGraspPlanner**（见 [part3.md §5](part3.md#5-grasptemplate-定义step-3-详细)）
+- 不想训练模型，想要 template/rule-based → RoboSmith **TemplateGraspPlanner**（见 [design.md — GraspTemplate](design.md#grasptemplate)）
 
 ---
 

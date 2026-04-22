@@ -118,6 +118,7 @@ def main():
     from robotsmith.tasks.task_spec import TaskSpec
     from robotsmith.grasp import TemplateGraspPlanner
     from robotsmith.motion import MotionExecutor, MotionParams
+    from robotsmith.orchestration import run_skills
 
     ap = argparse.ArgumentParser(description="TaskSpec-driven data collection")
     ap.add_argument("--task", default="pick_cube",
@@ -499,52 +500,27 @@ def main():
             px, py = sx, sy
             block_positions_3d = [[bx, by, cube_z] for bx, by in block_xys]
             reset_scene(cx, cy, block_positions=block_positions_3d)
-
-            # Stack: N rounds of pick_and_place with increasing place Z
-            block_h = 0.04
-            traj = []
-            for i, bpos in enumerate(block_positions_3d):
-                bpos_arr = np.array(bpos, dtype=np.float64)
-                pick_plans = planner.plan(bpos_arr, category="block")
-                pick_plan = pick_plans[0]
-
-                stack_place_z = default_template.place_z + i * block_h
-                place_plan = planner.plan_place(
-                    np.array([sx, sy, bpos_arr[2]], dtype=np.float64),
-                    category="block",
-                    place_z_override=stack_place_z,
-                )
-
-                round_params = MotionParams(
-                    approach_steps=motion_params.approach_steps,
-                    descend_steps=motion_params.descend_steps,
-                    grasp_hold_steps=motion_params.grasp_hold_steps,
-                    lift_steps=motion_params.lift_steps,
-                    lift_hold_steps=0,
-                    transport_steps=motion_params.transport_steps,
-                    place_descend_steps=motion_params.place_descend_steps,
-                    release_steps=motion_params.release_steps,
-                    retreat_steps=motion_params.retreat_steps,
-                )
-                start_qpos = traj[-1] if traj else HOME_QPOS
-                traj += executor.pick_and_place(
-                    pick_plan, place_plan, solve_ik, start_qpos, round_params)
         else:
             cx, cy, px, py = episode_points[ep]
             place_xy = (px, py) if px is not None else None
             reset_scene(cx, cy, place_xy=place_xy)
 
-            target_pos = np.array([cx, cy, cube_z])
-            pick_plans = planner.plan(target_pos, category="block")
-            pick_plan = pick_plans[0]
+        # Build scene_state positions for run_skills()
+        positions: dict[str, np.ndarray] = {}
+        if is_stack_task:
+            for bi, (bx, by) in enumerate(block_xys):
+                positions[BLOCK_NAMES[bi]] = np.array([bx, by, cube_z])
+            positions["stack_center"] = np.array([sx, sy, cube_z])
+        else:
+            positions["cube"] = np.array([cx, cy, cube_z])
+            if px is not None:
+                positions["target"] = np.array([px, py, cube_z])
 
-            if is_place_task:
-                place_pos = np.array([px, py, cube_z])
-                place_plan = planner.plan_place(place_pos, category="block")
-                traj = executor.pick_and_place(
-                    pick_plan, place_plan, solve_ik, HOME_QPOS, motion_params)
-            else:
-                traj = executor.pick(pick_plan, solve_ik, HOME_QPOS, motion_params)
+        scene_state = {"home_qpos": HOME_QPOS, "positions": positions}
+        traj = run_skills(
+            task_spec.skills, planner, executor, solve_ik,
+            scene_state, motion_params,
+        )
 
         if frames_per_episode is None:
             frames_per_episode = len(traj)

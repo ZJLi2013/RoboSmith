@@ -106,27 +106,19 @@ python scripts/part1/browse_assets.py     # HTML asset gallery
 | Phase | Focus | Status |
 |:---:|-------|:---:|
 | 1 | Sim-ready assets (26 objects, 10 categories, TRELLIS.2-4B) | Done |
-| 2 | Multi-task IK data (pick/place/stack) + vla-eval benchmark plugin | Done |
-| **3** | **Irregular object grasping — Grasp Affordance Layer** (see below) | **Next** |
+| 2 | Data engine: GraspPlanner + MotionExecutor + IK backend (pick/place/stack) + vla-eval plugin | Done |
+| 3a | GraspPlanner + MotionExecutor architecture (decoupled grasp planning from motion execution) | Done |
+| **3b** | **Category expansion — GraspTemplates for bowl / mug / bottle / can / plate** | **Next** |
+| 3c | Mesh-based grasp sampling (`SamplerGraspPlanner`) | Planned |
 | 4 | DART data backend (`--dart-sigma`) | Planned |
 | 5 | DAgger data backend (policy rollout + IK relabel) | Planned |
 | 6 | Articulated + push/slide tasks (drawer, push-to-target) | Planned |
 
-### Phase 3: Irregular Object Grasping (Next Step)
+### Phase 3b: Category Expansion (Next Step)
 
-**Problem:** Part 1 generates diverse assets (bowls, mugs, bottles, screwdrivers, toys...), but Part 2 can only manipulate cubes/blocks — all IK grasp parameters (orientation, height, finger width) are hardcoded for small boxes. The objects that *most need* RoboSmith's data pipeline are exactly the ones it cannot handle yet.
+The GraspPlanner + MotionExecutor architecture is done (Phase 3a, [regression tests pass 100%](docs/part3-exp.md)). The data engine now supports arbitrary object geometries — adding a new category requires only a `GraspTemplate`, not a new strategy class.
 
-**Why it matters:** Without this, RoboSmith remains a demo for primitive shapes. Solving this is the single highest-leverage step to make the project practically useful.
-
-**Approach (progressive):**
-
-| Step | What | Effort |
-|------|------|:---:|
-| 3a | Per-category `GraspTemplate` — one-time human annotation per category (approach direction, grasp offset, EE orientation, finger width) replacing hardcoded `TrajectoryParams` | Medium |
-| 3b | Template-driven `IKStrategy` — read grasp params from `GraspTemplate` matched by asset category, enabling IK data gen for bowls, mugs, bottles, etc. | Medium |
-| 3c | Auto grasp prediction — integrate GraspNet/AnyGrasp to predict grasp poses from mesh, removing per-category annotation | Long-term |
-
-See [docs/design.md — Grasp Affordance Gap](docs/design.md#next-stepgrasp-affordance-gap-与演进路线) for detailed technical analysis.
+**Next:** add per-category `GraspTemplate` for bowl, mug, bottle, can, plate, fruit to enable data gen for irregular objects. See [docs/design.md](docs/design.md#graspplanner-品类扩展) for the category plan and [design rationale](docs/design.md#25-grasp-planning-设计原理).
 
 ## Project Structure
 
@@ -135,7 +127,9 @@ robotsmith/                      # Python package (pip install -e .)
 ├── assets/                      #   Part 1: asset management (schema, library, search, builtins)
 ├── gen/                         #   Part 1: 3D generation (TRELLIS.2 / Hunyuan3D backends, mesh_to_urdf)
 ├── scenes/                      #   Part 2: scene building (SceneConfig, genesis_loader, presets)
-├── tasks/                       #   Part 2: task definition (TaskSpec, predicates, IK strategies)
+├── grasp/                       #   Grasp planning (GraspPlanner, GraspPlan, TemplateGraspPlanner)
+├── motion/                      #   Motion execution (MotionExecutor, MotionParams)
+├── tasks/                       #   Task definition (TaskSpec, predicates, presets)
 ├── eval/                        #   vla-eval benchmark plugin (RoboSmithBenchmark)
 ├── validate/                    #   physics validation (PyBullet)
 ├── viz/                         #   visualization (Viser asset browser + scene viewer)
@@ -184,9 +178,8 @@ tests/                           # Tests
 - [docs/design.md](docs/design.md) — Architecture design (Part 1/2 + core abstractions)
 - [docs/study.md](docs/study.md) — Research notes (RoboLab, 3D generation, benchmarks)
 - [docs/part1-exp.md](docs/part1-exp.md) — Part 1 experiment results (asset pipeline)
-- [docs/part2.md](docs/part2.md) — Part 2 summary (data engine + eval)
-- [docs/part2-exp.md](docs/part2-exp.md) — Part 2 experiment results
-- [docs/part3.md](docs/part3.md) — Part 3 design: irregular object grasping data generation
+- [docs/part2-exp.md](docs/part2-exp.md) — Part 2 experiment results (IK, SmolVLA, I/O benchmark)
+- [docs/part3-exp.md](docs/part3-exp.md) — GraspPlanner + MotionExecutor regression tests (Phase 3.0)
 - [docs/background.md](docs/background.md) — Technical background (watertight mesh, URDF, convex hull)
 
 ## Acknowledgments
