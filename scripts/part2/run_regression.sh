@@ -24,6 +24,7 @@ python scripts/part2/collect_data.py \
   --task pick_cube \
   --n-episodes 10 \
   --save $SAVE_DIR \
+  --repo-id local/regression-pick \
   --cpu \
   --no-videos \
   --seed 42
@@ -36,6 +37,7 @@ python scripts/part2/collect_data.py \
   --task place_cube \
   --n-episodes 10 \
   --save $SAVE_DIR \
+  --repo-id local/regression-place \
   --cpu \
   --no-videos \
   --seed 42
@@ -48,6 +50,7 @@ python scripts/part2/collect_data.py \
   --task stack_blocks \
   --n-episodes 10 \
   --save $SAVE_DIR \
+  --repo-id local/regression-stack \
   --cpu \
   --no-videos \
   --seed 42
