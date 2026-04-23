@@ -1,10 +1,10 @@
-"""Scene preset for stack_bowls: three bowls on ground plane."""
+"""Scene preset for line_bowls: three bowls to be arranged in a line."""
 
 from robotsmith.scenes.config import SceneConfig, ObjectPlacement
 
-stack_bowls_scene = SceneConfig(
-    name="stack_bowls",
-    description="Three bowls (bowl_02, scaled to ~3.5 cm) for stacking task",
+line_bowls_scene = SceneConfig(
+    name="line_bowls",
+    description="Three bowls (bowl_02, scaled to ~3.5 cm) for pick-and-place line arrangement",
     objects=[
         ObjectPlacement(
             asset_query="bowl_02", count=1, scale=0.25, name_override="bowl_a",

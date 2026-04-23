@@ -25,5 +25,5 @@ _register(stack_blocks_scene)
 from robotsmith.scenes.presets.pick_bowl import pick_bowl_scene  # noqa: E402
 _register(pick_bowl_scene)
 
-from robotsmith.scenes.presets.stack_bowls import stack_bowls_scene  # noqa: E402
-_register(stack_bowls_scene)
+from robotsmith.scenes.presets.line_bowls import line_bowls_scene  # noqa: E402
+_register(line_bowls_scene)

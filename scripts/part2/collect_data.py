@@ -503,6 +503,12 @@ def main():
                 z = _get_initial_z(block_names[bi])
                 positions[block_names[bi]] = np.array([bx, by, z])
             positions["stack_center"] = np.array([sx, sy, _get_initial_z(block_names[0])])
+            # Line arrangement targets: 3 positions spaced along Y axis
+            line_spacing = 0.08
+            z0 = _get_initial_z(block_names[0])
+            positions["line_a"] = np.array([sx, sy - line_spacing, z0])
+            positions["line_b"] = np.array([sx, sy, z0])
+            positions["line_c"] = np.array([sx, sy + line_spacing, z0])
         else:
             z = _get_initial_z(pick_obj_name)
             positions[pick_obj_name] = np.array([cx, cy, z])
