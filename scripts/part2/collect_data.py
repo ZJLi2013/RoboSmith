@@ -321,8 +321,10 @@ def main():
             ent.set_pos(
                 torch.tensor([x, y, z], dtype=torch.float32,
                              device=gs.device).unsqueeze(0))
+            po = placed_map.get(name)
+            q = po.quaternion if po else [1, 0, 0, 0]
             ent.set_quat(
-                torch.tensor([1, 0, 0, 0], dtype=torch.float32,
+                torch.tensor(q, dtype=torch.float32,
                              device=gs.device).unsqueeze(0))
             ent.zero_all_dofs_velocity()
         if target_marker is not None and place_xy is not None:
