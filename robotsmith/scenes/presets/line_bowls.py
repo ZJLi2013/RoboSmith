@@ -4,16 +4,16 @@ from robotsmith.scenes.config import SceneConfig, ObjectPlacement
 
 line_bowls_scene = SceneConfig(
     name="line_bowls",
-    description="Three bowls (bowl_02, scaled to ~3.5 cm) for pick-and-place line arrangement",
+    description="Three bowls (bowl_02, scaled to ~7 cm) for pick-and-place line arrangement",
     objects=[
         ObjectPlacement(
-            asset_query="bowl_02", count=1, scale=0.25, name_override="bowl_a",
+            asset_query="bowl_02", count=1, scale=0.5, name_override="bowl_a",
         ),
         ObjectPlacement(
-            asset_query="bowl_02", count=1, scale=0.25, name_override="bowl_b",
+            asset_query="bowl_02", count=1, scale=0.5, name_override="bowl_b",
         ),
         ObjectPlacement(
-            asset_query="bowl_02", count=1, scale=0.25, name_override="bowl_c",
+            asset_query="bowl_02", count=1, scale=0.5, name_override="bowl_c",
         ),
     ],
     table_height=0.0,

@@ -4,12 +4,12 @@ from robotsmith.scenes.config import SceneConfig, ObjectPlacement
 
 pick_bowl_scene = SceneConfig(
     name="pick_bowl",
-    description="Single bowl scaled to ~3.5 cm for pick task",
+    description="Single bowl scaled to ~7 cm for pick task",
     objects=[
         ObjectPlacement(
             asset_query="bowl",
             count=1,
-            scale=0.25,
+            scale=0.5,
             name_override="bowl",
         ),
     ],
