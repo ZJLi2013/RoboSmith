@@ -27,10 +27,9 @@ class GenesisSceneHandle:
     table: Optional[object] = None
 
 
-def _quat_wxyz_to_xyzw(quat_wxyz: list[float]) -> tuple[float, ...]:
-    """Convert [w,x,y,z] to Genesis convention [x,y,z,w]."""
-    w, x, y, z = quat_wxyz
-    return (x, y, z, w)
+def _quat_wxyz_tuple(quat_wxyz: list[float]) -> tuple[float, ...]:
+    """Pass through [w,x,y,z] — Genesis uses wxyz convention natively."""
+    return tuple(quat_wxyz)
 
 
 def load_resolved_scene(
@@ -101,7 +100,7 @@ def load_resolved_scene(
     obj_names = []
     for po in resolved.placed_objects:
         pos = tuple(po.position)
-        quat = _quat_wxyz_to_xyzw(po.quaternion)
+        quat = _quat_wxyz_tuple(po.quaternion)
 
         friction = po.asset.metadata.friction
         urdf_kwargs = dict(
