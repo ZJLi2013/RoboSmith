@@ -19,7 +19,6 @@ pick_cube = _register(TaskSpec(
     success_fn="object_above",
     success_params={"object": "cube", "reference": "table", "z_margin": 0.05},
     skills=[Skill("pick", "cube", "block")],
-    motion_type="pick",
 ))
 
 place_cube = _register(TaskSpec(
@@ -33,7 +32,6 @@ place_cube = _register(TaskSpec(
         Skill("pick", "cube", "block"),
         Skill("place", "target", "block"),
     ],
-    motion_type="pick_and_place",
 ))
 
 mug_in_bowl = _register(TaskSpec(
@@ -47,7 +45,6 @@ mug_in_bowl = _register(TaskSpec(
         Skill("pick", "mug", "mug"),
         Skill("place", "bowl", "mug"),
     ],
-    motion_type="pick_and_place",
 ))
 
 pick_bowl = _register(TaskSpec(
@@ -58,7 +55,6 @@ pick_bowl = _register(TaskSpec(
     success_fn="object_above",
     success_params={"object": "bowl", "reference": "table", "z_margin": 0.02},
     skills=[Skill("pick", "bowl", "bowl")],
-    motion_type="pick",
 ))
 
 line_bowls = _register(TaskSpec(
@@ -80,9 +76,6 @@ line_bowls = _register(TaskSpec(
         Skill("pick",  "bowl_c",  "bowl"),
         Skill("place", "line_c",  "bowl"),
     ],
-    motion_type="pick_and_place",
-    is_stack=True,
-    n_stack=3,
 ))
 
 stack_blocks = _register(TaskSpec(
@@ -100,7 +93,4 @@ stack_blocks = _register(TaskSpec(
         Skill("pick",  "block_blue",   "block"),
         Skill("place", "stack_center", "block", {"place_z": 0.23}),
     ],
-    motion_type="pick_and_place",
-    is_stack=True,
-    n_stack=3,
 ))

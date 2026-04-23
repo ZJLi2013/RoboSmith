@@ -125,10 +125,14 @@ The GraspPlanner + MotionExecutor architecture is done (Phase 3a, [regression te
 ```
 robotsmith/                      # Python package (pip install -e .)
 ├── assets/                      #   Part 1: asset management (schema, library, search, builtins)
-├── gen/                         #   Part 1: 3D generation (TRELLIS.2 / Hunyuan3D backends, mesh_to_urdf)
+├── gen/                         #   Data generation infrastructure
+│   ├── franka.py                #     Franka constants + EE utilities (pure numpy)
+│   ├── sim_env.py               #     SimEnv: Genesis scene + robot + cameras + IK + reset
+│   └── recorder.py              #     LeRobot dataset recording, evaluation, summary
 ├── scenes/                      #   Part 2: scene building (SceneConfig, genesis_loader, presets)
 ├── grasp/                       #   Grasp planning (GraspPlanner, GraspPlan, TemplateGraspPlanner)
 ├── motion/                      #   Motion execution (MotionExecutor, MotionParams)
+├── orchestration/               #   Skill-based task execution (Skill, run_skills)
 ├── tasks/                       #   Task definition (TaskSpec, predicates, presets)
 ├── eval/                        #   vla-eval benchmark plugin (RoboSmithBenchmark)
 ├── validate/                    #   physics validation (PyBullet)
@@ -142,7 +146,7 @@ scripts/
 │   ├── browse_assets.py         #   generate HTML asset gallery
 │   └── render_mesh_local.py     #   local mesh → PNG rendering
 ├── part2/                       # Data collection + eval
-│   ├── collect_data.py          #   IK data collection (+ --dart-sigma DART augmentation)
+│   ├── collect_data.py          #   TaskSpec-driven data collection (skills → episodes)
 │   ├── snapshot_scene.py        #   scene layout screenshot
 │   ├── train_smolvla.py         #   SmolVLA fine-tune (data quality check)
 │   └── test_benchmark.py        #   vla-eval benchmark smoke test

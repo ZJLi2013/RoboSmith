@@ -1,258 +1,175 @@
 """RoboSmith — open-loop data collection driven by TaskSpec.
 
-Generates expert demonstrations via IK solver for any registered task.
-Records EE-delta actions (7D) and EE state observations (8D).
-
-Action: [delta_pos(3), delta_axangle(3), gripper(1)]
-State:  [ee_pos(3), ee_axangle(3), gripper_widths(2)]
+Generates expert demonstrations for any registered task.
+All episode logic is derived from task_spec.skills — no task-type flags.
 
 Usage:
   python scripts/part2/collect_data.py --task pick_cube --n-episodes 100
-  python scripts/part2/collect_data.py --task pick_bowl --n-episodes 10
-  python scripts/part2/collect_data.py --task pick_cube --n-episodes 100 --dart-sigma 0.005
+  python scripts/part2/collect_data.py --task line_bowls --n-episodes 10
 """
 from __future__ import annotations
 
 import argparse
-import json
-import os
 import random
-import subprocess
 import sys
-import time
 from pathlib import Path
 
 import numpy as np
-from scipy.spatial.transform import Rotation
+
+from robotsmith.gen.sim_env import ensure_display, SimEnv, TARGET_MARKER_SIZE
+from robotsmith.gen.recorder import (
+    create_dataset, record_episode, evaluate_episode, save_summary,
+)
+from robotsmith.gen.franka import HOME_QPOS, to_numpy
+from robotsmith.motion import MotionExecutor, MotionParams
+from robotsmith.orchestration import run_skills
+from robotsmith.tasks import TASK_PRESETS
+from robotsmith.tasks.task_spec import TaskSpec
+from robotsmith.scenes.presets import SCENE_PRESETS
 
 
-# ---- constants ----
-JOINT_NAMES = [
-    "joint1", "joint2", "joint3", "joint4",
-    "joint5", "joint6", "joint7",
-    "finger_joint1", "finger_joint2",
-]
-MOTOR_NAMES = [f"{j}.pos" for j in JOINT_NAMES]
-
-ACTION_NAMES = [
-    "delta_x", "delta_y", "delta_z",
-    "delta_ax", "delta_ay", "delta_az",
-    "gripper",
-]
-STATE_NAMES = [
-    "ee_x", "ee_y", "ee_z",
-    "ee_ax", "ee_ay", "ee_az",
-    "gripper_left", "gripper_right",
-]
-
-HOME_QPOS = np.array([0, -0.3, 0, -2.2, 0, 2.0, 0.79, 0.04, 0.04], dtype=np.float32)
-KP = np.array([4500, 4500, 3500, 3500, 2000, 2000, 2000, 100, 100], dtype=np.float32)
-KV = np.array([450, 450, 350, 350, 200, 200, 200, 10, 10], dtype=np.float32)
-FORCE_LOWER = np.array([-87, -87, -87, -87, -12, -12, -12, -100, -100], dtype=np.float32)
-FORCE_UPPER = np.array([87, 87, 87, 87, 12, 12, 12, 100, 100], dtype=np.float32)
-
-TARGET_MARKER_SIZE = (0.06, 0.06, 0.005)
-
-
-def ensure_display():
-    if os.environ.get("DISPLAY"):
-        return
-    xvfb = subprocess.run(["which", "Xvfb"], capture_output=True)
-    if xvfb.returncode != 0:
-        return
-    proc = subprocess.Popen(
-        ["Xvfb", ":99", "-screen", "0", "1280x1024x24", "-ac", "+extension", "GLX"],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-    )
-    os.environ["DISPLAY"] = ":99"
-    time.sleep(2)
-    if proc.poll() is None:
-        print(f"[display] Xvfb started (PID={proc.pid})")
-
-
-def to_numpy(t):
-    arr = t.cpu().numpy() if hasattr(t, "cpu") else np.array(t)
-    return arr[0] if arr.ndim > 1 else arr
-
-
-def render_cam(cam):
-    rgb, _, _, _ = cam.render(rgb=True, depth=False, segmentation=False, normal=False)
-    arr = rgb.cpu().numpy() if hasattr(rgb, "cpu") else np.array(rgb)
-    if arr.ndim == 4:
-        arr = arr[0]
-    return arr.astype(np.uint8)
-
-
-def quat_to_axangle(quat_wxyz: np.ndarray) -> np.ndarray:
-    """Convert wxyz quaternion to axis-angle (3D compact rotvec)."""
-    r = Rotation.from_quat([quat_wxyz[1], quat_wxyz[2], quat_wxyz[3], quat_wxyz[0]])
-    return r.as_rotvec().astype(np.float32)
-
-
-def get_ee_state(ee_link, finger_dof_vals: np.ndarray) -> np.ndarray:
-    """Return 8D EE state: [pos(3), axangle(3), gripper(2)]."""
-    pos = to_numpy(ee_link.get_pos()).astype(np.float32)
-    quat = to_numpy(ee_link.get_quat()).astype(np.float32)
-    axangle = quat_to_axangle(quat)
-    gripper = finger_dof_vals[:2].astype(np.float32)
-    return np.concatenate([pos, axangle, gripper])
-
-
-def compute_ee_delta(prev_state: np.ndarray, curr_state: np.ndarray,
-                     gripper_cmd: float) -> np.ndarray:
-    """Compute 7D EE delta action: [delta_pos(3), delta_axangle(3), gripper(1)]."""
-    delta_pos = curr_state[:3] - prev_state[:3]
-    r_prev = Rotation.from_rotvec(prev_state[3:6])
-    r_curr = Rotation.from_rotvec(curr_state[3:6])
-    delta_rot = (r_curr * r_prev.inv()).as_rotvec()
-    return np.concatenate([
-        delta_pos.astype(np.float32),
-        delta_rot.astype(np.float32),
-        np.array([gripper_cmd], dtype=np.float32),
-    ])
-
-
-def main():
-    from robotsmith.tasks import TASK_PRESETS
-    from robotsmith.tasks import evaluate_predicate
-    from robotsmith.tasks.task_spec import TaskSpec
-    from robotsmith.grasp import TemplateGraspPlanner
-    from robotsmith.motion import MotionExecutor, MotionParams
-    from robotsmith.orchestration import run_skills
-    from robotsmith.assets.library import AssetLibrary
-    from robotsmith.scenes.backend import ProgrammaticSceneBackend
-    from robotsmith.scenes.genesis_loader import load_resolved_scene
-    from robotsmith.scenes.presets import SCENE_PRESETS
-
+def parse_args():
     ap = argparse.ArgumentParser(description="TaskSpec-driven data collection")
     ap.add_argument("--task", default="pick_cube",
-                    help=f"Task name. Available: {list(TASK_PRESETS.keys())}")
+                    help=f"Task name ({list(TASK_PRESETS.keys())})")
     ap.add_argument("--n-episodes", type=int, default=10)
     ap.add_argument("--repo-id", default="local/franka-genesis-pick")
     ap.add_argument("--save", default="/output")
     ap.add_argument("--cpu", action="store_true")
     ap.add_argument("--fps", type=int, default=30)
-    ap.add_argument("--cube-x-min", type=float, default=0.4)
-    ap.add_argument("--cube-x-max", type=float, default=0.7)
-    ap.add_argument("--cube-y-min", type=float, default=-0.2)
-    ap.add_argument("--cube-y-max", type=float, default=0.2)
     ap.add_argument("--seed", type=int, default=42)
-    ap.add_argument("--cube-friction", type=float, default=1.5)
-    ap.add_argument("--min-place-dist", type=float, default=0.15,
-                    help="Min XY distance between pick and place for pick_and_place tasks")
-    ap.add_argument("--dart-sigma", type=float, default=None,
-                    help="DART noise sigma (overrides TaskSpec.dart_sigma)")
-    # motion timing (passed to MotionParams)
-    ap.add_argument("--settle-steps", type=int, default=30)
-    ap.add_argument("--approach-steps", type=int, default=40)
-    ap.add_argument("--descend-steps", type=int, default=30)
-    ap.add_argument("--grasp-hold-steps", type=int, default=20)
-    ap.add_argument("--lift-steps", type=int, default=30)
-    ap.add_argument("--lift-hold-steps", type=int, default=15)
-    ap.add_argument("--transport-steps", type=int, default=40)
-    ap.add_argument("--place-descend-steps", type=int, default=25)
-    ap.add_argument("--release-steps", type=int, default=15)
-    ap.add_argument("--retreat-steps", type=int, default=25)
-    # success detection params
-    ap.add_argument("--success-lift-delta", type=float, default=0.02)
-    ap.add_argument("--success-sustain-frames", type=int, default=8)
-    ap.add_argument("--success-final-delta", type=float, default=0.01)
-    # observation extras
-    ap.add_argument("--add-phase", action="store_true")
-    ap.add_argument("--add-goal", action="store_true")
-    ap.add_argument("--no-bbox-detection", action="store_true")
     ap.add_argument("--no-videos", action="store_true")
-    # grasp planner override
-    ap.add_argument("--grasp-planner", default=None,
-                    help="Grasp planner backend (default: from TaskSpec)")
-    # scene override (defaults to TaskSpec.scene)
-    ap.add_argument("--scene", default=None,
-                    help="Override scene preset name (default: from TaskSpec)")
     ap.add_argument("--assets-root", default=None)
-    args = ap.parse_args()
+    ap.add_argument("--dart-sigma", type=float, default=None,
+                    help="Override TaskSpec.dart_sigma")
+    return ap.parse_args()
 
-    # ---- Resolve TaskSpec ----
+
+# ---- Episode sampling helpers (workspace-aware) ----
+
+def _sample_xy(rng: random.Random, x_range, y_range):
+    return (rng.uniform(*x_range), rng.uniform(*y_range))
+
+
+def _sample_spaced(rng, n, x_range, y_range, min_dist=0.10):
+    pts = []
+    for _ in range(n):
+        for _try in range(200):
+            x, y = _sample_xy(rng, x_range, y_range)
+            if all(np.hypot(x - px, y - py) >= min_dist for px, py in pts):
+                pts.append((x, y))
+                break
+        else:
+            pts.append(_sample_xy(rng, x_range, y_range))
+    return pts
+
+
+def _sample_place_target(rng, cx, cy, x_range, y_range, min_dist=0.15):
+    for _ in range(100):
+        px, py = _sample_xy(rng, x_range, y_range)
+        if np.hypot(px - cx, py - cy) >= min_dist:
+            return (px, py)
+    return (cx + min_dist, cy)
+
+
+def derive_skill_info(task_spec: TaskSpec):
+    """Extract pick/place object names from skill sequence."""
+    pick_names: list[str] = []
+    place_names: list[str] = []
+    for sk in task_spec.skills:
+        if sk.name == "pick" and sk.target not in pick_names:
+            pick_names.append(sk.target)
+        elif sk.name == "place" and sk.target not in place_names:
+            place_names.append(sk.target)
+    return pick_names, place_names
+
+
+def build_episode_positions(
+    env: SimEnv,
+    rng: random.Random,
+    pick_names: list[str],
+    place_names: list[str],
+) -> dict[str, np.ndarray]:
+    """Sample random positions for all pick objects and place targets.
+
+    Returns name → np.array([x, y, z]) for every key needed by run_skills.
+    """
+    x_range = env.x_range
+    y_range = env.y_range
+    positions: dict[str, np.ndarray] = {}
+
+    n_pick = len(pick_names)
+    pick_xys = _sample_spaced(rng, n_pick, x_range, y_range, min_dist=0.10)
+
+    for name, (x, y) in zip(pick_names, pick_xys):
+        z = env.get_initial_z(name)
+        positions[name] = np.array([x, y, z])
+
+    if place_names:
+        ref_x, ref_y = pick_xys[0]
+        place_center = _sample_place_target(
+            rng, ref_x, ref_y, x_range, y_range, min_dist=0.15)
+
+        if len(place_names) == 1:
+            z = env.get_initial_z(pick_names[0])
+            positions[place_names[0]] = np.array([place_center[0],
+                                                   place_center[1], z])
+        else:
+            spacing = 0.12
+            cx, cy = place_center
+            n = len(place_names)
+            offsets = np.linspace(-(n - 1) / 2 * spacing,
+                                  (n - 1) / 2 * spacing, n)
+            for name, dy in zip(place_names, offsets):
+                z = env.get_initial_z(pick_names[0])
+                positions[name] = np.array([cx, cy + dy, z])
+
+    return positions
+
+
+def main():
+    args = parse_args()
+
     if args.task not in TASK_PRESETS:
-        print(f"[error] Unknown task '{args.task}'. Available: {list(TASK_PRESETS.keys())}")
+        print(f"[error] Unknown task '{args.task}'. "
+              f"Available: {list(TASK_PRESETS.keys())}")
         sys.exit(1)
+
     task_spec = TASK_PRESETS[args.task]
     if args.dart_sigma is not None:
-        task_spec = TaskSpec(**{**task_spec.to_dict(), "dart_sigma": args.dart_sigma})
+        task_spec = TaskSpec(**{**task_spec.to_dict(),
+                                "dart_sigma": args.dart_sigma})
+
+    pick_names, place_names = derive_skill_info(task_spec)
     print(f"[task] {task_spec.name}: {task_spec.instruction}")
-    print(f"[task] motion_type={task_spec.motion_type}, "
-          f"grasp_planner={task_spec.grasp_planner}")
+    print(f"[task] pick={pick_names} place={place_names}")
 
-    is_place_task = task_spec.motion_type == "pick_and_place"
-    is_stack_task = task_spec.is_stack
-
-    # ---- MotionParams from CLI ----
-    motion_params = MotionParams(
-        approach_steps=args.approach_steps,
-        descend_steps=args.descend_steps,
-        grasp_hold_steps=args.grasp_hold_steps,
-        lift_steps=args.lift_steps,
-        lift_hold_steps=args.lift_hold_steps,
-        transport_steps=args.transport_steps,
-        place_descend_steps=args.place_descend_steps,
-        release_steps=args.release_steps,
-        retreat_steps=args.retreat_steps,
-    )
-    executor = MotionExecutor()
-
-    # ---- Genesis setup ----
+    # ---- Build simulation ----
     ensure_display()
-    import genesis as gs
-    import torch
 
-    gs.init(backend=(gs.cpu if args.cpu else gs.gpu), logging_level="warning")
-
-    # ---- Scene pipeline ----
-    scene_name = args.scene or task_spec.scene
+    scene_name = task_spec.scene
     if scene_name not in SCENE_PRESETS:
-        print(f"[error] Unknown scene '{scene_name}'. Available: {list(SCENE_PRESETS.keys())}")
+        print(f"[error] Unknown scene '{scene_name}'")
         sys.exit(1)
     scene_config = SCENE_PRESETS[scene_name]
 
-    assets_root = args.assets_root or str(
-        Path(__file__).resolve().parent.parent.parent / "assets"
-    )
-    library = AssetLibrary(assets_root)
-
-    backend = ProgrammaticSceneBackend(seed=args.seed)
-    resolved = backend.resolve(scene_config, library)
-    print(f"[scene] {resolved.summary()}")
-
-    handle = load_resolved_scene(
-        resolved,
-        gs_module=gs,
+    env = SimEnv.build(
+        scene_config,
+        assets_root=args.assets_root,
+        seed=args.seed,
         fps=args.fps,
-        box_box_detection=(not args.no_bbox_detection),
+        cpu=args.cpu,
+        use_videos=not args.no_videos,
     )
-    scene = handle.scene
-    franka = handle.franka
 
-    table_z = scene_config.table_height + scene_config.table_size[2] / 2.0
+    executor = MotionExecutor()
+    motion_params = MotionParams()
 
-    # Build name→entity and name→PlacedObject maps
-    entity_map: dict[str, object] = {}
-    placed_map: dict = {}
-    for name, entity, po in zip(handle.object_names, handle.objects, handle.placed):
-        entity_map[name] = entity
-        placed_map[name] = po
-
-    # Derive object heights from scene metadata (for GraspPlanner relative Z)
-    object_heights: dict[str, float] = {}
-    for name, po in placed_map.items():
-        object_heights[name] = po.object_height_m
-
-    # Determine the primary pick target object entity
-    pick_obj_name = task_spec.skills[0].target if task_spec.skills else "cube"
-    primary_entity = entity_map.get(pick_obj_name)
-
-    # Target marker for place tasks (not a URDF asset — added as primitive)
+    # Optional place-target marker (single pick+place only)
     target_marker = None
-    if is_place_task and not is_stack_task:
-        target_marker = scene.add_entity(
+    if len(place_names) == 1 and len(pick_names) == 1:
+        import genesis as gs
+        target_marker = env.scene.add_entity(
             morph=gs.morphs.Box(
                 size=TARGET_MARKER_SIZE,
                 pos=(0.55, 0.2, TARGET_MARKER_SIZE[2] / 2),
@@ -261,429 +178,96 @@ def main():
             surface=gs.surfaces.Default(color=(0.3, 0.8, 0.3, 0.8)),
         )
 
-    cam_up = scene.add_camera(
-        res=(640, 480), pos=(0.55, 0.55, table_z + 0.55),
-        lookat=(0.55, 0.0, table_z + 0.10), fov=45, GUI=False,
-    )
-    cam_wrist = scene.add_camera(
-        res=(640, 480),
-        pos=(0.05, 0.0, -0.08),
-        lookat=(0.0, 0.0, 0.10),
-        fov=65, GUI=False,
-    )
-    scene.build()
-
-    motors_dof = [franka.get_joint(name).dofs_idx_local[0] for name in JOINT_NAMES]
-    arm_dof = motors_dof[:7]
-    finger_dof = motors_dof[7:]
-
-    franka.set_dofs_kp(KP, motors_dof)
-    franka.set_dofs_kv(KV, motors_dof)
-    franka.set_dofs_force_range(FORCE_LOWER, FORCE_UPPER, motors_dof)
-
-    n_dofs = len(JOINT_NAMES)
-    end_effector = franka.get_link("hand")
-
-    from genesis.utils.geom import pos_lookat_up_to_T
-    wrist_offset_T = pos_lookat_up_to_T(
-        torch.tensor([0.05, 0.0, -0.08], dtype=gs.tc_float, device=gs.device),
-        torch.tensor([0.0, 0.0, 0.10], dtype=gs.tc_float, device=gs.device),
-        torch.tensor([0.0, 0.0, -1.0], dtype=gs.tc_float, device=gs.device),
-    )
-    try:
-        cam_wrist.attach(rigid_link=end_effector, offset_T=wrist_offset_T)
-    except TypeError:
-        cam_wrist.attach(end_effector, wrist_offset_T)
-    print("[cam] wrist camera attached to franka hand link")
-
-    # Collect entity lists by name for reset
-    all_obj_names = list(entity_map.keys())
-
-    def _get_initial_z(name: str) -> float:
-        """Get the Z position this object was initially placed at."""
-        po = placed_map.get(name)
-        return po.position[2] if po else 0.02
-
-    def reset_scene(obj_positions: dict[str, tuple[float, float]],
-                    place_xy=None):
-        """Reset robot and all objects to given XY positions.
-
-        obj_positions: name → (x, y) for each object that needs repositioning.
-        """
-        franka.set_dofs_position(HOME_QPOS, motors_dof)
-        franka.control_dofs_position(HOME_QPOS, motors_dof)
-        franka.zero_all_dofs_velocity()
-        for name, (x, y) in obj_positions.items():
-            ent = entity_map.get(name)
-            if ent is None:
-                continue
-            z = _get_initial_z(name)
-            ent.set_pos(
-                torch.tensor([x, y, z], dtype=torch.float32,
-                             device=gs.device).unsqueeze(0))
-            po = placed_map.get(name)
-            q = po.quaternion if po else [1, 0, 0, 0]
-            ent.set_quat(
-                torch.tensor(q, dtype=torch.float32,
-                             device=gs.device).unsqueeze(0))
-            ent.zero_all_dofs_velocity()
-        if target_marker is not None and place_xy is not None:
-            target_marker.set_pos(
-                torch.tensor([place_xy[0], place_xy[1], 0.0025], dtype=torch.float32,
-                             device=gs.device).unsqueeze(0))
-        for _ in range(args.settle_steps):
-            scene.step()
-
-    # ---- GraspPlanner setup ----
-    z_offset = table_z
-    planner = TemplateGraspPlanner(z_offset=z_offset)
-
-    # IK solver uses the planner's grasp_quat as default for backward compat
-    default_template = planner._templates.get("block") or next(
-        iter(planner._templates.values()))
-    _default_quat = default_template.ee_quat
-    _default_finger_open = default_template.finger_open
-
-    def solve_ik(pos, quat=_default_quat, finger_pos=_default_finger_open):
-        qpos = to_numpy(franka.inverse_kinematics(
-            link=end_effector,
-            pos=np.array(pos, dtype=np.float32),
-            quat=np.array(quat, dtype=np.float32),
-        ))
-        target = np.zeros(n_dofs, dtype=np.float32)
-        target[:7] = qpos[:7]
-        target[7] = finger_pos
-        target[8] = finger_pos
-        return target
-
-    # ---- create LeRobot dataset ----
-    try:
-        from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
-    except ImportError:
-        from lerobot.datasets.lerobot_dataset import LeRobotDataset
-
-    state_dim = 8
-    action_dim = 7
-
-    extra_dims = 0
-    extra_names = []
-    if args.add_goal:
-        extra_dims += 2
-        extra_names += ["cube_x", "cube_y"]
-    if args.add_phase:
-        extra_dims += 1
-        extra_names += ["phase_t_over_T"]
-    obs_dim = state_dim + extra_dims
-    obs_names = STATE_NAMES + extra_names
-
-    features = {
-        "observation.state": {
-            "dtype": "float32",
-            "shape": (obs_dim,),
-            "names": obs_names,
-        },
-        "action": {
-            "dtype": "float32",
-            "shape": (action_dim,),
-            "names": ACTION_NAMES,
-        },
-        "observation.images.up": {
-            "dtype": "image" if args.no_videos else "video",
-            "shape": (3, 480, 640),
-            "names": ["channel", "height", "width"],
-        },
-        "observation.images.wrist": {
-            "dtype": "image" if args.no_videos else "video",
-            "shape": (3, 480, 640),
-            "names": ["channel", "height", "width"],
-        },
-    }
-
-    dataset = LeRobotDataset.create(
+    dataset = create_dataset(
         repo_id=args.repo_id,
         fps=args.fps,
-        features=features,
-        robot_type="franka",
-        use_videos=(not args.no_videos),
+        use_videos=not args.no_videos,
     )
-    print(f"[gen] LeRobot dataset created: {args.repo_id}")
 
-    # ---- generate episodes ----
+    # ---- Episode loop ----
     rng = random.Random(args.seed)
-    x_range = (args.cube_x_min, args.cube_x_max)
-    y_range = (args.cube_y_min, args.cube_y_max)
-
-    def sample_place_target(cx, cy, min_dist):
-        for _ in range(100):
-            px = rng.uniform(x_range[0], x_range[1])
-            py = rng.uniform(y_range[0], y_range[1])
-            if np.hypot(px - cx, py - cy) >= min_dist:
-                return (px, py)
-        return (cx + min_dist, cy)
-
-    def sample_spaced_positions(n, min_dist=0.10):
-        pts = []
-        for _ in range(n):
-            for _try in range(200):
-                x = rng.uniform(x_range[0], x_range[1])
-                y = rng.uniform(y_range[0], y_range[1])
-                if all(np.hypot(x - px, y - py) >= min_dist for px, py in pts):
-                    pts.append((x, y))
-                    break
-            else:
-                pts.append((x, y))
-        return pts
-
-    # Identify stackable object names from skill sequence (pick targets)
-    N_BLOCKS = task_spec.n_stack if is_stack_task else 1
-    if is_stack_task:
-        stack_obj_names = []
-        for sk in task_spec.skills:
-            if sk.name == "pick" and sk.target not in stack_obj_names:
-                stack_obj_names.append(sk.target)
-    else:
-        stack_obj_names = []
-    block_names = stack_obj_names
-
-    episode_points = []
-    for _ in range(args.n_episodes):
-        if is_stack_task:
-            block_xys = sample_spaced_positions(N_BLOCKS, min_dist=0.10)
-            sx, sy = sample_place_target(
-                block_xys[0][0], block_xys[0][1], args.min_place_dist)
-            episode_points.append({
-                "block_xys": block_xys,
-                "stack_xy": (sx, sy),
-            })
-        elif is_place_task:
-            cx = rng.uniform(x_range[0], x_range[1])
-            cy = rng.uniform(y_range[0], y_range[1])
-            px, py = sample_place_target(cx, cy, args.min_place_dist)
-            episode_points.append((cx, cy, px, py))
-        else:
-            cx = rng.uniform(x_range[0], x_range[1])
-            cy = rng.uniform(y_range[0], y_range[1])
-            episode_points.append((cx, cy, None, None))
-
     out_dir = Path(args.save) / f"franka_gen_{task_spec.name}"
-    out_dir.mkdir(parents=True, exist_ok=True)
+    episode_labels: list[dict] = []
+    frames_per_episode = None
+    primary_name = pick_names[0] if pick_names else None
+    primary_entity = env.entity_map.get(primary_name)
 
-    print(f"[gen] task={task_spec.name}, motion_type={task_spec.motion_type}")
-    print(f"[gen] workspace x_range={x_range}, y_range={y_range}")
-    if is_place_task:
-        print(f"[gen] min_place_dist={args.min_place_dist}")
-    if is_stack_task:
-        print(f"[gen] N_BLOCKS={N_BLOCKS}")
-    print(f"[gen] object_heights={object_heights}")
+    print(f"[gen] workspace x={env.x_range} y={env.y_range}")
+    print(f"[gen] object_heights={env.object_heights}")
     print(f"[gen] {args.n_episodes} episodes to generate")
 
-    frames_per_episode = None
-    episode_labels = []
-
     for ep in range(args.n_episodes):
-        if is_stack_task:
-            ep_data = episode_points[ep]
-            block_xys = ep_data["block_xys"]
-            sx, sy = ep_data["stack_xy"]
-            cx, cy = block_xys[0]
-            px, py = sx, sy
-            obj_pos_map = {}
-            for bi, (bx, by) in enumerate(block_xys):
-                obj_pos_map[block_names[bi]] = (bx, by)
-            reset_scene(obj_pos_map)
-        else:
-            cx, cy, px, py = episode_points[ep]
-            place_xy = (px, py) if px is not None else None
-            reset_scene({pick_obj_name: (cx, cy)}, place_xy=place_xy)
+        positions = build_episode_positions(
+            env, rng, pick_names, place_names)
 
-        # Build scene_state positions for run_skills()
-        positions: dict[str, np.ndarray] = {}
-        if is_stack_task:
-            for bi, (bx, by) in enumerate(block_xys):
-                z = _get_initial_z(block_names[bi])
-                positions[block_names[bi]] = np.array([bx, by, z])
-            positions["stack_center"] = np.array([sx, sy, _get_initial_z(block_names[0])])
-            # Line arrangement targets: 3 positions spaced along Y axis
-            line_spacing = 0.12
-            z0 = _get_initial_z(block_names[0])
-            positions["line_a"] = np.array([sx, sy - line_spacing, z0])
-            positions["line_b"] = np.array([sx, sy, z0])
-            positions["line_c"] = np.array([sx, sy + line_spacing, z0])
-        else:
-            z = _get_initial_z(pick_obj_name)
-            positions[pick_obj_name] = np.array([cx, cy, z])
-            if px is not None:
-                positions["target"] = np.array([px, py, z])
+        obj_xy_map = {
+            name: (pos[0], pos[1])
+            for name, pos in positions.items()
+            if name in env.entity_map
+        }
+        marker_xy = None
+        if target_marker is not None and place_names:
+            p = positions[place_names[0]]
+            marker_xy = (p[0], p[1])
+
+        env.reset(obj_xy_map, marker_xy=marker_xy,
+                  target_marker=target_marker)
 
         scene_state = {
-            "home_qpos": HOME_QPOS,
+            "home_qpos": HOME_QPOS.copy(),
             "positions": positions,
-            "object_heights": object_heights,
+            "object_heights": env.object_heights,
         }
+
         traj = run_skills(
-            task_spec.skills, planner, executor, solve_ik,
-            scene_state, motion_params,
+            task_spec.skills, env.planner, executor,
+            env.solve_ik, scene_state, motion_params,
         )
 
         if frames_per_episode is None:
             frames_per_episode = len(traj)
             print(f"[gen] trajectory: {frames_per_episode} frames/episode")
 
-        initial_obj_z = _get_initial_z(pick_obj_name)
-        obj_z_hist = []
-        total_steps = len(traj)
-
-        finger_vals = to_numpy(franka.get_dofs_position(finger_dof)).astype(np.float32)
-        prev_ee_state = get_ee_state(end_effector, finger_vals)
-
-        for step_idx, target_qpos in enumerate(traj):
-            finger_vals = to_numpy(franka.get_dofs_position(finger_dof)).astype(np.float32)
-            ee_state = get_ee_state(end_effector, finger_vals)
-            parts = [ee_state]
-            if args.add_goal and primary_entity is not None:
-                obj_xy = to_numpy(primary_entity.get_pos())[:2].astype(np.float32)
-                parts.append(obj_xy)
-            if args.add_phase:
-                t_norm = np.array([(step_idx + 1) / total_steps], dtype=np.float32)
-                parts.append(t_norm)
-            state = np.concatenate(parts) if len(parts) > 1 else ee_state
-            img_up = render_cam(cam_up)
-            img_wrist = render_cam(cam_wrist)
-
-            gripper_cmd = float(target_qpos[7])
-            franka.control_dofs_position(target_qpos, motors_dof)
-            scene.step()
-
-            finger_vals_next = to_numpy(franka.get_dofs_position(finger_dof)).astype(np.float32)
-            next_ee_state = get_ee_state(end_effector, finger_vals_next)
-            action = compute_ee_delta(prev_ee_state, next_ee_state, gripper_cmd)
-            prev_ee_state = next_ee_state
-
-            if primary_entity is not None:
-                cz = float(to_numpy(primary_entity.get_pos())[2])
-                obj_z_hist.append(cz)
-
-            dataset.add_frame({
-                "observation.state": state,
-                "action": action,
-                "observation.images.up": img_up,
-                "observation.images.wrist": img_wrist,
-                "task": task_spec.instruction,
-            })
-
-        # ---- Evaluate success via predicate ----
-        if is_stack_task:
-            env_state = {"object_positions": {}, "initial_positions": {}}
-            for bi in range(N_BLOCKS):
-                bname = block_names[bi]
-                bpos = to_numpy(entity_map[bname].get_pos())
-                env_state["object_positions"][bname] = bpos.copy()
-                env_state["initial_positions"][bname] = np.array(
-                    [block_xys[bi][0], block_xys[bi][1], _get_initial_z(bname)])
-        else:
-            final_pos = to_numpy(primary_entity.get_pos())
-            env_state = {
-                "object_positions": {pick_obj_name: final_pos.copy()},
-                "initial_positions": {pick_obj_name: np.array([cx, cy, initial_obj_z])},
-            }
-            if is_place_task and px is not None:
-                env_state["object_positions"]["target"] = np.array([px, py, 0.0025])
-        predicate_success = evaluate_predicate(
-            task_spec.success_fn, env_state, task_spec.success_params
+        obj_z_hist = record_episode(
+            env, dataset, traj, task_spec,
+            primary_entity=primary_entity,
         )
 
-        base_z = initial_obj_z
-        cz_max = max(obj_z_hist) if obj_z_hist else base_z
-        cz_end = obj_z_hist[-1] if obj_z_hist else base_z
-
-        success = predicate_success
+        initial_positions = {
+            name: pos.copy() for name, pos in positions.items()
+            if name in env.entity_map
+        }
+        success = evaluate_episode(
+            env, task_spec, pick_names, initial_positions)
 
         label = {
             "episode_index": ep,
             "task": task_spec.name,
-            "success_predicate": bool(predicate_success),
             "success": bool(success),
         }
-        if is_stack_task:
-            block_final_zs = [float(to_numpy(entity_map[block_names[bi]].get_pos())[2])
-                              for bi in range(N_BLOCKS)]
-            label["stack_xy"] = [float(sx), float(sy)]
-            label["block_xys"] = [[float(bx), float(by)] for bx, by in block_xys]
-            label["block_final_zs"] = block_final_zs
-        elif is_place_task:
-            final_pos = to_numpy(primary_entity.get_pos())
-            label["pick_xy"] = [float(cx), float(cy)]
-            label["place_xy"] = [float(px), float(py)]
-            label["place_xy_error"] = float(
-                np.linalg.norm(final_pos[:2] - np.array([px, py])))
-        else:
-            label["obj_xy"] = [float(cx), float(cy)]
-            label["base_z"] = float(base_z)
-            label["obj_z_max"] = float(cz_max)
-            label["obj_z_end"] = float(cz_end)
-            lifted = [z >= base_z + args.success_lift_delta for z in obj_z_hist]
-            sustain_max = 0
-            sustain = 0
-            for ok in lifted:
-                sustain = sustain + 1 if ok else 0
-                sustain_max = max(sustain, sustain_max)
-            heuristic_success = (
-                (cz_max - base_z) >= args.success_lift_delta
-                and sustain_max >= args.success_sustain_frames
-                and (cz_end - base_z) >= args.success_final_delta
-            )
-            label["sustain_frames"] = int(sustain_max)
-            label["success_heuristic"] = bool(heuristic_success)
-        episode_labels.append(label)
+        for name in pick_names:
+            ent = env.entity_map.get(name)
+            if ent:
+                fpos = to_numpy(ent.get_pos())
+                label[f"{name}_final_pos"] = [float(v) for v in fpos]
 
+        episode_labels.append(label)
         dataset.save_episode()
+
         status = "OK" if success else "FAIL"
-        if is_stack_task:
-            zs = label["block_final_zs"]
-            print(f"[gen] ep {ep+1}/{args.n_episodes} [{status}] "
-                  f"stack=({sx:.3f},{sy:.3f}) "
-                  f"block_zs=[{', '.join(f'{z:.3f}' for z in zs)}]")
-        elif is_place_task:
-            print(f"[gen] ep {ep+1}/{args.n_episodes} [{status}] "
-                  f"pick=({cx:.3f},{cy:.3f}) place=({px:.3f},{py:.3f}) "
-                  f"xy_err={label['place_xy_error']:.4f}m")
-        else:
-            pred_match = "✓" if predicate_success == label.get("success_heuristic", predicate_success) else "≠"
-            print(f"[gen] ep {ep+1}/{args.n_episodes} [{status}] "
-                  f"obj=({cx:.3f},{cy:.3f}) lift={cz_max-base_z:.4f}m "
-                  f"sustain={label.get('sustain_frames', 0)} pred={pred_match}")
+        print(f"[gen] ep {ep+1}/{args.n_episodes} [{status}] "
+              f"positions={{{', '.join(f'{k}=({v[0]:.3f},{v[1]:.3f})' for k, v in positions.items() if k in env.entity_map)}}}")
 
     if hasattr(dataset, "consolidate"):
         dataset.consolidate(run_compute_stats=True)
     print(f"[gen] dataset saved: {dataset.root}")
 
-    success_ids = [e["episode_index"] for e in episode_labels if e["success"]]
-    failure_ids = [e["episode_index"] for e in episode_labels if not e["success"]]
-    sr = len(success_ids) / max(len(episode_labels), 1)
-
-    summary = {
-        "task": task_spec.to_dict(),
-        "repo_id": args.repo_id,
-        "n_episodes": args.n_episodes,
-        "frames_per_episode": frames_per_episode,
-        "total_frames": args.n_episodes * int(frames_per_episode or 0),
-        "fps": args.fps,
-        "robot": "franka_panda",
-        "n_dofs": n_dofs,
-        "action_space": "ee_delta_7d [delta_pos(3)+delta_axangle(3)+gripper(1)]",
-        "state_space": "ee_state_8d [pos(3)+axangle(3)+gripper(2)]",
-        "workspace_xy_range": {"x": list(x_range), "y": list(y_range)},
-        "success_episode_ids": success_ids,
-        "failure_episode_ids": failure_ids,
-        "success_rate": sr,
-    }
-
-    (out_dir / "gen_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
-    (out_dir / "episode_labels.json").write_text(json.dumps(episode_labels, indent=2), encoding="utf-8")
-    (out_dir / "success_episode_ids.json").write_text(
-        json.dumps({"success_episode_ids": success_ids}, indent=2), encoding="utf-8")
-    print(f"\n[gen] success_rate: {len(success_ids)}/{args.n_episodes} = {sr:.0%}")
-    print(json.dumps(summary, indent=2))
+    ws = env.scene_config.workspace_xy
+    save_summary(
+        out_dir, task_spec, args.repo_id, args.n_episodes,
+        frames_per_episode, args.fps, episode_labels,
+        workspace_xy=((ws[0][0], ws[0][1]), (ws[1][0], ws[1][1])),
+    )
 
 
 if __name__ == "__main__":

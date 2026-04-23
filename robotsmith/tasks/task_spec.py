@@ -25,11 +25,6 @@ class TaskSpec:
     dart_sigma: float = 0.0
     grasp_planner: str = "template"
 
-    # Legacy fields — used by collect_data.py old path, will be removed
-    motion_type: str = "pick"
-    is_stack: bool = False
-    n_stack: int = 3
-
     def to_dict(self) -> dict:
         return {
             "name": self.name,
@@ -42,9 +37,6 @@ class TaskSpec:
             "episode_length": self.episode_length,
             "dart_sigma": self.dart_sigma,
             "grasp_planner": self.grasp_planner,
-            "motion_type": self.motion_type,
-            "is_stack": self.is_stack,
-            "n_stack": self.n_stack,
         }
 
     @classmethod
