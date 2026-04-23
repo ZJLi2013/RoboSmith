@@ -94,10 +94,10 @@ _register(GraspTemplate(
     finger_open=0.04,
     finger_closed=0.00,
     grasp_z_mode="absolute",
-    grasp_z=0.135,
+    grasp_z=0.105,
     hover_z=0.25,
     retreat_z=0.30,
-    place_z=0.15,
+    place_z=0.11,
 ))
 
 
