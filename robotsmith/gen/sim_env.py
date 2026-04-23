@@ -275,9 +275,10 @@ class SimEnv:
                 [x, y, z], dtype=torch.float32,
                 device=self._device).unsqueeze(0))
             po = self.placed_map.get(name)
-            q = po.quaternion if po else [1, 0, 0, 0]
+            q_wxyz = po.quaternion if po else [1, 0, 0, 0]
+            q_xyzw = [q_wxyz[1], q_wxyz[2], q_wxyz[3], q_wxyz[0]]
             ent.set_quat(torch.tensor(
-                q, dtype=torch.float32,
+                q_xyzw, dtype=torch.float32,
                 device=self._device).unsqueeze(0))
             ent.zero_all_dofs_velocity()
 
