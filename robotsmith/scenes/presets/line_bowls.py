@@ -16,7 +16,5 @@ line_bowls_scene = SceneConfig(
             asset_query="bowl_02", count=1, scale=0.35, name_override="bowl_c",
         ),
     ],
-    table_height=0.0,
-    table_size=[1.2, 0.8, 0.0],
     workspace_xy=[[0.40, -0.20], [0.70, 0.20]],
 )

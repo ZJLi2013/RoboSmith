@@ -1,4 +1,4 @@
-"""Scene preset for place_cube: single block + target marker on ground plane."""
+"""Scene preset for place_cube: single block + target marker on tabletop."""
 
 from robotsmith.scenes.config import SceneConfig, ObjectPlacement
 
@@ -12,7 +12,5 @@ place_cube_scene = SceneConfig(
             name_override="cube",
         ),
     ],
-    table_height=0.0,
-    table_size=[1.2, 0.8, 0.0],
     workspace_xy=[[0.40, -0.20], [0.70, 0.20]],
 )

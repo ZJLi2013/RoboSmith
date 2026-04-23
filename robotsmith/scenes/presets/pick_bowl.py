@@ -1,4 +1,4 @@
-"""Scene preset for pick_bowl: single bowl (scaled down) on ground plane."""
+"""Scene preset for pick_bowl: single bowl (scaled down) on tabletop."""
 
 from robotsmith.scenes.config import SceneConfig, ObjectPlacement
 
@@ -13,7 +13,5 @@ pick_bowl_scene = SceneConfig(
             name_override="bowl",
         ),
     ],
-    table_height=0.0,
-    table_size=[1.2, 0.8, 0.0],
     workspace_xy=[[0.40, -0.20], [0.70, 0.20]],
 )
