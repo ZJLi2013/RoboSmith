@@ -76,3 +76,37 @@ def stacked(env_state: dict, *, objects: list[str], z_tolerance: float = 0.02) -
         if upper[2] <= lower[2] + z_tolerance:
             return False
     return True
+
+
+@register_predicate("objects_aligned")
+def objects_aligned(
+    env_state: dict,
+    *,
+    objects: list[str],
+    axis: str = "y",
+    xy_threshold: float = 0.06,
+) -> bool:
+    """True if all objects are aligned along *axis*.
+
+    "Aligned along Y" means they form a line parallel to Y, so their
+    X coordinates (the cross-axis) must be close to each other.  Additionally,
+    they must be sorted along *axis* (i.e. actually spread out, not piled up).
+    """
+    cross = 0 if axis == "y" else 1  # cross-axis index
+    along = 1 if axis == "y" else 0
+
+    positions = env_state["object_positions"]
+    coords = [positions[name] for name in objects]
+
+    cross_vals = [float(c[cross]) for c in coords]
+    cross_spread = max(cross_vals) - min(cross_vals)
+    if cross_spread > xy_threshold:
+        return False
+
+    along_vals = [float(c[along]) for c in coords]
+    min_spacing = xy_threshold * 0.5
+    sorted_vals = sorted(along_vals)
+    for i in range(1, len(sorted_vals)):
+        if sorted_vals[i] - sorted_vals[i - 1] < min_spacing:
+            return False
+    return True
