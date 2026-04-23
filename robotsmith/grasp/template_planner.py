@@ -21,7 +21,7 @@ class GraspTemplate:
     """Per-category grasp affordance — define once, reuse for all variants."""
 
     category: str
-    grasp_type: str                     # "top_down", "side", "rim", ...
+    grasp_type: str                     # "top_down", "mid_wall", ...
     approach_axis: np.ndarray           # unit vec, EE approach direction (world frame)
     ee_quat: np.ndarray                 # EE quaternion at grasp (wxyz)
     finger_open: float
@@ -41,8 +41,8 @@ class GraspTemplate:
     hover_clearance: float = 0.12       # relative: hover_z = grasp_z + clearance
     retreat_clearance: float = 0.17     # relative: retreat_z = grasp_z + clearance
 
-    requires_scale: bool = False
-    scale_range: tuple[float, float] = (1.0, 1.0)
+    # Mid-wall grasp: horizontal offset from object centre for side approach
+    approach_offset: float = 0.0        # >0 → EE starts offset in +X then approaches
 
 
 # ---------------------------------------------------------------------------
@@ -88,15 +88,16 @@ _register(GraspTemplate(
 
 _register(GraspTemplate(
     category="bowl",
-    grasp_type="top_down",
+    grasp_type="mid_wall",
     approach_axis=_DOWN.copy(),
     ee_quat=_TOP_DOWN_QUAT.copy(),
     finger_open=0.04,
-    finger_closed=0.02,
-    grasp_z=0.165,
+    finger_closed=0.015,
+    grasp_z=0.145,
     hover_z=0.28,
-    retreat_z=0.33,
-    place_z=0.15,
+    retreat_z=0.30,
+    place_z=0.145,
+    approach_offset=0.10,
 ))
 
 
@@ -150,8 +151,17 @@ class TemplateGraspPlanner(GraspPlanner):
             rz = template.retreat_z + zo
 
         grasp_pos = np.array([cx, cy, gz])
-        pre_grasp_pos = np.array([cx, cy, hz])
         retreat_pos = np.array([cx, cy, rz])
+
+        side_approach_pos = None
+        side_approach_quat = None
+        off = template.approach_offset
+        if off > 0 and template.grasp_type == "mid_wall":
+            pre_grasp_pos = np.array([cx + off, cy, hz])
+            side_approach_pos = np.array([cx + off, cy, gz])
+            side_approach_quat = template.ee_quat.copy()
+        else:
+            pre_grasp_pos = np.array([cx, cy, hz])
 
         return [GraspPlan(
             grasp_pos=grasp_pos,
@@ -164,6 +174,8 @@ class TemplateGraspPlanner(GraspPlanner):
             finger_closed=template.finger_closed,
             quality=1.0,
             metadata={"source": "template", "category": cat},
+            side_approach_pos=side_approach_pos,
+            side_approach_quat=side_approach_quat,
         )]
 
     def plan_place(

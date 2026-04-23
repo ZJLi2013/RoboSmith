@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Optional
 
 import numpy as np
 
@@ -25,3 +26,8 @@ class GraspPlan:
     finger_closed: float            # finger width when grasping
     quality: float = 1.0            # planner confidence (0–1)
     metadata: dict = field(default_factory=dict)
+
+    # Mid-wall grasp: EE descends to this XY-offset position first,
+    # then approaches horizontally to grasp_pos.  None for top-down.
+    side_approach_pos: Optional[np.ndarray] = None
+    side_approach_quat: Optional[np.ndarray] = None

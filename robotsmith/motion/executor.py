@@ -33,7 +33,13 @@ class MotionExecutor:
         home_qpos: np.ndarray,
         params: MotionParams,
     ) -> list[np.ndarray]:
-        """home → pre_grasp → grasp (close fingers) → retreat (lift)."""
+        """home → pre_grasp → [side_approach →] grasp (close) → retreat.
+
+        When ``plan.side_approach_pos`` is set (mid-wall grasp), the
+        sequence inserts a horizontal approach segment between descend
+        and grasp so the fingers wrap around the object wall instead of
+        pushing down from above.
+        """
         q_home = home_qpos.copy()
         q_pre = solve_ik(plan.pre_grasp_pos, plan.pre_grasp_quat, plan.finger_open)
         q_grasp_open = solve_ik(plan.grasp_pos, plan.grasp_quat, plan.finger_open)
@@ -42,7 +48,15 @@ class MotionExecutor:
 
         traj: list[np.ndarray] = []
         traj += _interpolate(q_home, q_pre, params.approach_steps)
-        traj += _interpolate(q_pre, q_grasp_open, params.descend_steps)
+
+        if plan.side_approach_pos is not None:
+            sa_quat = plan.side_approach_quat if plan.side_approach_quat is not None else plan.grasp_quat
+            q_side = solve_ik(plan.side_approach_pos, sa_quat, plan.finger_open)
+            traj += _interpolate(q_pre, q_side, params.descend_steps)
+            traj += _interpolate(q_side, q_grasp_open, params.descend_steps)
+        else:
+            traj += _interpolate(q_pre, q_grasp_open, params.descend_steps)
+
         traj += _interpolate(q_grasp_open, q_grasp_closed, params.grasp_hold_steps)
         traj += _interpolate(q_grasp_closed, q_retreat, params.lift_steps)
         traj += [q_retreat.copy() for _ in range(params.lift_hold_steps)]
