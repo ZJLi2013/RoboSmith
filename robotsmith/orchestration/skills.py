@@ -68,8 +68,6 @@ def run_skills(
 
     for i, skill in enumerate(skills):
         obj_pos = scene_state["positions"][skill.target]
-        print(f"[skill] {i+1}/{n} {skill.name}({skill.target}) "
-              f"pos={obj_pos} cat={skill.category}")
 
         if skill.name == "pick":
             obj_h = (
@@ -81,10 +79,6 @@ def run_skills(
                 category=skill.category,
                 object_height=obj_h,
             )[0]
-            print(f"  grasp_z={plan.grasp_pos[2]:.4f} "
-                  f"pre_z={plan.pre_grasp_pos[2]:.4f} "
-                  f"retreat_z={plan.retreat_pos[2]:.4f} "
-                  f"finger=[{plan.finger_open:.3f},{plan.finger_closed:.3f}]")
             next_is_place = (i + 1 < n and skills[i + 1].name == "place")
             pick_params = MotionParams(
                 approach_steps=params.approach_steps,
