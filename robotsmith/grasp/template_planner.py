@@ -93,11 +93,10 @@ _register(GraspTemplate(
     ee_quat=_TOP_DOWN_QUAT.copy(),
     finger_open=0.04,
     finger_closed=0.02,
-    grasp_z_mode="relative",
-    ee_above_object=0.06,
-    hover_clearance=0.12,
-    retreat_clearance=0.17,
-    place_z=0.12,
+    grasp_z=0.165,
+    hover_z=0.28,
+    retreat_z=0.33,
+    place_z=0.15,
 ))
 
 
