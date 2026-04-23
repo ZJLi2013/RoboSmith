@@ -432,10 +432,16 @@ def main():
                 pts.append((x, y))
         return pts
 
-    # Identify block names for stack tasks from entity_map
+    # Identify stackable object names from skill sequence (pick targets)
     N_BLOCKS = task_spec.n_stack if is_stack_task else 1
-    block_names = [n for n in all_obj_names if n.startswith("block_")]
-    block_names.sort()
+    if is_stack_task:
+        stack_obj_names = []
+        for sk in task_spec.skills:
+            if sk.name == "pick" and sk.target not in stack_obj_names:
+                stack_obj_names.append(sk.target)
+    else:
+        stack_obj_names = []
+    block_names = stack_obj_names
 
     episode_points = []
     for _ in range(args.n_episodes):

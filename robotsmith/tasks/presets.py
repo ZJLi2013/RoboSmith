@@ -61,6 +61,26 @@ pick_bowl = _register(TaskSpec(
     motion_type="pick",
 ))
 
+stack_bowls = _register(TaskSpec(
+    name="stack_bowls",
+    instruction="Stack three bowls",
+    scene="stack_bowls",
+    contact_objects=["bowl_a", "bowl_b", "bowl_c", "table"],
+    success_fn="stacked",
+    success_params={"objects": ["bowl_a", "bowl_b", "bowl_c"]},
+    skills=[
+        Skill("pick",  "bowl_a",       "bowl"),
+        Skill("place", "stack_center", "bowl", {"place_z": 0.11}),
+        Skill("pick",  "bowl_b",       "bowl"),
+        Skill("place", "stack_center", "bowl", {"place_z": 0.124}),
+        Skill("pick",  "bowl_c",       "bowl"),
+        Skill("place", "stack_center", "bowl", {"place_z": 0.138}),
+    ],
+    motion_type="pick_and_place",
+    is_stack=True,
+    n_stack=3,
+))
+
 stack_blocks = _register(TaskSpec(
     name="stack_blocks",
     instruction="Stack the red, green, and blue blocks",
