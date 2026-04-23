@@ -56,7 +56,12 @@ def main():
         scene.step()
 
         cam.start_recording()
-        img = cam.render(rgb=True)
+        result = cam.render(rgb=True)
+
+        if isinstance(result, tuple):
+            img = result[0]
+        else:
+            img = result
 
         if hasattr(img, 'cpu'):
             img = img.cpu().numpy()
