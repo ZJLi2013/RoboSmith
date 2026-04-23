@@ -11,15 +11,15 @@ def main():
     gs.init(backend=gs.gpu, logging_level="warning")
 
     candidates = {
-        "identity":    [1.0, 0.0, 0.0, 0.0],
-        "x_pos90":     [0.707107, 0.707107, 0.0, 0.0],     # +90 around X
-        "x_neg90":     [0.707107, -0.707107, 0.0, 0.0],     # -90 around X
-        "z_pos90":     [0.707107, 0.0, 0.0, 0.707107],      # +90 around Z
-        "y_pos90":     [0.707107, 0.0, 0.707107, 0.0],      # +90 around Y
-        "x_pos180":    [0.0, 1.0, 0.0, 0.0],                # 180 around X
+        "x_pos90_fixed":   ([0.707107, 0.707107, 0.0, 0.0], True),
+        "x_pos90_dynamic": ([0.707107, 0.707107, 0.0, 0.0], False),
+        "identity_fixed":  ([1.0, 0.0, 0.0, 0.0], True),
+        "identity_dyn":    ([1.0, 0.0, 0.0, 0.0], False),
+        "x_neg90_fixed":   ([0.707107, -0.707107, 0.0, 0.0], True),
+        "x_neg90_dyn":     ([0.707107, -0.707107, 0.0, 0.0], False),
     }
 
-    for label, quat in candidates.items():
+    for label, (quat, is_fixed) in candidates.items():
         scene = gs.Scene(
             sim_options=gs.options.SimOptions(dt=1/30, substeps=4),
             rigid_options=gs.options.RigidOptions(enable_collision=True),
@@ -34,13 +34,13 @@ def main():
         table_z = 0.775
         bowl_z = table_z + 0.05
 
-        scene.add_entity(
+        bowl = scene.add_entity(
             morph=gs.morphs.URDF(
                 file="assets/objects/bowl_02/model.urdf",
                 pos=(0.5, 0.0, bowl_z),
                 quat=tuple(quat),
                 scale=0.5,
-                fixed=True,
+                fixed=is_fixed,
             ),
             material=gs.materials.Rigid(friction=1.5),
         )
@@ -53,7 +53,13 @@ def main():
         )
 
         scene.build()
-        scene.step()
+        n_steps = 1 if is_fixed else 120
+        for _ in range(n_steps):
+            scene.step()
+
+        pos_out = bowl.get_pos().cpu().numpy().flatten()
+        q_out = bowl.get_quat().cpu().numpy().flatten()
+        print(f"[{label:20s}] pos_z={pos_out[2]:.4f} quat_out={[round(v,4) for v in q_out]}")
 
         cam.start_recording()
         result = cam.render(rgb=True)
