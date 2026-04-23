@@ -9,7 +9,7 @@
     </inertial>
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry><mesh filename="visual.glb"/></geometry>
+      <geometry><mesh filename="visual.obj"/></geometry>
     </visual>
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>

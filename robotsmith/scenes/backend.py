@@ -177,7 +177,11 @@ class ProgrammaticSceneBackend(SceneBackend):
         max_retries = config.max_placement_retries
 
         for obj_spec in config.objects:
-            assets = library.search(obj_spec.asset_query, top_k=obj_spec.count)
+            exact = library.get(obj_spec.asset_query)
+            if exact is not None:
+                assets = [exact]
+            else:
+                assets = library.search(obj_spec.asset_query, top_k=obj_spec.count)
             if not assets:
                 print(f"[scene] WARNING: no asset for query={obj_spec.asset_query!r}")
                 continue
