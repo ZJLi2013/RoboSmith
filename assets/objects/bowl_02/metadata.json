@@ -20,12 +20,12 @@
   "description": "Ceramic bowl (Objaverse) [uid=68655c9cf95642efa50c98f895c7a449]",
   "stable_poses": [
     {
-      "z": 0.027086,
+      "z": 0.093152,
       "quat": [
-        0.707107,
-        0.707107,
-        0.0,
-        0.0
+        0.005753,
+        -0.006157,
+        -0.730616,
+        -0.682736
       ],
       "probability": 1.0
     }
