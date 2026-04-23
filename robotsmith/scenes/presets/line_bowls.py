@@ -7,13 +7,13 @@ line_bowls_scene = SceneConfig(
     description="Three bowls (bowl_02, scaled to ~5 cm) for pick-and-place line arrangement",
     objects=[
         ObjectPlacement(
-            asset_query="bowl_02", count=1, scale=0.35, name_override="bowl_a",
+            asset_query="bowl_02", count=1, scale=0.5, name_override="bowl_a",
         ),
         ObjectPlacement(
-            asset_query="bowl_02", count=1, scale=0.35, name_override="bowl_b",
+            asset_query="bowl_02", count=1, scale=0.5, name_override="bowl_b",
         ),
         ObjectPlacement(
-            asset_query="bowl_02", count=1, scale=0.35, name_override="bowl_c",
+            asset_query="bowl_02", count=1, scale=0.5, name_override="bowl_c",
         ),
     ],
     workspace_xy=[[0.40, -0.20], [0.70, 0.20]],

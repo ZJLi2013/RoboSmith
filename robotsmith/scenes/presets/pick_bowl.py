@@ -9,7 +9,7 @@ pick_bowl_scene = SceneConfig(
         ObjectPlacement(
             asset_query="bowl_02",
             count=1,
-            scale=0.35,
+            scale=0.5,
             name_override="bowl",
         ),
     ],

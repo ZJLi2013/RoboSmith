@@ -92,12 +92,12 @@ _register(GraspTemplate(
     approach_axis=_DOWN.copy(),
     ee_quat=_TOP_DOWN_QUAT.copy(),
     finger_open=0.04,
-    finger_closed=0.015,
-    grasp_z=0.145,
-    hover_z=0.28,
+    finger_closed=0.020,
+    grasp_z=0.118,
+    hover_z=0.25,
     retreat_z=0.30,
-    place_z=0.145,
-    approach_offset=0.10,
+    place_z=0.118,
+    approach_offset=0.12,
 ))
 
 
