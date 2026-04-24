@@ -7,6 +7,7 @@ from robotsmith.grasp.template_planner import (
     GRASP_TEMPLATES,
     TemplateGraspPlanner,
 )
+from robotsmith.grasp.learned_planner import LearnedGraspPlanner
 
 __all__ = [
     "GraspPlan",
@@ -14,4 +15,5 @@ __all__ = [
     "GraspTemplate",
     "GRASP_TEMPLATES",
     "TemplateGraspPlanner",
+    "LearnedGraspPlanner",
 ]
