@@ -1,13 +1,16 @@
 """Convert a trimesh mesh to a sim-ready URDF with collision geometry and inertia.
 
-Handles: scaling to physical size, centering, convex hull collision,
+Handles: scaling to physical size, centering, collision mesh generation,
 mass/inertia estimation, and URDF packaging.
 
 Supports two visual mesh formats:
   - GLB (default): preserves PBR textures → textured rendering
   - OBJ (fallback): geometry only → white mesh
 
-Collision mesh is always an OBJ convex hull (no textures needed).
+Collision mesh is a decimated copy of the original geometry (not a convex
+hull), so concave shapes like bowls retain their interior surfaces.  The
+sim engine (Genesis) applies CoACD convex decomposition at load time when
+``convexify=True`` (default).
 """
 
 from __future__ import annotations
@@ -62,6 +65,29 @@ def _has_texture(mesh) -> bool:
         if mesh.visual.uv is not None and len(mesh.visual.uv) > 0:
             return True
     return False
+
+
+def _decimate(mesh, max_faces: int = 5000):
+    """Decimate a mesh to *max_faces* while preserving shape (concavity).
+
+    Uses ``fast_simplification`` when available; falls back to keeping the
+    original mesh unchanged (still concave, just higher poly).
+    """
+    import trimesh as _trimesh
+
+    if len(mesh.faces) <= max_faces:
+        return mesh
+    try:
+        import fast_simplification
+        ratio = max_faces / len(mesh.faces)
+        pts, faces = fast_simplification.simplify(
+            mesh.vertices.astype(np.float32),
+            mesh.faces.astype(np.int32),
+            target_reduction=1.0 - ratio,
+        )
+        return _trimesh.Trimesh(vertices=pts, faces=faces)
+    except ImportError:
+        return mesh
 
 
 def mesh_to_urdf(
@@ -120,10 +146,7 @@ def mesh_to_urdf(
     if use_glb and not obj_path.exists():
         mesh.export(str(obj_path), file_type="obj")
 
-    try:
-        collision = mesh.convex_hull
-    except Exception:
-        collision = mesh
+    collision = _decimate(mesh, max_faces=5000)
     collision_path = output_dir / "collision.obj"
     collision.export(str(collision_path), file_type="obj")
 
