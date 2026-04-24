@@ -251,14 +251,15 @@ class SimEnv:
     # ---- Reset ----
 
     def get_initial_z(self, name: str) -> float:
-        """Spawn z for reset: table_surface + small margin to avoid interpenetration."""
-        table_z = (self.scene_config.table_height
-                   + self.scene_config.table_size[2] / 2.0)
-        po = self.placed_map.get(name)
-        if po is None:
-            return table_z + 0.02
-        z_offset = po.position[2] - table_z
-        return table_z + min(z_offset, 0.01)
+        """Spawn z for reset: table_surface + half object height (+ small margin).
+
+        Using half the object height places the object's center-of-mass
+        approximately at the mesh center, which avoids both interpenetration
+        (too low) and flipping from a high drop (too high).
+        """
+        table_z = self.table_surface_z
+        h = self.object_heights.get(name, 0.04)
+        return table_z + h / 2.0 + 0.002
 
     def reset(
         self,
@@ -282,7 +283,6 @@ class SimEnv:
                 device=self._device).unsqueeze(0))
             po = self.placed_map.get(name)
             q_wxyz = po.quaternion if po else [1, 0, 0, 0]
-            print(f"[reset-debug] {name}: pos=({x:.3f},{y:.3f},{z:.3f}) q_wxyz={[round(v,4) for v in q_wxyz]}")
             ent.set_quat(torch.tensor(
                 q_wxyz, dtype=torch.float32,
                 device=self._device).unsqueeze(0))
@@ -294,18 +294,8 @@ class SimEnv:
                 dtype=torch.float32,
                 device=self._device).unsqueeze(0))
 
-        # E5: per-step tracking to find when bowl flips
-        _obj_names = list(obj_positions.keys())
-        for step_i in range(settle_steps):
+        for _ in range(settle_steps):
             self.scene.step()
-            if step_i % 5 == 0 or step_i == settle_steps - 1:
-                for nm in _obj_names:
-                    ent = self.entity_map.get(nm)
-                    if ent is None:
-                        continue
-                    _q = ent.get_quat().cpu().numpy().flatten()
-                    _p = ent.get_pos().cpu().numpy().flatten()
-                    print(f"[settle step {step_i:2d}] {nm}: z={_p[2]:.4f} q={[round(float(v),4) for v in _q]}")
 
     @property
     def _device(self):
