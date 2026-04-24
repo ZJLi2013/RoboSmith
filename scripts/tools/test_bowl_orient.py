@@ -58,10 +58,8 @@ def main():
     quat_out = bowl.get_quat().cpu().numpy().flatten()
     print(f"[spawn] pos_z={pos[2]:.4f}  quat_out={[round(v, 4) for v in quat_out]}")
 
-    rgb = cam.render(rgb=True, depth=False, segmentation=False, normal=False)
-    if isinstance(rgb, tuple):
-        rgb = rgb[0]
-    arr = rgb.cpu().numpy()
+    rgb, _, _, _ = cam.render(rgb=True, depth=False, segmentation=False, normal=False)
+    arr = rgb.cpu().numpy() if hasattr(rgb, "cpu") else np.array(rgb)
     if arr.ndim == 4:
         arr = arr[0]
     Image.fromarray(arr.astype(np.uint8)).save("outputs/bowl_spawn.png")
@@ -82,10 +80,8 @@ def main():
     quat2 = bowl.get_quat().cpu().numpy().flatten()
     print(f"[reset-wxyz] pos_z={pos2[2]:.4f}  quat_out={[round(v, 4) for v in quat2]}")
 
-    rgb2 = cam.render(rgb=True, depth=False, segmentation=False, normal=False)
-    if isinstance(rgb2, tuple):
-        rgb2 = rgb2[0]
-    arr2 = rgb2.cpu().numpy()
+    rgb2, _, _, _ = cam.render(rgb=True, depth=False, segmentation=False, normal=False)
+    arr2 = rgb2.cpu().numpy() if hasattr(rgb2, "cpu") else np.array(rgb2)
     if arr2.ndim == 4:
         arr2 = arr2[0]
     Image.fromarray(arr2.astype(np.uint8)).save("outputs/bowl_reset_wxyz.png")
@@ -106,10 +102,8 @@ def main():
     quat3 = bowl.get_quat().cpu().numpy().flatten()
     print(f"[reset-xyzw] pos_z={pos3[2]:.4f}  quat_out={[round(v, 4) for v in quat3]}")
 
-    rgb3 = cam.render(rgb=True, depth=False, segmentation=False, normal=False)
-    if isinstance(rgb3, tuple):
-        rgb3 = rgb3[0]
-    arr3 = rgb3.cpu().numpy()
+    rgb3, _, _, _ = cam.render(rgb=True, depth=False, segmentation=False, normal=False)
+    arr3 = rgb3.cpu().numpy() if hasattr(rgb3, "cpu") else np.array(rgb3)
     if arr3.ndim == 4:
         arr3 = arr3[0]
     Image.fromarray(arr3.astype(np.uint8)).save("outputs/bowl_reset_xyzw.png")
