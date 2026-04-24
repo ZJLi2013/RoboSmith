@@ -76,40 +76,39 @@ def main():
     ent.set_quat(torch.tensor([q_wxyz], dtype=torch.float32, device=env._device),
                  zero_velocity=True)
 
-    # Render helpers
     from robotsmith.gen.sim_env import render_cam
     from PIL import Image
+    import numpy as np
     out_dir = Path("outputs")
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    def snap(tag):
-        img = render_cam(env.cam_up)
-        path = out_dir / f"diag_{tag}_up.png"
-        Image.fromarray(img).save(str(path))
-        print(f"[diag] saved {path}")
+    # Record every frame of the settle as a video
+    frames = []
+    total_settle = 60
 
-    # Check IMMEDIATELY after set (no stepping)
+    # Frame 0: right after set_pos/set_quat, before any stepping
     p_imm = ent.get_pos().cpu().numpy().flatten()
     q_imm = ent.get_quat().cpu().numpy().flatten()
-    print(f"[diag] after set (0 steps): "
+    print(f"[diag] step   0: "
           f"pos=[{p_imm[0]:.4f}, {p_imm[1]:.4f}, {p_imm[2]:.4f}] "
           f"quat=[{q_imm[0]:.4f}, {q_imm[1]:.4f}, {q_imm[2]:.4f}, {q_imm[3]:.4f}]")
-    snap("step0")
+    frames.append(render_cam(env.cam_up))
 
-    # Step-by-step settle with snapshots
-    checkpoints = [1, 5, 10, 30, 60]
-    prev = 0
-    for step in checkpoints:
-        for _ in range(step - prev):
-            env.scene.step()
-        prev = step
+    for step in range(1, total_settle + 1):
+        env.scene.step()
         p = ent.get_pos().cpu().numpy().flatten()
         q = ent.get_quat().cpu().numpy().flatten()
-        print(f"[diag] step {step:3d}: "
-              f"pos=[{p[0]:.4f}, {p[1]:.4f}, {p[2]:.4f}] "
-              f"quat=[{q[0]:.4f}, {q[1]:.4f}, {q[2]:.4f}, {q[3]:.4f}]")
-        if step in (5, 10):
-            snap(f"step{step}")
+        if step <= 10 or step % 10 == 0:
+            print(f"[diag] step {step:3d}: "
+                  f"pos=[{p[0]:.4f}, {p[1]:.4f}, {p[2]:.4f}] "
+                  f"quat=[{q[0]:.4f}, {q[1]:.4f}, {q[2]:.4f}, {q[3]:.4f}]")
+        frames.append(render_cam(env.cam_up))
+
+    # Save as mp4 via imageio
+    import imageio.v3 as iio
+    vid_path = str(out_dir / "diag_settle.mp4")
+    iio.imwrite(vid_path, np.stack(frames), fps=10)
+    print(f"\n[diag] saved settle video ({len(frames)} frames): {vid_path}")
 
 
 if __name__ == "__main__":
