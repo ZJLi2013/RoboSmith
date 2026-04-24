@@ -251,8 +251,14 @@ class SimEnv:
     # ---- Reset ----
 
     def get_initial_z(self, name: str) -> float:
+        """Spawn z for reset: table_surface + small margin to avoid interpenetration."""
+        table_z = (self.scene_config.table_height
+                   + self.scene_config.table_size[2] / 2.0)
         po = self.placed_map.get(name)
-        return po.position[2] if po else 0.02
+        if po is None:
+            return table_z + 0.02
+        z_offset = po.position[2] - table_z
+        return table_z + min(z_offset, 0.01)
 
     def reset(
         self,
