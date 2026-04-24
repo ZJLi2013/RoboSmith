@@ -40,8 +40,22 @@ class PlacedObject:
 
     @property
     def object_height_m(self) -> float:
-        """Effective object height in meters after scaling."""
-        return self.asset.metadata.size_cm[2] / 100.0 * self.scale
+        """World-frame height (Z extent) after applying stable-pose rotation and scale.
+
+        For axis-aligned objects (identity quat) this equals ``size_cm[2] * scale``.
+        For rotated objects like bowls (Y-up mesh rotated to Z-up), the
+        quaternion maps the correct local axis onto world Z.
+        """
+        sx, sy, sz = [v / 100.0 * self.scale for v in self.asset.metadata.size_cm]
+        w, x, y, z = self.quaternion
+        rmat = tf.quaternion_matrix([w, x, y, z])[:3, :3]
+        import numpy as np
+        corners = np.array([
+            [dx * sx / 2, dy * sy / 2, dz * sz / 2]
+            for dx in (-1, 1) for dy in (-1, 1) for dz in (-1, 1)
+        ])
+        rotated = corners @ rmat.T
+        return float(rotated[:, 2].max() - rotated[:, 2].min())
 
 
 @dataclass

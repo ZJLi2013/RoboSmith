@@ -251,15 +251,14 @@ class SimEnv:
     # ---- Reset ----
 
     def get_initial_z(self, name: str) -> float:
-        """Spawn z for reset: table_surface + half object height (+ small margin).
+        """Spawn z for reset: table_surface + small fixed margin.
 
-        Using half the object height places the object's center-of-mass
-        approximately at the mesh center, which avoids both interpenetration
-        (too low) and flipping from a high drop (too high).
+        A small margin (1cm) avoids interpenetration while preventing
+        flipping from a high drop.  ``object_heights`` (bbox Z dim) is
+        unreliable for non-axis-aligned meshes (e.g. bowls whose height
+        axis is Y, not Z), so we use a fixed value.
         """
-        table_z = self.table_surface_z
-        h = self.object_heights.get(name, 0.04)
-        return table_z + h / 2.0 + 0.002
+        return self.table_surface_z + 0.01
 
     def reset(
         self,
