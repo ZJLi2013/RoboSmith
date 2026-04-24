@@ -276,6 +276,7 @@ class SimEnv:
                 device=self._device).unsqueeze(0))
             po = self.placed_map.get(name)
             q_wxyz = po.quaternion if po else [1, 0, 0, 0]
+            print(f"[reset-debug] {name}: pos=({x:.3f},{y:.3f},{z:.3f}) q_wxyz={[round(v,4) for v in q_wxyz]}")
             ent.set_quat(torch.tensor(
                 q_wxyz, dtype=torch.float32,
                 device=self._device).unsqueeze(0))
