@@ -76,32 +76,40 @@ def main():
     ent.set_quat(torch.tensor([q_wxyz], dtype=torch.float32, device=env._device),
                  zero_velocity=True)
 
+    # Render helpers
+    from robotsmith.gen.sim_env import render_cam
+    from PIL import Image
+    out_dir = Path("outputs")
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    def snap(tag):
+        img = render_cam(env.cam_up)
+        path = out_dir / f"diag_{tag}_up.png"
+        Image.fromarray(img).save(str(path))
+        print(f"[diag] saved {path}")
+
     # Check IMMEDIATELY after set (no stepping)
     p_imm = ent.get_pos().cpu().numpy().flatten()
     q_imm = ent.get_quat().cpu().numpy().flatten()
     print(f"[diag] after set (0 steps): "
           f"pos=[{p_imm[0]:.4f}, {p_imm[1]:.4f}, {p_imm[2]:.4f}] "
           f"quat=[{q_imm[0]:.4f}, {q_imm[1]:.4f}, {q_imm[2]:.4f}, {q_imm[3]:.4f}]")
+    snap("step0")
 
-    # Step-by-step settle
-    for step in [1, 5, 10, 30, 60]:
-        target_steps = step - (0 if step == 1 else [1, 5, 10, 30, 60][[1, 5, 10, 30, 60].index(step) - 1])
-        for _ in range(target_steps):
+    # Step-by-step settle with snapshots
+    checkpoints = [1, 5, 10, 30, 60]
+    prev = 0
+    for step in checkpoints:
+        for _ in range(step - prev):
             env.scene.step()
+        prev = step
         p = ent.get_pos().cpu().numpy().flatten()
         q = ent.get_quat().cpu().numpy().flatten()
         print(f"[diag] step {step:3d}: "
               f"pos=[{p[0]:.4f}, {p[1]:.4f}, {p[2]:.4f}] "
               f"quat=[{q[0]:.4f}, {q[1]:.4f}, {q[2]:.4f}, {q[3]:.4f}]")
-
-    # Render a top-cam screenshot
-    from robotsmith.gen.sim_env import render_cam
-    from PIL import Image
-    img = render_cam(env.cam_up)
-    out_path = Path("outputs/diag_pick_bowl_up.png")
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(img).save(str(out_path))
-    print(f"\n[diag] saved top-cam image: {out_path}")
+        if step in (5, 10):
+            snap(f"step{step}")
 
 
 if __name__ == "__main__":
