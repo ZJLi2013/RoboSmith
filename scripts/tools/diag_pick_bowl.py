@@ -63,15 +63,36 @@ def main():
               f"pos=[{pos[0]:.4f}, {pos[1]:.4f}, {pos[2]:.4f}] "
               f"quat=[{quat[0]:.4f}, {quat[1]:.4f}, {quat[2]:.4f}, {quat[3]:.4f}]")
 
-    print(f"\n[diag] resetting with obj_xy={obj_xy}")
-    env.reset(obj_xy, settle_steps=60)
+    # Manual reset: step-by-step to isolate the problem
+    print(f"\n[diag] manual reset steps:")
+    target_pos = [0.55, 0.0, env.get_initial_z("bowl")]
+    ent = env.entity_map["bowl"]
+    po = env.placed_map["bowl"]
+    q_wxyz = po.quaternion
 
-    for name, ent in env.entity_map.items():
-        pos = ent.get_pos().cpu().numpy().flatten()
-        quat = ent.get_quat().cpu().numpy().flatten()
-        print(f"[diag] post-reset {name}: "
-              f"pos=[{pos[0]:.4f}, {pos[1]:.4f}, {pos[2]:.4f}] "
-              f"quat=[{quat[0]:.4f}, {quat[1]:.4f}, {quat[2]:.4f}, {quat[3]:.4f}]")
+    print(f"[diag] target pos={target_pos}  quat={q_wxyz}")
+    ent.set_pos(torch.tensor([target_pos], dtype=torch.float32, device=env._device),
+                zero_velocity=True)
+    ent.set_quat(torch.tensor([q_wxyz], dtype=torch.float32, device=env._device),
+                 zero_velocity=True)
+
+    # Check IMMEDIATELY after set (no stepping)
+    p_imm = ent.get_pos().cpu().numpy().flatten()
+    q_imm = ent.get_quat().cpu().numpy().flatten()
+    print(f"[diag] after set (0 steps): "
+          f"pos=[{p_imm[0]:.4f}, {p_imm[1]:.4f}, {p_imm[2]:.4f}] "
+          f"quat=[{q_imm[0]:.4f}, {q_imm[1]:.4f}, {q_imm[2]:.4f}, {q_imm[3]:.4f}]")
+
+    # Step-by-step settle
+    for step in [1, 5, 10, 30, 60]:
+        target_steps = step - (0 if step == 1 else [1, 5, 10, 30, 60][[1, 5, 10, 30, 60].index(step) - 1])
+        for _ in range(target_steps):
+            env.scene.step()
+        p = ent.get_pos().cpu().numpy().flatten()
+        q = ent.get_quat().cpu().numpy().flatten()
+        print(f"[diag] step {step:3d}: "
+              f"pos=[{p[0]:.4f}, {p[1]:.4f}, {p[2]:.4f}] "
+              f"quat=[{q[0]:.4f}, {q[1]:.4f}, {q[2]:.4f}, {q[3]:.4f}]")
 
     # Render a top-cam screenshot
     from robotsmith.gen.sim_env import render_cam
