@@ -291,6 +291,24 @@ class SimEnv:
         for _ in range(settle_steps):
             self.scene.step()
 
+        # E4 debug: print post-settle quat + save up-cam screenshot
+        for name in obj_positions:
+            ent = self.entity_map.get(name)
+            if ent is None:
+                continue
+            q_post = ent.get_quat().cpu().numpy().flatten()
+            p_post = ent.get_pos().cpu().numpy().flatten()
+            print(f"[reset-post-settle] {name}: pos_z={p_post[2]:.4f} quat={[round(float(v),4) for v in q_post]}")
+        if self.cam_up is not None:
+            import numpy as _np
+            from PIL import Image as _Img
+            _rgb, _, _, _ = self.cam_up.render(rgb=True, depth=False, segmentation=False, normal=False)
+            _arr = _rgb.cpu().numpy() if hasattr(_rgb, "cpu") else _np.array(_rgb)
+            if _arr.ndim == 4:
+                _arr = _arr[0]
+            _Img.fromarray(_arr.astype(_np.uint8)).save("outputs/e4_reset_up.png")
+            print("[reset-debug] saved outputs/e4_reset_up.png")
+
     @property
     def _device(self):
         """Infer Genesis torch device from franka entity."""
