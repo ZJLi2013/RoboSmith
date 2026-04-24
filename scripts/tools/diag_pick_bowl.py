@@ -55,6 +55,14 @@ def main():
     for name in env.entity_map:
         obj_xy[name] = (0.55, 0.0)
 
+    # Pre-reset: show build-settle state
+    for name, ent in env.entity_map.items():
+        pos = ent.get_pos().cpu().numpy().flatten()
+        quat = ent.get_quat().cpu().numpy().flatten()
+        print(f"[diag] pre-reset {name}: "
+              f"pos=[{pos[0]:.4f}, {pos[1]:.4f}, {pos[2]:.4f}] "
+              f"quat=[{quat[0]:.4f}, {quat[1]:.4f}, {quat[2]:.4f}, {quat[3]:.4f}]")
+
     print(f"\n[diag] resetting with obj_xy={obj_xy}")
     env.reset(obj_xy, settle_steps=60)
 
