@@ -97,7 +97,7 @@ _register(GraspTemplate(
     ee_above_object=0.09,
     hover_clearance=0.12,
     retreat_clearance=0.17,
-    place_z=0.02,
+    place_z=0.12,
     approach_offset=0.10,
 ))
 
