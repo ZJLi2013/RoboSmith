@@ -64,12 +64,19 @@ def _sample_spaced(rng, n, x_range, y_range, min_dist=0.10):
     return pts
 
 
-def _sample_place_target(rng, cx, cy, x_range, y_range, min_dist=0.15):
-    for _ in range(100):
-        px, py = _sample_xy(rng, x_range, y_range)
-        if np.hypot(px - cx, py - cy) >= min_dist:
-            return (px, py)
-    return (cx + min_dist, cy)
+def _sample_collision_free(rng, n, x_range, y_range, occupied, min_dist=0.12):
+    """Sample *n* XY positions that are ≥ min_dist from each other AND from *occupied*."""
+    pts = []
+    for _ in range(n):
+        for _try in range(500):
+            x, y = _sample_xy(rng, x_range, y_range)
+            all_pts = occupied + pts
+            if all(np.hypot(x - px, y - py) >= min_dist for px, py in all_pts):
+                pts.append((x, y))
+                break
+        else:
+            pts.append(_sample_xy(rng, x_range, y_range))
+    return pts
 
 
 def derive_skill_info(task_spec: TaskSpec):
@@ -106,23 +113,13 @@ def build_episode_positions(
         positions[name] = np.array([x, y, z])
 
     if place_names:
-        ref_x, ref_y = pick_xys[0]
-        place_center = _sample_place_target(
-            rng, ref_x, ref_y, x_range, y_range, min_dist=0.15)
-
-        if len(place_names) == 1:
+        place_xys = _sample_collision_free(
+            rng, len(place_names), x_range, y_range,
+            occupied=list(pick_xys), min_dist=0.12,
+        )
+        for name, (px, py) in zip(place_names, place_xys):
             z = env.get_initial_z(pick_names[0])
-            positions[place_names[0]] = np.array([place_center[0],
-                                                   place_center[1], z])
-        else:
-            spacing = 0.12
-            cx, cy = place_center
-            n = len(place_names)
-            offsets = np.linspace(-(n - 1) / 2 * spacing,
-                                  (n - 1) / 2 * spacing, n)
-            for name, dy in zip(place_names, offsets):
-                z = env.get_initial_z(pick_names[0])
-                positions[name] = np.array([cx, cy + dy, z])
+            positions[name] = np.array([px, py, z])
 
     return positions
 
