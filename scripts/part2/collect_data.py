@@ -79,6 +79,32 @@ def _sample_collision_free(rng, n, x_range, y_range, occupied, min_dist=0.12):
     return pts
 
 
+def _sample_line_targets(rng, n, x_range, y_range, occupied,
+                         axis="y", spacing=0.12, min_dist=0.10):
+    """Sample *n* points along a line (constant cross-axis), collision-free with *occupied*.
+
+    axis="y": line parallel to Y → shared X, spread in Y.
+    axis="x": line parallel to X → shared Y, spread in X.
+    """
+    along_range = y_range if axis == "y" else x_range
+    cross_range = x_range if axis == "y" else y_range
+    total_span = (n - 1) * spacing
+
+    for _try in range(500):
+        cross_val = rng.uniform(*cross_range)
+        along_start = rng.uniform(along_range[0], along_range[1] - total_span)
+        pts = []
+        for i in range(n):
+            along_val = along_start + i * spacing
+            xy = (cross_val, along_val) if axis == "y" else (along_val, cross_val)
+            pts.append(xy)
+        if all(np.hypot(px - ox, py - oy) >= min_dist
+               for px, py in pts for ox, oy in occupied):
+            return pts
+
+    return pts  # best-effort fallback
+
+
 def derive_skill_info(task_spec: TaskSpec):
     """Extract pick/place object names from skill sequence."""
     pick_names: list[str] = []
@@ -96,10 +122,13 @@ def build_episode_positions(
     rng: random.Random,
     pick_names: list[str],
     place_names: list[str],
+    task_spec: TaskSpec | None = None,
 ) -> dict[str, np.ndarray]:
     """Sample random positions for all pick objects and place targets.
 
     Returns name → np.array([x, y, z]) for every key needed by run_skills.
+    When *task_spec.success_fn* is ``"objects_aligned"``, place targets are
+    generated on a straight line matching the alignment axis.
     """
     x_range = env.x_range
     y_range = env.y_range
@@ -113,10 +142,21 @@ def build_episode_positions(
         positions[name] = np.array([x, y, z])
 
     if place_names:
-        place_xys = _sample_collision_free(
-            rng, len(place_names), x_range, y_range,
-            occupied=list(pick_xys), min_dist=0.12,
-        )
+        align_axis = None
+        if task_spec and task_spec.success_fn == "objects_aligned":
+            align_axis = task_spec.success_params.get("axis", "y")
+
+        if align_axis and len(place_names) > 1:
+            place_xys = _sample_line_targets(
+                rng, len(place_names), x_range, y_range,
+                occupied=list(pick_xys), axis=align_axis,
+                spacing=0.12, min_dist=0.10,
+            )
+        else:
+            place_xys = _sample_collision_free(
+                rng, len(place_names), x_range, y_range,
+                occupied=list(pick_xys), min_dist=0.12,
+            )
         for name, (px, py) in zip(place_names, place_xys):
             z = env.get_initial_z(pick_names[0])
             positions[name] = np.array([px, py, z])
@@ -195,7 +235,7 @@ def main():
 
     for ep in range(args.n_episodes):
         positions = build_episode_positions(
-            env, rng, pick_names, place_names)
+            env, rng, pick_names, place_names, task_spec=task_spec)
 
         obj_xy_map = {
             name: (pos[0], pos[1])
