@@ -54,6 +54,15 @@ TaskSpec-driven data production with pluggable backends. IK scripted backend val
 | `pick_cube` | `pick` | **100%** (20/20) | 135 | reach → grasp → lift |
 | `place_cube` | `pick_and_place` | **100%** (20/20) | 225 | + transport → place → release |
 | `stack_blocks` | `stack` (N=3) | **90%** (18/20) | 675 | 3 rounds of pick-and-place |
+| `pick_bowl` | `mid_wall` | **100%** (10/10) | 165 | side approach → grasp bowl wall → lift |
+| `line_bowls` | `mid_wall` ×3 | **100%** (1/1) | 765 | pick 3 bowls → arrange in a line |
+
+### Demos
+
+| Demo | Video |
+|------|-------|
+| **3 Cube Stacks** — stack 3 blocks (red, green, blue) | [`output/3_cube_stacks/`](output/3_cube_stacks/) |
+| **3 Bowls Line-up** — pick 3 bowls, arrange in a line | [`output/3_bowls_line_up/`](output/3_bowls_line_up/) |
 
 **Data production backends** (pluggable via `DataBackend` ABC):
 
@@ -106,19 +115,19 @@ python scripts/part1/browse_assets.py     # HTML asset gallery
 | Phase | Focus | Status |
 |:---:|-------|:---:|
 | 1 | Sim-ready assets (26 objects, 10 categories, TRELLIS.2-4B) | Done |
-| 2 | Data engine: GraspPlanner + MotionExecutor + IK backend (pick/place/stack) + vla-eval plugin | Done |
-| 3a | GraspPlanner + MotionExecutor architecture (decoupled grasp planning from motion execution) | Done |
-| **3b** | **Category expansion — GraspTemplates for bowl / mug / bottle / can / plate** | **Next** |
-| 3c | Mesh-based grasp sampling (`SamplerGraspPlanner`) | Planned |
+| 2 | Data engine: IK backend (pick/place/stack) + vla-eval plugin | Done |
+| 3.0 | GraspPlanner + MotionExecutor architecture | Done |
+| 3.1 | Skill orchestration + Bowl mid-wall grasp + line_bowls multi-object task | Done |
+| **3.2** | **LearnedGraspPlanner (GraspGen) for arbitrary objects** | **Next** |
 | 4 | DART data backend (`--dart-sigma`) | Planned |
 | 5 | DAgger data backend (policy rollout + IK relabel) | Planned |
 | 6 | Articulated + push/slide tasks (drawer, push-to-target) | Planned |
 
-### Phase 3b: Category Expansion (Next Step)
+### Phase 3.2: Learned Grasp Planner (Next Step)
 
-The GraspPlanner + MotionExecutor architecture is done (Phase 3a, [regression tests pass 100%](docs/part3-exp.md)). The data engine now supports arbitrary object geometries — adding a new category requires only a `GraspTemplate`, not a new strategy class.
+Phase 3.0–3.1 established the GraspPlanner + MotionExecutor + Skill architecture ([experiment log](docs/part3-exp.md)). Bowl mid-wall grasp and 3-bowl line-up validated the full pipeline on real concave meshes.
 
-**Next:** add per-category `GraspTemplate` for bowl, mug, bottle, can, plate, fruit to enable data gen for irregular objects. See [docs/design.md](docs/design.md#graspplanner-品类扩展) for the category plan and [design rationale](docs/design.md#25-grasp-planning-设计原理).
+**Next:** integrate [GraspGen](https://github.com/NVlabs/graspgen) (NVlabs, 53M sim grasps) as `LearnedGraspPlanner`, replacing per-category templates for long-tail objects (plate, figurine, etc.). Code + smoke tests done; GPU integration pending.
 
 ## Project Structure
 

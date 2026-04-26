@@ -46,8 +46,9 @@ docs/
 scripts/tools/sync_assets.py
 scripts/tools/patch_genesis_rocm.py
 
-# Training / eval output
-output/
+# Training / eval output (keep output/ demo videos tracked)
+# output/
+outputs/
 
 # Demo (outdated, not for public; kept locally)
 demo/
