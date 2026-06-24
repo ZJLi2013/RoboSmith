@@ -1,6 +1,6 @@
 # RoboSmith
 
-[English README](README-en.md)
+中文 | [English](README-en.md)
 
 **Synthetic Data Generation for Physical AI / Robotics on AMD ROCm.**
 
