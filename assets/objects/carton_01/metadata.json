@@ -1,0 +1,104 @@
+{
+  "mass_kg": 0.12,
+  "friction": 0.55,
+  "restitution": 0.1,
+  "density_kg_m3": 1000.0,
+  "size_cm": [
+    7.7,
+    10.0,
+    8.1
+  ],
+  "metric_scale": 0.675,
+  "source": "objaverse",
+  "description": "Small carton package (Objaverse) [uid=ece545c8149a4305849171d27c8cb28e]",
+  "stable_poses": [],
+  "canonical_frame": {
+    "up_axis": "+Z",
+    "front_axis": "+X",
+    "origin": "centered_mesh_centroid",
+    "verified": false,
+    "description": "Objaverse import contract: mesh is assumed to be in semantic object frame."
+  },
+  "task_poses": {
+    "upright": {
+      "quat_object": [
+        0.0,
+        0.707107,
+        0.707107,
+        -0.0
+      ],
+      "source": "manual_visual_qa",
+      "candidate_index": 11,
+      "verified": true,
+      "candidate_indices": [
+        11,
+        17,
+        23
+      ],
+      "description": "Primary upright pose; see upright_candidates for all visually valid poses."
+    },
+    "upright_candidates": [
+      {
+        "quat_object": [
+          0.0,
+          0.707107,
+          0.707107,
+          -0.0
+        ],
+        "source": "manual_visual_qa",
+        "candidate_index": 11,
+        "verified": true
+      },
+      {
+        "quat_object": [
+          0.5,
+          0.5,
+          0.5,
+          0.5
+        ],
+        "source": "manual_visual_qa",
+        "candidate_index": 17,
+        "verified": true
+      },
+      {
+        "quat_object": [
+          0.5,
+          -0.5,
+          -0.5,
+          0.5
+        ],
+        "source": "manual_visual_qa",
+        "candidate_index": 23,
+        "verified": true
+      }
+    ]
+  },
+  "grasp_policy_bucket": [
+    "top_down_axis_horizontal",
+    "top_down_axis_tilted"
+  ],
+  "mesh": {
+    "issues": [],
+    "visual_extents": [
+      0.07724,
+      0.1,
+      0.08104
+    ],
+    "collision_extents": [
+      0.07724,
+      0.09995,
+      0.08107
+    ],
+    "visual_collision_consistency": {
+      "available": true,
+      "ok": true,
+      "method": "surface_voxel_coverage",
+      "sample_points": 800,
+      "grid": 24,
+      "visual_to_collision_coverage": 0.9095,
+      "collision_to_visual_coverage": 0.8909,
+      "surface_voxel_iou": 0.1128,
+      "min_coverage": 0.82
+    }
+  }
+}

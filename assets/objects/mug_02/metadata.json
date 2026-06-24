@@ -1,0 +1,101 @@
+{
+  "mass_kg": 0.25,
+  "friction": 0.6,
+  "restitution": 0.1,
+  "density_kg_m3": 1000.0,
+  "size_cm": [
+    10.0,
+    9.5,
+    6.4
+  ],
+  "metric_scale": 0.675,
+  "source": "objaverse",
+  "description": "Ceramic mug (Objaverse) [uid=4fbb57124fec47d8b216101e19f5d385]",
+  "stable_poses": [],
+  "canonical_frame": {
+    "up_axis": "+Z",
+    "front_axis": "+X",
+    "origin": "centered_mesh_centroid",
+    "verified": false,
+    "description": "Objaverse import contract: mesh is assumed to be in semantic object frame."
+  },
+  "task_poses": {
+    "upright": {
+      "quat_object": [
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "source": "manual_visual_qa",
+      "candidate_index": 17,
+      "verified": true,
+      "candidate_indices": [
+        11,
+        17,
+        23
+      ],
+      "description": "Primary upright pose selected by runtime table-contact point-cloud QA; see upright_candidates for all visually valid poses."
+    },
+    "upright_candidates": [
+      {
+        "quat_object": [
+          0.0,
+          0.707107,
+          0.707107,
+          -0.0
+        ],
+        "source": "manual_visual_qa",
+        "candidate_index": 11,
+        "verified": true
+      },
+      {
+        "quat_object": [
+          0.5,
+          0.5,
+          0.5,
+          0.5
+        ],
+        "source": "manual_visual_qa",
+        "candidate_index": 17,
+        "verified": true
+      },
+      {
+        "quat_object": [
+          0.5,
+          -0.5,
+          -0.5,
+          0.5
+        ],
+        "source": "manual_visual_qa",
+        "candidate_index": 23,
+        "verified": true
+      }
+    ]
+  },
+  "grasp_policy_bucket": "top_down_axis_horizontal",
+  "mesh": {
+    "issues": [],
+    "visual_extents": [
+      0.1,
+      0.09507,
+      0.06375
+    ],
+    "collision_extents": [
+      0.10004,
+      0.09506,
+      0.06383
+    ],
+    "visual_collision_consistency": {
+      "available": true,
+      "ok": true,
+      "method": "surface_voxel_coverage",
+      "sample_points": 800,
+      "grid": 24,
+      "visual_to_collision_coverage": 0.9743,
+      "collision_to_visual_coverage": 0.9751,
+      "surface_voxel_iou": 0.1012,
+      "min_coverage": 0.82
+    }
+  }
+}

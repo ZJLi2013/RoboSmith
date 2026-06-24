@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "robotsmith"
+version = "0.1.0"
+description = "Manipulation data infrastructure for sim-ready assets, expert rollouts, and VLA adapter contracts"
+requires-python = ">=3.10"
+dependencies = [
+    "trimesh>=4.0",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+sim = ["torch>=2.0"]
+viz = ["viser>=1.0"]
+genesis = ["genesis-world>=0.2"]
+dev = ["pytest>=8.0"]

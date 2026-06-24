@@ -1,0 +1,89 @@
+# syntax=docker/dockerfile:1.7
+
+# RoboSmith ROCm runtime.
+#
+# Build from the repository root:
+#   docker build -f docker/Dockerfile -t robotsmith:rocm-headless .
+#
+# The important invariant is headless rendering through Xvfb/GLX.  Do not set
+# PYOPENGL_PLATFORM=egl for Genesis runs; EGL has been brittle on the cluster.
+ARG BASE_IMAGE=rocm/pytorch:rocm7.2_ubuntu24.04_py3.13_pytorch_release_2.10.0
+FROM ${BASE_IMAGE}
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DISPLAY=:99
+ENV ROBOSMITH_HEADLESS=xvfb
+ENV PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    build-essential \
+    ca-certificates \
+    cmake \
+    ffmpeg \
+    git \
+    libgl1 \
+    libgl1-mesa-dri \
+    libglib2.0-0 \
+    libglx-mesa0 \
+    libgomp1 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
+    mesa-utils \
+    ninja-build \
+    pkg-config \
+    rsync \
+    wget \
+    xauth \
+    xvfb \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace/robotsmith
+
+# Keep the repo install late in the Dockerfile so source edits do not force
+# a full OS/package rebuild.
+COPY pyproject.toml ./
+COPY robotsmith ./robotsmith
+COPY scripts ./scripts
+COPY tests ./tests
+
+RUN python -m pip install --upgrade pip setuptools wheel \
+    && python -m pip install -e ".[genesis,dev]" \
+    && python -m pip install \
+      addict einops h5py hydra-core imageio lerobot meshcat networkx>=3.0 \
+      omegaconf "pyglet>=1.5,!=2.1.8" PyOpenGL==3.1.5 scipy scikit-learn \
+      tensorboard tensorboardx timm webdataset yapf==0.40.1 \
+      yourdfpy==0.0.56
+
+# GraspGen/PointTransformerV3 ROCm compatibility:
+# - spconv_rocm should be installed in downstream images or at runtime from
+#   https://github.com/ZJLi2013/spconv_rocm/tree/rocm when GraspGen is enabled.
+# - torch_scatter should use the repo shim, not PyG ROCm wheels, because those
+#   wheels have been ABI-fragile across ROCm PyTorch images.
+RUN if [ -f scripts/setup/_install_scatter_shim.py ]; then \
+      python scripts/setup/_install_scatter_shim.py; \
+    fi
+
+RUN cat >/usr/local/bin/robotsmith-headless <<'EOF' \
+    && chmod +x /usr/local/bin/robotsmith-headless
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Do not inherit node/container overrides that change the GPU ISA target or
+# force pyrender into EGL.  Genesis headless runs should use Xvfb/GLX.
+unset HSA_OVERRIDE_GFX_VERSION
+unset PYOPENGL_PLATFORM
+
+export DISPLAY="${DISPLAY:-:99}"
+
+if ! pgrep -f "Xvfb ${DISPLAY}" >/dev/null 2>&1; then
+  Xvfb "${DISPLAY}" -screen 0 "${XVFB_SCREEN:-1280x1024x24}" -ac +extension GLX +render -noreset >/tmp/xvfb.log 2>&1 &
+  sleep 2
+fi
+
+exec "$@"
+EOF
+
+ENTRYPOINT ["robotsmith-headless"]
+CMD ["bash"]

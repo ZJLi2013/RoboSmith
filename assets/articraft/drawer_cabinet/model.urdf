@@ -1,0 +1,251 @@
+<robot name="drawer_cabinet">
+  <material name="body_white">
+    <color rgba="0.9 0.9 0.9 1" />
+    </material>
+  <material name="wood_top">
+    <color rgba="0.78 0.62 0.42 1" />
+    </material>
+  <material name="handle_white">
+    <color rgba="0.85 0.86 0.88 1" />
+    </material>
+  <link name="base">
+    <inertial>
+      <origin xyz="0 0 0.1625" rpy="0 0 0" />
+      <mass value="18" />
+      <inertia ixx="0.698438" ixy="0" ixz="0" iyy="0.462188" iyz="0" izz="0.84375" />
+      </inertial>
+    <visual name="leg_pp">
+      <origin xyz="0.185 0.25 0.05" rpy="0 0 0" />
+      <geometry>
+        <box size="0.04 0.04 0.1" />
+        </geometry>
+      <material name="body_white" />
+      </visual>
+    <visual name="leg_pn">
+      <origin xyz="0.185 -0.25 0.05" rpy="0 0 0" />
+      <geometry>
+        <box size="0.04 0.04 0.1" />
+        </geometry>
+      <material name="body_white" />
+      </visual>
+    <visual name="leg_np">
+      <origin xyz="-0.185 0.25 0.05" rpy="0 0 0" />
+      <geometry>
+        <box size="0.04 0.04 0.1" />
+        </geometry>
+      <material name="body_white" />
+      </visual>
+    <visual name="leg_nn">
+      <origin xyz="-0.185 -0.25 0.05" rpy="0 0 0" />
+      <geometry>
+        <box size="0.04 0.04 0.1" />
+        </geometry>
+      <material name="body_white" />
+      </visual>
+    <visual name="bottom_panel">
+      <origin xyz="0 0 0.109" rpy="0 0 0" />
+      <geometry>
+        <box size="0.45 0.6 0.018" />
+        </geometry>
+      <material name="body_white" />
+      </visual>
+    <visual name="back_wall">
+      <origin xyz="-0.216 0 0.2125" rpy="0 0 0" />
+      <geometry>
+        <box size="0.018 0.6 0.225" />
+        </geometry>
+      <material name="body_white" />
+      </visual>
+    <visual name="side_wall_p">
+      <origin xyz="0 0.291 0.2125" rpy="0 0 0" />
+      <geometry>
+        <box size="0.45 0.018 0.225" />
+        </geometry>
+      <material name="body_white" />
+      </visual>
+    <visual name="side_wall_n">
+      <origin xyz="0 -0.291 0.2125" rpy="0 0 0" />
+      <geometry>
+        <box size="0.45 0.018 0.225" />
+        </geometry>
+      <material name="body_white" />
+      </visual>
+    <visual name="top_panel">
+      <origin xyz="0 0 0.345" rpy="0 0 0" />
+      <geometry>
+        <box size="0.47 0.62 0.04" />
+        </geometry>
+      <material name="wood_top" />
+      </visual>
+    <collision name="leg_pp">
+      <origin xyz="0.185 0.25 0.05" rpy="0 0 0" />
+      <geometry>
+        <box size="0.04 0.04 0.1" />
+        </geometry>
+      </collision>
+    <collision name="leg_pn">
+      <origin xyz="0.185 -0.25 0.05" rpy="0 0 0" />
+      <geometry>
+        <box size="0.04 0.04 0.1" />
+        </geometry>
+      </collision>
+    <collision name="leg_np">
+      <origin xyz="-0.185 0.25 0.05" rpy="0 0 0" />
+      <geometry>
+        <box size="0.04 0.04 0.1" />
+        </geometry>
+      </collision>
+    <collision name="leg_nn">
+      <origin xyz="-0.185 -0.25 0.05" rpy="0 0 0" />
+      <geometry>
+        <box size="0.04 0.04 0.1" />
+        </geometry>
+      </collision>
+    <collision name="bottom_panel">
+      <origin xyz="0 0 0.109" rpy="0 0 0" />
+      <geometry>
+        <box size="0.45 0.6 0.018" />
+        </geometry>
+      </collision>
+    <collision name="back_wall">
+      <origin xyz="-0.216 0 0.2125" rpy="0 0 0" />
+      <geometry>
+        <box size="0.018 0.6 0.225" />
+        </geometry>
+      </collision>
+    <collision name="side_wall_p">
+      <origin xyz="0 0.291 0.2125" rpy="0 0 0" />
+      <geometry>
+        <box size="0.45 0.018 0.225" />
+        </geometry>
+      </collision>
+    <collision name="side_wall_n">
+      <origin xyz="0 -0.291 0.2125" rpy="0 0 0" />
+      <geometry>
+        <box size="0.45 0.018 0.225" />
+        </geometry>
+      </collision>
+    <collision name="top_panel">
+      <origin xyz="0 0 0.345" rpy="0 0 0" />
+      <geometry>
+        <box size="0.47 0.62 0.04" />
+        </geometry>
+      </collision>
+    </link>
+  <link name="drawer">
+    <inertial>
+      <origin xyz="0.035 0 0.2125" rpy="0 0 0" />
+      <mass value="1.5" />
+      <inertia ixx="0.0393125" ixy="0" ixz="0" iyy="0.0235625" iyz="0" izz="0.05185" />
+      </inertial>
+    <visual name="front_panel">
+      <origin xyz="0.234 0 0.2125" rpy="0 0 0" />
+      <geometry>
+        <box size="0.018 0.58 0.21" />
+        </geometry>
+      <material name="body_white" />
+      </visual>
+    <visual name="tray_floor">
+      <origin xyz="0.035 0 0.136" rpy="0 0 0" />
+      <geometry>
+        <box size="0.38 0.52 0.012" />
+        </geometry>
+      <material name="body_white" />
+      </visual>
+    <visual name="tray_back">
+      <origin xyz="-0.149 0 0.19" rpy="0 0 0" />
+      <geometry>
+        <box size="0.012 0.52 0.12" />
+        </geometry>
+      <material name="body_white" />
+      </visual>
+    <visual name="tray_side_p">
+      <origin xyz="0.035 0.254 0.19" rpy="0 0 0" />
+      <geometry>
+        <box size="0.38 0.012 0.12" />
+        </geometry>
+      <material name="body_white" />
+      </visual>
+    <visual name="tray_side_n">
+      <origin xyz="0.035 -0.254 0.19" rpy="0 0 0" />
+      <geometry>
+        <box size="0.38 0.012 0.12" />
+        </geometry>
+      <material name="body_white" />
+      </visual>
+    <collision name="front_panel">
+      <origin xyz="0.234 0 0.2125" rpy="0 0 0" />
+      <geometry>
+        <box size="0.018 0.58 0.21" />
+        </geometry>
+      </collision>
+    <collision name="tray_floor">
+      <origin xyz="0.035 0 0.136" rpy="0 0 0" />
+      <geometry>
+        <box size="0.38 0.52 0.012" />
+        </geometry>
+      </collision>
+    <collision name="tray_back">
+      <origin xyz="-0.149 0 0.19" rpy="0 0 0" />
+      <geometry>
+        <box size="0.012 0.52 0.12" />
+        </geometry>
+      </collision>
+    <collision name="tray_side_p">
+      <origin xyz="0.035 0.254 0.19" rpy="0 0 0" />
+      <geometry>
+        <box size="0.38 0.012 0.12" />
+        </geometry>
+      </collision>
+    <collision name="tray_side_n">
+      <origin xyz="0.035 -0.254 0.19" rpy="0 0 0" />
+      <geometry>
+        <box size="0.38 0.012 0.12" />
+        </geometry>
+      </collision>
+    </link>
+  <link name="drawer_handle">
+    <inertial>
+      <origin xyz="0.268 0 0.2125" rpy="0 0 0" />
+      <mass value="0.05" />
+      <inertia ixx="2.08333e-05" ixy="0" ixz="0" iyy="5.20833e-05" iyz="0" izz="5.20833e-05" />
+      </inertial>
+    <visual name="handle_neck">
+      <origin xyz="0.268 0 0.2125" rpy="0 0 0" />
+      <geometry>
+        <box size="0.05 0.018 0.018" />
+        </geometry>
+      <material name="handle_white" />
+      </visual>
+    <visual name="handle">
+      <origin xyz="0.315 0 0.2125" rpy="0 0 0" />
+      <geometry>
+        <sphere radius="0.025" />
+        </geometry>
+      <material name="handle_white" />
+      </visual>
+    <collision name="handle_neck">
+      <origin xyz="0.268 0 0.2125" rpy="0 0 0" />
+      <geometry>
+        <box size="0.05 0.018 0.018" />
+        </geometry>
+      </collision>
+    <collision name="handle">
+      <origin xyz="0.315 0 0.2125" rpy="0 0 0" />
+      <geometry>
+        <sphere radius="0.025" />
+        </geometry>
+      </collision>
+    </link>
+  <joint name="drawer_slide" type="prismatic">
+    <parent link="base" />
+    <child link="drawer" />
+    <axis xyz="1 0 0" />
+    <limit effort="120" velocity="1" lower="0" upper="0.35" />
+    <dynamics damping="0.3" friction="0.1" />
+    </joint>
+  <joint name="handle_mount" type="fixed">
+    <parent link="drawer" />
+    <child link="drawer_handle" />
+    </joint>
+  </robot>
