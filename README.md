@@ -15,7 +15,7 @@ RocRecon   (real2sim:prompt/图像 → sim-ready URDF 资产)
 RoboSmith  (SDG:资产 + 任务 → 专家轨迹 → LeRobot 数据)   ← 本仓库
    │  调用运动后端
    ▼
-RocRobSim  (rocRobo:无碰撞 IK + 避障 trajopt,运动求解)
+rocRobo    (无碰撞 IK + 避障 trajopt,运动求解)
 ```
 
 <p align="center">
@@ -54,7 +54,7 @@ python scripts/datagen/snapshot_scenario.py \
 数据生产依赖三样**仓库外**的运行时(各自单独安装/授权,不随本仓库分发):
 
 - **ROCm 运行镜像**:Genesis 物理仿真,按 GPU 架构选镜像,见 [`docker/README.md`](docker/README.md)(MI300/gfx942 用 `docker/Dockerfile.gfx942`)。
-- **rocRobo 运动后端**:无碰撞 IK + 避障 trajopt,来自 [RocRobSim](https://github.com/ZJLi2013/RocRobSim),以 sidecar 形式运行(license-friendly,PyRoki/JAX)。
+- **rocRobo 运动后端**:无碰撞 IK + 避障 trajopt,来自 [rocRobo](https://github.com/ZJLi2013/rocRobo),以 sidecar 形式运行(license-friendly,PyRoki/JAX)。
 - **learned grasp 运行时**:抓取候选模型 + 权重(**第三方许可,需自备,不包含在本仓库**)。
 
 ## 代码结构
@@ -78,7 +78,7 @@ robotsmith/
 
 - [LeRobot](https://github.com/huggingface/lerobot) — 数据集格式与 VLA 训练基础设施
 - [Genesis](https://github.com/Genesis-Embodied-AI/Genesis) — GPU 加速物理仿真
-- [RocRobSim](https://github.com/ZJLi2013/RocRobSim) — rocRobo 运动求解(无碰撞 IK + 避障 trajopt)
+- [rocRobo](https://github.com/ZJLi2013/rocRobo) — 运动求解(无碰撞 IK + 避障 trajopt)
 - [RocRecon](https://github.com/ZJLi2013/RocRecon) — real2sim 资产生成(prompt/图像 → sim-ready URDF)
 - [Objaverse](https://objaverse.allenai.org/) — 3D 物体数据集
 

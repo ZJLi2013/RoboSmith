@@ -15,7 +15,7 @@ RocRecon   (real2sim: prompt/image -> sim-ready URDF assets)
 RoboSmith  (SDG: assets + tasks -> expert trajectories -> LeRobot data)   <- this repo
    │  calls the motion backend
    ▼
-RocRobSim  (rocRobo: collision-free IK + avoidance trajopt, motion solving)
+rocRobo    (collision-free IK + avoidance trajopt, motion solving)
 ```
 
 <p align="center">
@@ -54,7 +54,7 @@ How to author a new scenario: see [`scenarios/README.md`](scenarios/README.md).
 Data generation depends on three **out-of-repo** runtimes (each installed/licensed separately, not distributed here):
 
 - **ROCm runtime image**: Genesis physics sim; pick the image by GPU arch, see [`docker/README.md`](docker/README.md) (MI300/gfx942 uses `docker/Dockerfile.gfx942`).
-- **rocRobo motion backend**: collision-free IK + avoidance trajopt, from [RocRobSim](https://github.com/ZJLi2013/RocRobSim), run as a sidecar (license-friendly, PyRoki/JAX).
+- **rocRobo motion backend**: collision-free IK + avoidance trajopt, from [rocRobo](https://github.com/ZJLi2013/rocRobo), run as a sidecar (license-friendly, PyRoki/JAX).
 - **Learned grasp runtime**: grasp candidate model + weights (**third-party licensed, bring your own, not included in this repo**).
 
 ## Repository layout
@@ -78,7 +78,7 @@ robotsmith/
 
 - [LeRobot](https://github.com/huggingface/lerobot) — dataset format and VLA training infrastructure
 - [Genesis](https://github.com/Genesis-Embodied-AI/Genesis) — GPU-accelerated physics simulator
-- [RocRobSim](https://github.com/ZJLi2013/RocRobSim) — rocRobo motion solving (collision-free IK + avoidance trajopt)
+- [rocRobo](https://github.com/ZJLi2013/rocRobo) — motion solving (collision-free IK + avoidance trajopt)
 - [RocRecon](https://github.com/ZJLi2013/RocRecon) — real2sim asset generation (prompt/image -> sim-ready URDF)
 - [Objaverse](https://objaverse.allenai.org/) — 3D object dataset
 
