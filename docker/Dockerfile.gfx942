@@ -96,6 +96,14 @@ RUN python -m pip install "lerobot==0.4.4" \
 # - GraspGen checkpoints must be converted to the spconv_rocm 3D weight layout
 #   via scripts/setup/_convert_spconv_ckpt.py (produces *_rocm.pth) and the
 #   config must point at the *_rocm.pth files.
+# - DO NOT build/install GraspGen's pointnet2_ops here. The Franka Panda model
+#   uses the PTV3/spconv_rocm backbone and never executes a pointnet2 op;
+#   robotsmith/grasp/graspgen_wrapper.py::_patch_pointnet2_import_for_rocm()
+#   stubs `pointnet2_ops` in sys.modules before importing grasp_server, so its
+#   import-time `from pointnet2_ops import _ext` is satisfied without the CUDA
+#   JIT. Compiling that _ext on ROCm is unnecessary and will fail — adding such
+#   a step is a recurring mis-fix; verified end-to-end (load + inference) on
+#   gfx942 without it.
 # numpy/scikit-image/setuptools are re-pinned afterwards because the
 # diffusers/transformers/huggingface-hub deps pull a newer numpy that would
 # otherwise reintroduce the Genesis 0.4.5 skimage ABI break.

@@ -1,0 +1,76 @@
+{
+  "mass_kg": 2.0,
+  "friction": 0.6,
+  "restitution": 0.1,
+  "density_kg_m3": 1000.0,
+  "size_cm": [
+    10.0,
+    22.0,
+    23.0
+  ],
+  "metric_scale": 3.0,
+  "source": "articraft",
+  "description": "Two-layer support stand (rigid weldment, no movable joints). Two posts 220 mm apart and 190 mm tall, bridged by a tall rear plate and two horizontal shelves (lower ~70 mm, upper ~170 mm). Bolts to the floor through foot plates with 4x Oe6.5 mm mounting holes. Authored by articraft from 2-layer-supporter.png; kinematics (none) live in model.urdf, this metadata carries only RoboSmith semantic annotations. Static support fixture, not a graspable target.",
+  "stable_poses": [],
+  "canonical_frame": {
+    "up_axis": "+Z",
+    "front_axis": "+X",
+    "origin": "footprint_center_floor",
+    "T_object_mesh": null
+  },
+  "task_poses": {
+    "upright": {
+      "quat_object": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "source": "articraft_authored",
+      "verified": true,
+      "description": "stand upright on its foot plates, open shelf side facing +X toward the workspace"
+    }
+  },
+  "grasp_policy_bucket": null,
+  "mesh": {},
+  "task_joints": [],
+  "handles": [],
+  "place_targets": [
+    {
+      "name": "shelf_lower",
+      "surface_local": [
+        0.0,
+        0.0,
+        0.074
+      ],
+      "extent_xy": [
+        0.05,
+        0.17
+      ]
+    },
+    {
+      "name": "shelf_upper",
+      "surface_local": [
+        0.0,
+        0.0,
+        0.174
+      ],
+      "extent_xy": [
+        0.05,
+        0.17
+      ]
+    }
+  ],
+  "mounting_holes": {
+    "count": 4,
+    "diameter_m": 0.0065,
+    "local_pos": [
+      [0.035, 0.0975, 0.0],
+      [-0.035, 0.0975, 0.0],
+      [0.035, -0.0975, 0.0],
+      [-0.035, -0.0975, 0.0]
+    ],
+    "note": "floor mounting through foot plates; not subtracted from primitive geometry"
+  },
+  "joint_init": {}
+}

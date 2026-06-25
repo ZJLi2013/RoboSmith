@@ -1,0 +1,30 @@
+# syntax=docker/dockerfile:1.7
+#
+# rocRobo collision-free motion sidecar for the workshop — self-contained.
+#
+# Bakes the rocRobo source into the public jax/pyroki image and installs it at
+# build time, so the sidecar runs with NO -v mount (cloud deploy, no host-path
+# assumption). jax (ROCm 7.2) and torch (ROCm 6.4.3) cannot share one process,
+# so this stays a separate container the RoboSmith image talks to via docker exec
+# (see docs runtime.md §E2E).
+#
+# Build with the rocRobo checkout as the build context (the -f path is independent
+# of the context, so this Dockerfile can live under RoboSmith/workshop/):
+#
+#   docker build -f workshop/Dockerfile.rocrobo \
+#     -t rocrobo:workshop-gfx942 \
+#     /home/zhengjli/robot/rocRobo
+#
+ARG BASE_IMAGE=rocrobo/pyroki:rocm7.2.4-jax0.8.2
+FROM ${BASE_IMAGE}
+
+WORKDIR /rocrobo
+COPY . /rocrobo
+
+# deps already in the base image; install the package only (editable).
+RUN pip install -e /rocrobo/pyroki --no-deps
+
+ENV ROCROBO_PYTHONPATH=/rocrobo/rocRobo/core \
+    ROCROBO_ASSETS=/rocrobo/pyroki/examples/assets
+
+CMD ["sleep", "infinity"]

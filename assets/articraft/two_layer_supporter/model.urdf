@@ -1,0 +1,103 @@
+<robot name="two_layer_supporter">
+  <material name="alu">
+    <color rgba="0.8 0.81 0.83 1" />
+    </material>
+  <link name="base">
+    <inertial>
+      <origin xyz="0 0 0.115" rpy="0 0 0" />
+      <mass value="2" />
+      <inertia ixx="0.016883" ixy="0" ixz="0" iyy="0.010483" iyz="0" izz="0.009733" />
+      </inertial>
+    <visual name="foot_p">
+      <origin xyz="0 0.0975 0.006" rpy="0 0 0" />
+      <geometry>
+        <box size="0.1 0.03 0.012" />
+        </geometry>
+      <material name="alu" />
+      </visual>
+    <visual name="post_p">
+      <origin xyz="0 0.0975 0.101" rpy="0 0 0" />
+      <geometry>
+        <box size="0.06 0.025 0.178" />
+        </geometry>
+      <material name="alu" />
+      </visual>
+    <visual name="foot_n">
+      <origin xyz="0 -0.0975 0.006" rpy="0 0 0" />
+      <geometry>
+        <box size="0.1 0.03 0.012" />
+        </geometry>
+      <material name="alu" />
+      </visual>
+    <visual name="post_n">
+      <origin xyz="0 -0.0975 0.101" rpy="0 0 0" />
+      <geometry>
+        <box size="0.06 0.025 0.178" />
+        </geometry>
+      <material name="alu" />
+      </visual>
+    <visual name="shelf_lower">
+      <origin xyz="0 0 0.07" rpy="0 0 0" />
+      <geometry>
+        <box size="0.05 0.17 0.008" />
+        </geometry>
+      <material name="alu" />
+      </visual>
+    <visual name="shelf_upper">
+      <origin xyz="0 0 0.17" rpy="0 0 0" />
+      <geometry>
+        <box size="0.05 0.17 0.008" />
+        </geometry>
+      <material name="alu" />
+      </visual>
+    <visual name="back_plate">
+      <origin xyz="-0.026 0 0.165" rpy="0 0 0" />
+      <geometry>
+        <box size="0.008 0.17 0.13" />
+        </geometry>
+      <material name="alu" />
+      </visual>
+    <collision name="foot_p">
+      <origin xyz="0 0.0975 0.006" rpy="0 0 0" />
+      <geometry>
+        <box size="0.1 0.03 0.012" />
+        </geometry>
+      </collision>
+    <collision name="post_p">
+      <origin xyz="0 0.0975 0.101" rpy="0 0 0" />
+      <geometry>
+        <box size="0.06 0.025 0.178" />
+        </geometry>
+      </collision>
+    <collision name="foot_n">
+      <origin xyz="0 -0.0975 0.006" rpy="0 0 0" />
+      <geometry>
+        <box size="0.1 0.03 0.012" />
+        </geometry>
+      </collision>
+    <collision name="post_n">
+      <origin xyz="0 -0.0975 0.101" rpy="0 0 0" />
+      <geometry>
+        <box size="0.06 0.025 0.178" />
+        </geometry>
+      </collision>
+    <collision name="shelf_lower">
+      <origin xyz="0 0 0.07" rpy="0 0 0" />
+      <geometry>
+        <box size="0.05 0.17 0.008" />
+        </geometry>
+      </collision>
+    <collision name="shelf_upper">
+      <origin xyz="0 0 0.17" rpy="0 0 0" />
+      <geometry>
+        <box size="0.05 0.17 0.008" />
+        </geometry>
+      </collision>
+    <collision name="back_plate">
+      <origin xyz="-0.026 0 0.165" rpy="0 0 0" />
+      <geometry>
+        <box size="0.008 0.17 0.13" />
+        </geometry>
+      </collision>
+    </link>
+  </robot>
