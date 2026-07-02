@@ -104,12 +104,28 @@ def _select_pick_plan(ctx: SkillContext) -> GraspPlan:
         object_height=obj_h,
         scale=scales.get(skill.target, 1.0),
     )
+    # Grasp geometry's no-entry floor is the target's OWN support surface
+    # (object bottom), not the global table — so a shelved / in-fixture object
+    # rejects sub-object grasps correctly. Tabletop objects have
+    # support_z == table_surface_z (byte-identical). See
+    # docs/features/grasp_support_z.md.
+    obj_h_for_support = float(
+        skill.params.get("object_height")
+        or scene_state.get("object_heights", {}).get(skill.target, 0.0)
+        or 0.0
+    )
+    table_surface_z = float(scene_state.get("table_surface_z", 0.0))
+    support_z = (
+        float(ctx.obj_pos[2]) - obj_h_for_support / 2.0
+        if obj_h_for_support > 0.0
+        else table_surface_z
+    )
     if len(plans) > 1:
         plan = select_best_grasp_plan(
             plans,
             ctx.motion_planner.solve_ik,
             ctx.qpos,
-            table_z=float(scene_state.get("table_surface_z", 0.0)),
+            support_z=support_z,
             asset=asset,
             object_quat=quats.get(skill.target),
             object_scale=scales.get(skill.target, 1.0),
@@ -224,8 +240,15 @@ def run_pick(ctx: SkillContext) -> list[np.ndarray]:
         ]
     seed, transit = _pick_seed_transit(ctx, plan)
     seg = ctx.executor.pick(plan, ctx.motion_planner, seed, _pick_motion_params(ctx))
-    table_z = float(ctx.scene_state.get("table_surface_z", 0.0))
     ctx.held_category = ctx.category
-    ctx.held_place_z = max(float(plan.grasp_pos[2]) - table_z, 0.0)
+    # Grasp-relative offset: EE-flange height above the picked object's *support
+    # surface* (object bottom = center − half-height), NOT above the table. A
+    # later place re-adds this to the destination marker's world z so the object
+    # bottom lands on that surface — correct for table→table AND shelf→shelf.
+    # For a tabletop pick this equals the old (grasp_z − table_z). See
+    # docs/features/feature12_pick_place_into_drawer.md (§5 W2).
+    obj_h = float(ctx.scene_state.get("object_heights", {}).get(ctx.skill.target, 0.0) or 0.0)
+    support_z = float(ctx.obj_pos[2]) - obj_h / 2.0
+    ctx.held_place_z = max(float(plan.grasp_pos[2]) - support_z, 0.0)
     _capture_payload_aco(ctx, plan)
     return transit + seg

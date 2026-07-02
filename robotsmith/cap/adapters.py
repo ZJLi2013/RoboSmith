@@ -98,6 +98,7 @@ def to_legacy_scene_config(scene: SceneSpec) -> SceneConfig:
                 else None,
                 name_override=obj.name,
                 joint_init=dict(obj.joint_init) if obj.joint_init else None,
+                yaw_deg=obj.yaw_deg,
             )
             for obj in scene.objects
         ],

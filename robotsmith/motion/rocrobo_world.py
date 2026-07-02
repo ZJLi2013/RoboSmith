@@ -129,6 +129,7 @@ def build_collision_world(
     moving_link: str | None = None,
     joint_axis: tuple[float, float, float] = (1.0, 0.0, 0.0),
     exempt_links: Sequence[str] = (),
+    exempt_boxes: Sequence[str] = (),
     ground_z: float | None = None,
 ) -> list[dict]:
     """Turn one articulated asset into box obstacles for plan_motion to avoid.
@@ -155,6 +156,10 @@ def build_collision_world(
         joint_axis: joint axis in the asset-local frame.
         exempt_links: links to drop from the world — the ones intentionally
             contacted (e.g. the handle / pulled drawer link during open/close).
+        exempt_boxes: ``<collision name>`` of individual boxes to drop — finer than
+            ``exempt_links`` for a multi-box single-link fixture (e.g. exempt the
+            place-target ``shelf_lower`` of a jointless supporter while keeping
+            ``shelf_upper`` as an obstacle for a planned side-insert).
         ground_z: if given, also add a support-plane halfspace at this height.
     """
     asset_pos = np.asarray(asset_pos, dtype=np.float64)
@@ -164,6 +169,7 @@ def build_collision_world(
     joint_offset_world = rotate_vec_wxyz(asset_quat, axis) * float(joint_value)
 
     exempt = set(exempt_links)
+    exempt_box_names = set(exempt_boxes)
     # moving_link + its fixed-joint descendants ride the joint together, else a
     # separated handle link would be left stranded while the body moves.
     moving_set = _rigid_moving_links(asset, moving_link)
@@ -171,6 +177,8 @@ def build_collision_world(
     world: list[dict] = []
     for box in boxes:
         if box.link in exempt:
+            continue
+        if box.name and box.name in exempt_box_names:
             continue
         center_local = scale * np.asarray(box.origin_xyz, dtype=np.float64)
         center = asset_pos + rotate_vec_wxyz(asset_quat, center_local)
@@ -190,17 +198,32 @@ def build_obstacle_world(
     *,
     ground_z: float | None = None,
     exempt_links: Sequence[str] = (),
+    exempt_boxes: Sequence[str] = (),
 ) -> list[dict]:
-    """Build a collision world from all articulated furniture in ``scene_state``.
+    """Build a collision world from every **fixture** in ``scene_state``.
 
-    Every articulated asset (e.g. the drawer cabinet) becomes box obstacles at
-    its live pose + joint slide; rigid pick/place objects are not added (they are
-    small and/or the intentional contact target).
+    Obstacle membership keys off the **role axis** (``Asset.is_fixture`` = static
+    environment prop, fixed base, never grasp-planned) — NOT the kinematic axis
+    (``is_articulated`` = has movable joints). The two are orthogonal and only
+    partially overlap: ``is_articulated ⟹ is_fixture``, but a jointless fixture
+    (e.g. ``two_layer_supporter``) is a fixture yet not articulated. Gating on
+    ``is_articulated`` here (the old bug) silently dropped such static shelves /
+    weldments from the world, so the arm planned straight through them. See
+    docs/refactor.md "is_articulated vs is_fixture".
+
+    Each fixture's URDF collision boxes are emitted at its live world pose. The
+    **kinematic axis** only decides whether to slide a joint: articulated fixtures
+    (drawer cabinet) ride their first movable joint's child link by the live joint
+    value; jointless fixtures stay fully static. Manipulated objects (role
+    ``object``: the pick/place die/apple) are not added — they are small and/or the
+    intentional contact target (the carried payload enters via the ACO ``attach``).
 
     ``exempt_links`` drops intentionally-contacted links (by URDF link name) from
     the world — e.g. open/close must touch the handle / pulled drawer link, so
-    those are exempted while the carcass stays as an obstacle. Place contacts no
-    link and passes nothing.
+    those are exempted while the carcass stays as an obstacle. ``exempt_boxes``
+    drops individual ``<collision name>`` boxes — finer than per-link, used by a
+    planned place to free the target surface (``shelf_lower``) of a single-link
+    fixture while keeping the rest (``shelf_upper`` …) as obstacles.
     """
     assets = scene_state.get("assets", {})
     positions = scene_state.get("positions", {})
@@ -210,23 +233,34 @@ def build_obstacle_world(
 
     world: list[dict] = []
     for name, asset in assets.items():
-        if asset is None or not getattr(asset, "is_articulated", False):
+        if asset is None or not getattr(asset, "is_fixture", False):
             continue
         if name not in positions:
             continue
-        # is_articulated guarantees at least one movable joint; first joint only
-        # (multi-DOF assets are a future item, see overall_todo.md).
-        joint = asset.movable_joints[0]
-        joint_value = float(joint_positions.get(name, {}).get(joint.name, 0.0) or 0.0)
+        # Default: whole asset static (jointless fixture, e.g. a shelf / supporter).
+        joint_value = 0.0
+        moving_link: str | None = None
+        joint_axis: tuple[float, float, float] = (1.0, 0.0, 0.0)
+        if asset.is_articulated:
+            # Articulated fixture (drawer cabinet): the first movable joint's child
+            # link rides the live joint value; the carcass stays static. First-joint
+            # only (multi-DOF assets are a future item, see refactor.md).
+            joint = asset.movable_joints[0]
+            joint_value = float(
+                joint_positions.get(name, {}).get(joint.name, 0.0) or 0.0
+            )
+            moving_link = asset.primary_moving_link
+            joint_axis = joint.axis
         world += build_collision_world(
             asset,
             positions[name],
             quats.get(name, (1.0, 0.0, 0.0, 0.0)),
             scales.get(name, 1.0),
             joint_value=joint_value,
-            moving_link=asset.primary_moving_link,
-            joint_axis=joint.axis,
+            moving_link=moving_link,
+            joint_axis=joint_axis,
             exempt_links=exempt_links,
+            exempt_boxes=exempt_boxes,
         )
     if ground_z is not None:
         world.append(ground_halfspace(ground_z))

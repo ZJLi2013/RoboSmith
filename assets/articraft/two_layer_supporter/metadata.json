@@ -4,13 +4,14 @@
   "restitution": 0.1,
   "density_kg_m3": 1000.0,
   "size_cm": [
-    10.0,
+    16.0,
     22.0,
-    23.0
+    33.0
   ],
-  "metric_scale": 3.0,
+  "metric_scale": 1.0,
   "source": "articraft",
-  "description": "Two-layer support stand (rigid weldment, no movable joints). Two posts 220 mm apart and 190 mm tall, bridged by a tall rear plate and two horizontal shelves (lower ~70 mm, upper ~170 mm). Bolts to the floor through foot plates with 4x Oe6.5 mm mounting holes. Authored by articraft from 2-layer-supporter.png; kinematics (none) live in model.urdf, this metadata carries only RoboSmith semantic annotations. Static support fixture, not a graspable target.",
+  "role": "fixture",
+  "description": "Two-layer support stand (rigid weldment, no movable joints). Two posts 220 mm apart and 310 mm tall, bridged by a tall rear plate and two horizontal shelves (lower top ~54 mm, upper top ~304 mm; 250 mm inter-shelf gap). The gap was widened by lowering the bottom shelf (so the upper-shelf pick height is unchanged), sized so a top-down gripper can enter from the open side instead of a near-singular horizontal tuck (docs/refactor.md R6). Shelves are 140 mm deep so an ~80 mm object rests with clearance and the gripper fingers can reach in. Bolts to the floor through foot plates with 4x Oe6.5 mm mounting holes. Authored at true metric scale (metric_scale 1.0, no scenario scaling). Authored by articraft from 2-layer-supporter.png; kinematics (none) live in model.urdf, this metadata carries only RoboSmith semantic annotations. Static support fixture, not a graspable target.",
   "stable_poses": [],
   "canonical_frame": {
     "up_axis": "+Z",
@@ -41,22 +42,28 @@
       "surface_local": [
         0.0,
         0.0,
-        0.074
+        0.054
       ],
       "extent_xy": [
-        0.05,
+        0.14,
         0.17
-      ]
+      ],
+      "approach": [
+        -1.0,
+        0.0,
+        0.0
+      ],
+      "approach_note": "Horizontal -X side-insert (s7/s7b value, video-confirmed correct). Consistent with canonical_frame.front_axis=+X and task_poses.upright 'open shelf side facing +X toward the workspace': the open mouth faces +X, so the gripper travels in -X to insert into the shelf -> approach = -X (travel-into-shelf direction). standoff = drop - approach*0.17 then sits on the +X (open) side at lower-shelf height. EMPIRICAL CORRECTION: s8/s8b flipped this to +X based on a wrong 'open mouth faces -X (snapshot confirmed)' assumption; the s8b video showed the arm swinging to the wrong (far) side, reaching off the table edge instead of the shelf -> +X is wrong, reverted to -X. NOTE: our world-frame / approach-sign reasoning has been unreliable here (we got the open-mouth axis backwards once) -> trust the snapshot/video over re-derived geometry, and re-verify the frame properly before trusting any sign argument. descend/retreat are still forced Cartesian (collision-blind) -> if -X still flips IK, option c (route them through plan_motion) is required (docs/supporter_feature.md, docs/refactor.md R6)."
     },
     {
       "name": "shelf_upper",
       "surface_local": [
         0.0,
         0.0,
-        0.174
+        0.304
       ],
       "extent_xy": [
-        0.05,
+        0.14,
         0.17
       ]
     }
@@ -65,10 +72,10 @@
     "count": 4,
     "diameter_m": 0.0065,
     "local_pos": [
-      [0.035, 0.0975, 0.0],
-      [-0.035, 0.0975, 0.0],
-      [0.035, -0.0975, 0.0],
-      [-0.035, -0.0975, 0.0]
+      [0.06, 0.0975, 0.0],
+      [-0.06, 0.0975, 0.0],
+      [0.06, -0.0975, 0.0],
+      [-0.06, -0.0975, 0.0]
     ],
     "note": "floor mounting through foot plates; not subtracted from primitive geometry"
   },

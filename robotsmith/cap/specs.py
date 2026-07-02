@@ -61,6 +61,11 @@ class ObjectSpec:
             {joint: qpos} (e.g. {"drawer_slide": 0.35} for a frozen-open
             drawer), overriding the asset metadata default on reset. Empty =
             use the asset default.
+        yaw_deg: Per-scenario rotation (degrees) about world +Z applied on top
+            of the asset's canonical upright pose. Positive = counter-clockwise
+            seen from above; negative = clockwise. Lets a scene orient a fixture
+            (e.g. face an open shelf toward the arm) without editing the asset's
+            shared upright metadata.
     """
 
     name: str
@@ -69,6 +74,7 @@ class ObjectSpec:
     region: RegionName | None = None
     fixed_position: tuple[float, float, float] | None = None
     joint_init: dict[str, float] = field(default_factory=dict)
+    yaw_deg: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -89,14 +95,25 @@ class FrameRef:
         ``parent``'s opening (a named ``place_targets`` entry in its metadata):
         ``lip + open_dir * (live_slide * travel_fraction)`` at tray-floor height.
         Geometry lives in the asset metadata, so the scene carries no numbers.
+    kind="placement": a named static placement affordance (``place_targets``
+        entry with ``surface_local``) on any asset — e.g. a shelf surface on a
+        fixture. Resolves to ``parent_pose ∘ surface_local`` with no joint, so the
+        drop point tracks the asset's pose (incl. yaw) without per-scene numbers.
+
+    ``approach`` is the placement/grasp **insert direction** (unit, the EE moves
+    along ``+approach`` from standoff to the point; default ``(0,0,-1)`` = top-down,
+    consistent with grasp's frame Z). For asset-anchored kinds it is declared in the
+    asset frame and rotated to world by ``resolve_approach``; for a placement
+    affordance it may instead live on the ``place_targets`` entry. ``None`` → default.
     """
 
-    kind: str  # "world" | "articulated" | "articulated_opening"
+    kind: str  # "world" | "articulated" | "articulated_opening" | "placement"
     xyz: tuple[float, float, float] | None = None
     parent: str | None = None
     joint: str | None = None
     local_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
-    opening: str | None = None  # articulated_opening: metadata place_targets name
+    opening: str | None = None  # articulated_opening / placement: place_targets name
+    approach: tuple[float, float, float] | None = None
 
 
 @dataclass(frozen=True)

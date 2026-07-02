@@ -33,6 +33,30 @@ logger = logging.getLogger(__name__)
 
 _FRANKA_FINGER_OPEN = 0.04
 _FRANKA_FINGER_CLOSED = 0.01
+_DEFAULT_APPROACH = np.array([0.0, 0.0, -1.0])
+
+
+def _ee_quat_from_approach(approach: np.ndarray) -> np.ndarray:
+    """EE quat whose gripper Z axis (approach) aligns with ``approach`` (insert dir).
+
+    Reproduces ``TOP_DOWN_QUAT`` exactly for the default ``-Z`` so drawer / tabletop
+    places stay byte-identical; for a side approach builds an orthonormal frame with
+    Z = approach and fingers along the most-horizontal perpendicular. Finger yaw is
+    a first cut (orientation/IK tuning for genuine tuck-under is deferred — see
+    docs/refactor.md R4 "Franka 近界位形").
+    """
+    z = np.asarray(approach, dtype=np.float64).reshape(3)
+    z = z / float(np.linalg.norm(z))
+    if np.allclose(z, _DEFAULT_APPROACH, atol=1e-6):
+        return TOP_DOWN_QUAT.astype(np.float64).copy()
+    up = np.array([0.0, 0.0, 1.0])
+    x = up - np.dot(up, z) * z
+    if float(np.linalg.norm(x)) < 1e-6:
+        ref = np.array([1.0, 0.0, 0.0])
+        x = ref - np.dot(ref, z) * z
+    x = x / float(np.linalg.norm(x))
+    y = np.cross(z, x)
+    return rotmat_to_quat_wxyz(np.column_stack([x, y, z]))
 
 
 class LearnedGraspPlanner(GraspPlanner):
@@ -131,8 +155,18 @@ class LearnedGraspPlanner(GraspPlanner):
                 f"approach=({approach[0]:.2f},{approach[1]:.2f},{approach[2]:.2f})"
             )
 
-        table_z = self._z_offset
-        min_z = table_z + self._min_z_margin
+        # No-grasp-from-below floor = the target's OWN support surface
+        # (object bottom = center − half-height), not the global table. For a
+        # tabletop object these coincide (support_z == table_z, byte-identical);
+        # for a fixtured object (shelf / inside drawer) the object floats above
+        # the table, and only the object-support floor rejects sub-object grasps
+        # (docs/features/grasp_support_z.md). Falls back to the table z_offset
+        # when the object height is unknown.
+        if object_height is not None and object_height > 0.0:
+            support_z = float(object_pos[2]) - float(object_height) / 2.0
+        else:
+            support_z = self._z_offset
+        min_z = support_z + self._min_z_margin
         n_z_reject = 0
         n_approach_reject = 0
         plans: list[GraspPlan] = []
@@ -232,53 +266,48 @@ class LearnedGraspPlanner(GraspPlanner):
         place_pos: np.ndarray,
         *,
         category: str = "block",
-        place_z_override: Optional[float] = None,
         place_point_world: Optional[np.ndarray] = None,
+        approach: Optional[np.ndarray] = None,
     ) -> GraspPlan:
-        """Build a place-target GraspPlan (top-down placement pose).
+        """Build a place-target GraspPlan along an approach axis.
 
-        Place planning doesn't need learned grasps — just a target pose.
-        ``place_point_world`` (absolute world drop point) bypasses the
-        table-relative ``place_z`` math for live-resolved targets (e.g. an
-        articulated drawer opening).
+        Place planning doesn't need learned grasps — just a target pose. The
+        caller passes ``place_point_world`` (the already-resolved world drop
+        point: marker / opening / shelf world xyz lifted by the grasp-relative
+        offset); the planner never re-derives a table-relative drop height (see
+        docs/features/feature12_pick_place_into_drawer.md §5 W2).
+
+        ``approach`` is the world **insert direction** (unit; default top-down
+        ``-Z``, = grasp frame Z). The standoff sits one ``retreat_clearance`` back
+        along ``-approach``; the executor's Cartesian segment then inserts along
+        ``+approach`` and retracts back along ``-approach``. Top-down is just the
+        ``-Z`` value (drawer / tabletop unchanged), side tuck-under is e.g. ``+X``
+        — same code path, no per-case branch (docs/refactor.md R4).
         """
-        if place_point_world is not None:
-            px, py, pz_world = (float(v) for v in place_point_world)
-            hover = self._retreat_clearance
-            place_target = np.array([px, py, pz_world])
-            pre_place_pos = np.array([px, py, pz_world + hover])
-            retreat_pos = np.array([px, py, pz_world + hover])
-            return GraspPlan(
-                grasp_pos=place_target,
-                grasp_quat=TOP_DOWN_QUAT.copy(),
-                pre_grasp_pos=pre_place_pos,
-                pre_grasp_quat=TOP_DOWN_QUAT.copy(),
-                retreat_pos=retreat_pos,
-                retreat_quat=TOP_DOWN_QUAT.copy(),
-                finger_open=_FRANKA_FINGER_OPEN,
-                finger_closed=_FRANKA_FINGER_CLOSED,
-                quality=1.0,
-                metadata={"source": "learned_place", "category": category},
+        if place_point_world is None:
+            raise ValueError(
+                "plan_place requires place_point_world (the resolved world drop "
+                "point); table-relative place_z was retired (feature12 §5 W2)"
             )
-
-        px, py = float(place_pos[0]), float(place_pos[1])
-        zo = self._z_offset
-        pz = place_z_override if place_z_override is not None else 0.15
-
-        pre_place_z = pz + zo + self._retreat_clearance
-        place_target = np.array([px, py, pz + zo])
-        pre_place_pos = np.array([px, py, pre_place_z])
-        retreat_pos = np.array([px, py, pre_place_z])
-
+        place_target = np.asarray(place_point_world, dtype=np.float64).reshape(3)
+        a = _DEFAULT_APPROACH if approach is None else np.asarray(approach, dtype=np.float64).reshape(3)
+        norm = float(np.linalg.norm(a))
+        a = _DEFAULT_APPROACH if norm < 1e-9 else a / norm
+        standoff = place_target - a * self._retreat_clearance
+        quat = _ee_quat_from_approach(a)
         return GraspPlan(
             grasp_pos=place_target,
-            grasp_quat=TOP_DOWN_QUAT.copy(),
-            pre_grasp_pos=pre_place_pos,
-            pre_grasp_quat=TOP_DOWN_QUAT.copy(),
-            retreat_pos=retreat_pos,
-            retreat_quat=TOP_DOWN_QUAT.copy(),
+            grasp_quat=quat.copy(),
+            pre_grasp_pos=standoff,
+            pre_grasp_quat=quat.copy(),
+            retreat_pos=standoff.copy(),
+            retreat_quat=quat.copy(),
             finger_open=_FRANKA_FINGER_OPEN,
             finger_closed=_FRANKA_FINGER_CLOSED,
             quality=1.0,
-            metadata={"source": "learned_place", "category": category},
+            metadata={
+                "source": "learned_place",
+                "category": category,
+                "approach_dir": a.tolist(),
+            },
         )

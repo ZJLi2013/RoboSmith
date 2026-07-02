@@ -22,6 +22,7 @@ from robotsmith.scenario_runtime.materialize import ScenarioRuntimePackage
 from robotsmith.scenario_runtime.runner import (
     collect_object_positions,
     evaluate_scenario_task,
+    resolve_static_target_positions,
     run_scenario_episode,
 )
 from robotsmith.tasks import find_leaf
@@ -89,12 +90,16 @@ def run_scenario_smoke(
         env_state_names=env_state_names,
     )
     # Frames (live-resolved each segment by the runtime) for motion anchoring;
-    # static xyz markers for success/diagnostics (articulated anchors excluded).
+    # static xyz markers for success/diagnostics. Anchorless targets resolve from
+    # the scene spec; asset-anchored *static* targets (placement affordances on a
+    # fixture) are resolved against the live world so they too become success
+    # markers (articulated/opening anchors stay excluded — they move with a joint).
     scene_frames = target_frames(package.scenario_scene)
     target_positions = {
         name: np.asarray(xyz, dtype=np.float32)
         for name, xyz in resolved_target_positions(package.scenario_scene).items()
     }
+    target_positions.update(resolve_static_target_positions(env, scene_frames))
 
     episodes = []
     episode_frame_counts: dict[int, int] = {}

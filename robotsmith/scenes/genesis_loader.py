@@ -25,7 +25,6 @@ class GenesisSceneHandle:
     """Parallel to ``objects`` — logical names from PlacedObject.name."""
     placed: list = field(default_factory=list)
     """The PlacedObject list from the ResolvedScene, for metadata access."""
-    cameras: dict[str, object] = field(default_factory=dict)
     table: Optional[object] = None
 
 
@@ -117,9 +116,9 @@ def load_resolved_scene(
             quat=quat,
             default_armature=0.0,
         )
-        # Articulated furniture (e.g. a drawer cabinet) is anchored at its root
-        # link so manipulating a joint moves the joint, not the whole body.
-        if getattr(po.asset, "is_articulated", False):
+        # Fixtures (static props, and articulated furniture) are anchored at
+        # their root link so they don't drift under gravity / contact.
+        if getattr(po.asset, "is_fixture", False):
             urdf_kwargs["fixed"] = True
         if po.metric_scale != 1.0:
             urdf_kwargs["scale"] = po.metric_scale
@@ -139,22 +138,11 @@ def load_resolved_scene(
         ),
     )
 
-    cameras = {}
-    cam_cfg = config.camera_position, config.camera_target
-    cameras["default"] = scene.add_camera(
-        res=(640, 480),
-        pos=tuple(cam_cfg[0]),
-        lookat=tuple(cam_cfg[1]),
-        fov=45,
-        GUI=False,
-    )
-
     return GenesisSceneHandle(
         scene=scene,
         franka=franka,
         objects=obj_entities,
         object_names=obj_names,
         placed=resolved.placed_objects,
-        cameras=cameras,
         table=table_entity,
     )

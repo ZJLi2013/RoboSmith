@@ -82,6 +82,10 @@ class UrdfCollisionBox:
     size: tuple[float, float, float]
     origin_xyz: tuple[float, float, float] = (0.0, 0.0, 0.0)
     origin_rpy: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    # ``<collision name="...">`` of the source element ("" if unnamed). Lets the
+    # collision world exempt a single box (e.g. a place target ``shelf_lower``)
+    # on a multi-box single-link fixture, which per-link exemption cannot isolate.
+    name: str = ""
 
 
 def _origin_of(el) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
@@ -116,6 +120,7 @@ def parse_urdf_collision_boxes(urdf_path: Path) -> list[UrdfCollisionBox]:
             if geom is None:
                 continue
             xyz, rpy = _origin_of(col)
+            box_name = col.get("name", "") or ""
             box_el = geom.find("box")
             sph_el = geom.find("sphere")
             cyl_el = geom.find("cylinder")
@@ -123,18 +128,18 @@ def parse_urdf_collision_boxes(urdf_path: Path) -> list[UrdfCollisionBox]:
                 s = [float(v) for v in box_el.get("size").split()]
                 if len(s) == 3:
                     boxes.append(
-                        UrdfCollisionBox(link_name, (s[0], s[1], s[2]), xyz, rpy)
+                        UrdfCollisionBox(link_name, (s[0], s[1], s[2]), xyz, rpy, box_name)
                     )
             elif sph_el is not None and sph_el.get("radius") is not None:
                 r = float(sph_el.get("radius"))
                 boxes.append(
-                    UrdfCollisionBox(link_name, (2 * r, 2 * r, 2 * r), xyz, rpy)
+                    UrdfCollisionBox(link_name, (2 * r, 2 * r, 2 * r), xyz, rpy, box_name)
                 )
             elif cyl_el is not None:
                 r = float(cyl_el.get("radius", "0") or 0.0)
                 length = float(cyl_el.get("length", "0") or 0.0)
                 boxes.append(
-                    UrdfCollisionBox(link_name, (2 * r, 2 * r, length), xyz, rpy)
+                    UrdfCollisionBox(link_name, (2 * r, 2 * r, length), xyz, rpy, box_name)
                 )
     return boxes
 
@@ -156,6 +161,11 @@ class AssetMetadata:
     physical size.
     """
     source: str = "builtin"
+    role: str = "object"
+    """Asset role: ``"object"`` (robot-manipulated, dynamic, grasp-planned) or
+    ``"fixture"`` (static environment prop, loaded with a fixed base, not
+    grasp-planned). Orthogonal to geometry (mesh vs primitive). Articulated
+    assets are fixtures regardless of this field (see ``Asset.is_fixture``)."""
     description: str = ""
     stable_poses: list[dict] = field(default_factory=list)
     """Pre-computed stable resting poses on a flat surface.
@@ -192,18 +202,33 @@ class AssetMetadata:
     """Articulated assets only: graspable parts for open/close, each
     ``{"name": str, "link": str}``. Empty for rigid assets."""
     place_targets: list[dict] = field(default_factory=list)
-    """Articulated assets only: where a ``place`` drops into the asset's opening,
-    derived from asset geometry (no per-scene magic numbers). Each entry::
+    """Named placement affordances on **any** asset (fixtures included, not just
+    articulated): where a ``place`` drops into/onto the asset, derived from asset
+    geometry (no per-scene magic numbers). Two shapes:
+
+    - **Joint opening** (articulated, e.g. a drawer tray)::
 
         {"name": "drawer_opening", "joint": "drawer_slide",
          "lip_local": [x, y, z], "tray_floor_z": z, "travel_fraction": 0.5}
 
-    ``lip_local`` is the front opening edge in the asset (URDF) frame at tray-floor
-    height (scaled by ``metric_scale`` at resolve time); ``tray_floor_z`` the cavity
-    floor top in that frame. The live drop point is
-    ``lip + open_dir * (live_slide * travel_fraction)`` — the midpoint of the
-    currently-exposed opening — so it tracks the real opening as the part moves
-    (recoils) instead of riding a fixed point that retracts under the carcass."""
+      ``lip_local`` is the front opening edge in the asset (URDF) frame at tray-floor
+      height; ``tray_floor_z`` the cavity floor top. Live drop point =
+      ``lip + open_dir * (live_slide * travel_fraction)`` — the exposed-opening
+      midpoint — so it tracks the part as it recoils. (kind ``articulated_opening``.)
+
+    - **Static surface** (e.g. a fixture shelf)::
+
+        {"name": "shelf_lower", "surface_local": [x, y, z],
+         "extent_xy": [dx, dy], "approach": [ax, ay, az]}
+
+      ``surface_local`` is the support-surface point in the asset frame; the drop
+      point = ``parent_pose ∘ surface_local`` (tracks pose incl. yaw, no joint).
+      (kind ``placement``.)
+
+    All offsets are in the asset frame and scaled by ``metric_scale`` at resolve
+    time. Optional ``approach`` (unit insert direction in the asset frame, default
+    top-down ``-Z``) is rotated to world by ``resolve_approach`` — e.g. ``[-1,0,0]``
+    for a shelf whose open side faces local ``+X`` (side tuck-under)."""
     joint_init: dict = field(default_factory=dict)
     """Articulated assets only: default initial joint state ``{joint: qpos}``
     applied on reset (e.g. ``{"drawer_slide": 0.0}`` = closed). Empty for rigid."""
@@ -234,6 +259,18 @@ class Asset:
     def is_articulated(self) -> bool:
         """True when the URDF declares at least one movable joint."""
         return any(j.is_movable for j in self.joints)
+
+    @property
+    def uses_mesh_geometry(self) -> bool:
+        """True when the asset carries visual/collision mesh files (mesh-based
+        geometry the mesh audit applies to). Primitive-only URDFs have neither."""
+        return self.visual_mesh is not None or self.collision_mesh is not None
+
+    @property
+    def is_fixture(self) -> bool:
+        """True for static environment props: loaded with a fixed base and never
+        grasp-planned. Articulated assets are always fixtures (anchored base)."""
+        return self.metadata.role == "fixture" or self.is_articulated
 
     @property
     def movable_joints(self) -> list[UrdfJoint]:

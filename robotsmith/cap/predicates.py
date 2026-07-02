@@ -33,6 +33,7 @@ def object_in_container(
     *,
     xy_threshold: float = 0.05,
     z_margin: float = 0.0,
+    z_tol: float | None = None,
 ) -> TaskSuccessCfg:
     """Define object-in-container or object-at-target success.
 
@@ -41,6 +42,10 @@ def object_in_container(
 
     The container argument may reference a physical object or a
     TargetPositionSpec name materialized by the legacy adapter.
+
+    For target markers whose Z distinguishes the goal (e.g. stacked shelves
+    sharing XY), pass ``z_tol`` to enforce a two-sided band around the marker's
+    resolved world height. ``z_tol=None`` keeps the legacy XY-only check.
     """
 
     return TaskSuccessCfg(
@@ -50,6 +55,7 @@ def object_in_container(
             "container": container,
             "xy_threshold": xy_threshold,
             "z_margin": z_margin,
+            "z_tol": z_tol,
         },
         refs=(object, container),
     )

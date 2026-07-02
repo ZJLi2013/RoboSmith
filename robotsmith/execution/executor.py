@@ -248,6 +248,7 @@ class MotionExecutor:
         *,
         world: list[dict] | None = None,
         phase: str = "all",
+        insert_strategy: str = "cartesian",
     ) -> list[np.ndarray]:
         """transport → pre_place → place (open fingers) → retreat.
 
@@ -256,15 +257,17 @@ class MotionExecutor:
         finger_open on release.
 
         Same free/contact split as ``drag_handle``: only the inbound free-space
-        ``transport`` segment (to a point straight above the place target) routes
-        through collision-free ``plan_motion`` when a ``world`` is set. ``descend``
-        (straight down into the slot) and ``retreat``
-        (straight up out of it) are Cartesian straight lines — ``pre_grasp_pos``,
-        ``grasp_pos`` and ``retreat_pos`` share the same x/y so these are pure
-        vertical moves. A joint-space plan would curve the wrist sideways into
-        the drawer wall on the way in/out (it pushed the open drawer back out and
-        left the gripper tilted); a vertical Cartesian path applies no horizontal
-        force and lands the gripper upright for the next skill.
+        ``transport`` segment (to the standoff = one clearance back along the
+        approach axis from the drop point) routes through collision-free
+        ``plan_motion`` when a ``world`` is set. ``descend`` (insert standoff→drop)
+        and ``retreat`` (drop→standoff) are Cartesian straight lines **along the
+        approach axis** — the geometry is baked into ``pre_grasp_pos`` /
+        ``grasp_pos`` / ``retreat_pos`` by ``plan_place``. For a top-down place
+        (``approach=-Z``) the standoff is straight above and these are pure vertical
+        moves (drawer / tabletop, unchanged); for a side tuck-under the same
+        Cartesian segments run horizontally along the approach axis. A Cartesian
+        insert keeps the contact move predictable (no planner detour grazing the
+        slot) and lands the gripper at the authored release pose for the next skill.
 
         ``phase`` selects which execution slice to plan, so the runtime can step
         ``transport`` into the sim, re-sense the (possibly recoiled) place anchor,
@@ -286,13 +289,20 @@ class MotionExecutor:
             label="transport",
             steps=params.transport_steps,
         )
+        # Insert/extract motion mode. "cartesian" (default, drawer/tabletop): a
+        # straight line — predictable, no planner detour near the slot. "planned":
+        # route descend/retreat through plan_motion (cartesian=False + world) so a
+        # rigid-fixture side-insert weaves under the upper shelf without the
+        # near-singular wrist flip a forced straight line produces. release stays
+        # finger-only. See docs/features/place_insertion_strategy.md.
+        insert_cartesian = insert_strategy != "planned"
         descend_wps = [
             RuntimeMotionWaypoint(
                 pos=place_plan.grasp_pos,
                 quat=place_plan.grasp_quat,
                 finger_width=place_plan.finger_closed,
                 label="descend",
-                cartesian=True,
+                cartesian=insert_cartesian,
                 steps=params.place_descend_steps,
             ),
             RuntimeMotionWaypoint(
@@ -309,7 +319,7 @@ class MotionExecutor:
                 quat=place_plan.retreat_quat,
                 finger_width=place_plan.finger_open,
                 label="retreat",
-                cartesian=True,
+                cartesian=insert_cartesian,
                 steps=params.retreat_steps,
             ),
         ]
@@ -324,10 +334,10 @@ class MotionExecutor:
             params,
             raise_on_cartesian_discontinuity=False,
             world=world,
-            # Carry the grasped payload (ACO) so the transport plan keeps the held
-            # object clear of the drawer, not just the arm. Only the free-space
-            # transport routes through plan_motion (descend/retreat are Cartesian),
-            # and transport happens before release, so this is the carrying phase.
+            # Carry the grasped payload (ACO) so any plan_motion segment before
+            # release keeps the held object clear of the fixture, not just the arm:
+            # the free-space transport always, plus descend when insert_strategy is
+            # "planned". release and everything after it run finger/post-release.
             attach=self.held_attach,
         )
         self.last_motion_trace = execution_trace("place", result)

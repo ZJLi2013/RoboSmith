@@ -41,17 +41,20 @@ def resolve_frame(frame, scene_state: dict, *, slide_override: float | None = No
       and carried along the task joint by its live travel. ``slide_override``
       lets the open/close drag pass the travel it already read (with its nominal
       endpoint fallback); otherwise the live ``joint_positions`` reading is used.
+    - ``kind="placement"``: a named static placement affordance (``place_targets``
+      entry with ``surface_local``) on any asset — parent pose ∘ surface_local, no
+      joint. The jointless counterpart to ``articulated_opening``.
     """
     kind = getattr(frame, "kind", "world")
     if kind == "world":
         return np.asarray(frame.xyz, dtype=np.float64)
-    if kind not in ("articulated", "articulated_opening"):
+    if kind not in ("articulated", "articulated_opening", "placement"):
         raise ValueError(f"unknown frame anchor kind {kind!r}")
 
     parent = frame.parent
     asset = scene_state.get("assets", {}).get(parent)
     if asset is None:
-        raise ValueError(f"frame anchor {parent!r} is not an articulated asset")
+        raise ValueError(f"frame anchor parent {parent!r} not found in scene assets")
     parent_pos = np.asarray(scene_state["positions"][parent], dtype=np.float64)
     quat = scene_state.get("object_quats", {}).get(parent, [1.0, 0.0, 0.0, 0.0])
     scale = float(scene_state.get("object_scales", {}).get(parent, 1.0))
@@ -65,6 +68,13 @@ def resolve_frame(frame, scene_state: dict, *, slide_override: float | None = No
         local[2] = float(spec.get("tray_floor_z", spec["lip_local"][2])) * scale
         joint_name = spec.get("joint")
         travel_fraction = float(spec.get("travel_fraction", 0.5))
+    elif kind == "placement":
+        # Static placement surface (e.g. a fixture shelf): parent pose ∘ surface_local,
+        # no joint travel. Geometry from the asset's place_targets metadata.
+        spec = _place_target_spec(asset, frame.opening)
+        local = np.asarray(spec["surface_local"], dtype=np.float64) * scale
+        joint_name = None
+        travel_fraction = 1.0
     else:
         local = np.asarray(frame.local_offset, dtype=np.float64) * scale
         joint_name = frame.joint
@@ -89,8 +99,46 @@ def resolve_frame(frame, scene_state: dict, *, slide_override: float | None = No
     return world
 
 
+_DEFAULT_APPROACH = np.array([0.0, 0.0, -1.0])
+
+
+def resolve_approach(frame, scene_state: dict) -> np.ndarray:
+    """World-space placement INSERT direction (unit) for a frame.
+
+    Mirrors grasp's per-grasp approach: the EE moves along ``+approach`` from the
+    standoff to the drop point (default top-down ``-Z``, = grasp frame Z). Sibling
+    of ``resolve_frame`` (which stays position-only, so existing callers are
+    unchanged). Asset-anchored approaches are declared in the asset frame — on the
+    ``FrameRef`` or on the ``place_targets`` entry — and rotated to world by the
+    asset's live quat, so a yawed shelf's side-entry direction tracks the asset;
+    ``world`` frames use their declared approach as-is. Never raises (defaults).
+    """
+    kind = getattr(frame, "kind", "world")
+    local = getattr(frame, "approach", None)
+    if local is None and kind in ("articulated_opening", "placement"):
+        asset = scene_state.get("assets", {}).get(getattr(frame, "parent", None))
+        if asset is not None:
+            try:
+                local = _place_target_spec(asset, frame.opening).get("approach")
+            except ValueError:
+                local = None
+    if local is None:
+        if kind == "world":
+            return _DEFAULT_APPROACH.copy()
+        local = _DEFAULT_APPROACH
+    vec = np.asarray(local, dtype=np.float64)
+    if kind != "world":
+        parent = getattr(frame, "parent", None)
+        quat = scene_state.get("object_quats", {}).get(parent, [1.0, 0.0, 0.0, 0.0])
+        vec = rotate_vec_wxyz(quat, vec)
+    norm = float(np.linalg.norm(vec))
+    if norm < 1e-9:
+        return _DEFAULT_APPROACH.copy()
+    return vec / norm
+
+
 def _place_target_spec(asset, name: str | None) -> dict:
-    """Look up a named ``place_targets`` opening in the asset metadata."""
+    """Look up a named ``place_targets`` entry (opening / surface) in metadata."""
     targets = list(getattr(asset.metadata, "place_targets", []) or [])
     if not targets:
         raise ValueError(f"asset {asset.name!r} has no place_targets metadata")

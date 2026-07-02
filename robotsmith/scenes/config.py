@@ -34,6 +34,9 @@ class ObjectPlacement:
     joint_init: Optional[dict] = None
     """Articulated assets only: per-scenario initial joint state {joint: qpos}
     overriding the asset metadata default on reset. None = use asset default."""
+    yaw_deg: float = 0.0
+    """Rotation (degrees) about world +Z applied on top of the asset upright
+    pose. Positive = CCW seen from above, negative = clockwise. 0 = upright."""
 
 
 @dataclass

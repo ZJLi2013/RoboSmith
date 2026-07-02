@@ -45,7 +45,7 @@ except (ValueError, ImportError, AttributeError):
     _HAS_FCL = False
 
 from robotsmith.assets.library import AssetLibrary
-from robotsmith.assets.audit import SUPPORT_ASSETS, audit_and_update
+from robotsmith.assets.audit import audit_and_update
 from robotsmith.assets.schema import Asset
 from robotsmith.scenes.config import SceneConfig, ObjectPlacement
 from robotsmith.scenes.pose_utils import task_pose_quat, task_pose_verified
@@ -215,13 +215,10 @@ class ProgrammaticSceneBackend:
                 continue
 
             for i in range(obj_spec.count):
-                # Articulated assets carry their geometry inline in the URDF
-                # (primitive links / mesh refs), so the visual/collision mesh
-                # audit and the upright-pose gate below do not apply to them.
-                bypass_mesh_gates = (
-                    asset.name in SUPPORT_ASSETS or asset.is_articulated
-                )
-                if not bypass_mesh_gates:
+                # The mesh audit only applies to mesh-based geometry; primitive
+                # URDFs (fixtures, builtin primitives) carry geometry inline and
+                # have no mesh to audit.
+                if asset.uses_mesh_geometry:
                     if not asset.metadata.mesh:
                         audit = audit_and_update(asset)
                         mesh_issues = audit["mesh"]["issues"]
@@ -242,8 +239,10 @@ class ProgrammaticSceneBackend:
                         scale,
                     )
                     continue
+                # Fixtures carry an authored upright pose + fixed base; only
+                # grasp-targeted objects go through the 24-candidate upright QA.
                 if (
-                    not bypass_mesh_gates
+                    not asset.is_fixture
                     and asset.metadata.source != "builtin_primitive"
                     and not task_pose_verified(asset, "upright")
                 ):
@@ -264,6 +263,18 @@ class ProgrammaticSceneBackend:
 
                 z_offset = base_z
                 euler = _quat_to_euler(quat)
+
+                # Optional per-scenario yaw about world +Z, composed on top of the
+                # asset upright pose (e.g. face a shelf fixture's open side toward
+                # the arm). Yaw about Z preserves the Z extent, so base_z stays
+                # valid. quat stays [w,x,y,z] (genesis/metadata convention).
+                yaw_deg = float(getattr(obj_spec, "yaw_deg", 0.0) or 0.0)
+                if yaw_deg:
+                    yaw_quat = tf.quaternion_about_axis(
+                        math.radians(yaw_deg), (0.0, 0.0, 1.0)
+                    )
+                    quat = list(tf.quaternion_multiply(yaw_quat, quat))
+                    euler = _quat_to_euler(quat)
 
                 logical_name = obj_spec.name_override or f"{asset.name}_{i}"
 

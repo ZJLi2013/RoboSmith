@@ -89,10 +89,11 @@ GRASP_STRATEGIES = {"learned", "none"}
 def resolve_grasp_strategy(asset, *, default: str = "learned") -> str:
     """Resolve the grasp strategy for one asset.
 
-    Articulated assets always resolve to ``"none"``; otherwise an explicit
+    Fixtures (static props and articulated furniture) always resolve to
+    ``"none"`` — they are never grasp-planned. Otherwise an explicit
     ``metadata.grasp_strategy`` override wins, falling back to ``default``.
     """
-    if getattr(asset, "is_articulated", False):
+    if getattr(asset, "is_fixture", False):
         return "none"
     override = getattr(getattr(asset, "metadata", None), "grasp_strategy", None)
     if override:

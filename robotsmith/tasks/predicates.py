@@ -91,12 +91,19 @@ def object_in_container(
     container: str,
     xy_threshold: float = 0.05,
     z_margin: float = 0.0,
+    z_tol: float | None = None,
 ) -> bool:
     """True if object is inside a physical container or at a target marker.
 
-    Physical containers live in ``object_positions`` and keep the legacy Z
-    check. Non-physical target markers live in ``target_positions`` and only
-    constrain XY; their Z is a placement/reference hint, not a container bottom.
+    Physical containers live in ``object_positions`` and keep the single-sided
+    Z check (``z >= bottom + z_margin``: getting in is enough).
+
+    Non-physical target markers live in ``target_positions``. Their Z is the
+    *resolved world height* the object should rest at (e.g. a specific shelf),
+    not a container bottom. When ``z_tol`` is given, the marker Z is enforced as
+    a two-sided band ``abs(obj_z - target_z) <= z_tol`` so XY-coincident but
+    Z-distinct targets (stacked shelves) are distinguishable. ``z_tol=None``
+    keeps the legacy XY-only behaviour for callers that have not opted in.
     """
     obj_pos = env_state["object_positions"][object]
     target_positions = env_state.get("target_positions", {})
@@ -107,8 +114,11 @@ def object_in_container(
         else env_state["object_positions"][container]
     )
     xy_dist = np.linalg.norm(obj_pos[:2] - cont_pos[:2])
-    above = True if is_target_marker else obj_pos[2] >= cont_pos[2] + z_margin
-    return float(xy_dist) < xy_threshold and above
+    if is_target_marker:
+        at_z = True if z_tol is None else abs(float(obj_pos[2] - cont_pos[2])) <= z_tol
+    else:
+        at_z = obj_pos[2] >= cont_pos[2] + z_margin
+    return float(xy_dist) < xy_threshold and at_z
 
 
 @register_predicate("joint_opened")

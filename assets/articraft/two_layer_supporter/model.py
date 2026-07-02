@@ -4,11 +4,20 @@ Authored from images/2-layer-supporter.png (RoboSmith articraft bring-up).
 Geometry in meters; +X is the open/front direction (hole faces and shelf access),
 +Z is up, origin at the footprint center on the floor.
 
-Two vertical posts (220 mm apart, 190 mm tall, 60 mm deep) bolt to the floor via
+Two vertical posts (220 mm apart, 310 mm tall, 140 mm deep) bolt to the floor via
 foot plates carrying 4x Oe6.5 mounting holes. The posts are bridged by a tall rear
-plate and two horizontal shelves (a "two-layer" rack): the lower shelf ~70 mm up,
-the upper shelf ~100 mm above it. Everything is one rigid weldment, so the URDF is
+plate and two horizontal shelves (a "two-layer" rack): the lower shelf ~50 mm up,
+the upper shelf ~250 mm above it. Everything is one rigid weldment, so the URDF is
 a single link with no articulation.
+
+Dimensions are authored at TRUE metric scale (metric_scale = 1.0); no scenario
+scaling is needed. They are sized for a Franka tabletop pick-and-place of a ~80 mm
+object: shelves are 140 mm deep (object sits with clearance and fingers reach in),
+the inter-shelf gap is 250 mm (room for a top-down gripper to enter the gap from
+the open side instead of a near-singular horizontal tuck — see docs/refactor.md R6).
+The gap was widened by LOWERING the bottom shelf (100 -> 50 mm), keeping the upper
+shelf at 300 mm so the pick height (object on the upper shelf, ~1.08 m world on a
+0.775 m table) is unchanged from the verified-working pick.
 """
 
 from sdk import (
@@ -22,32 +31,32 @@ from sdk import (
 
 # --- footprint / posts ------------------------------------------------------
 WIDTH = 0.22          # Y, outer span between the two posts
-DEPTH = 0.06          # X, post depth (drawing: 60 mm; inner cavity 40 mm)
+DEPTH = 0.14          # X, post depth (matches shelf depth so shelves don't overhang)
 POST_Y = 0.025        # Y, post thickness
-POST_H = 0.178        # Z, post height above the foot plate
+POST_H = 0.31         # Z, post height above the foot plate (clears the upper shelf)
 HALF_W = WIDTH / 2.0 - POST_Y / 2.0   # 0.0975, post center offset in Y
 
 FOOT_H = 0.012        # foot plate thickness
-FOOT_X = 0.10         # foot plate length in X (overhangs front/back for holes)
+FOOT_X = 0.16         # foot plate length in X (overhangs front/back for holes)
 FOOT_Y = 0.03         # foot plate width in Y
 
 POST_Z0 = FOOT_H                       # 0.012, post sits on top of the foot
-POST_ZC = POST_Z0 + POST_H / 2.0       # 0.101
-POST_Z1 = POST_Z0 + POST_H             # 0.190 (overall post height per drawing)
+POST_ZC = POST_Z0 + POST_H / 2.0       # 0.167
+POST_Z1 = POST_Z0 + POST_H             # 0.322 (overall post height)
 
 # --- shelves (the two layers) ----------------------------------------------
-SHELF_X = 0.05        # shelf depth (X)
+SHELF_X = 0.14        # shelf depth (X) — fits an ~80 mm object + finger reach-in
 SHELF_Y = WIDTH - 2.0 * POST_Y         # 0.17, spans between post inner faces
 SHELF_T = 0.008       # shelf thickness (Z)
-SHELF_LOWER_Z = 0.07  # lower shelf center height (~60 mm clearance to floor)
-SHELF_UPPER_Z = 0.17  # upper shelf center height (~100 mm above lower shelf)
+SHELF_LOWER_Z = 0.05  # lower shelf center height (lowered to widen the gap; ~46 mm to floor)
+SHELF_UPPER_Z = 0.30  # upper shelf center height (250 mm gap above the lowered shelf)
 
 # --- rear plate -------------------------------------------------------------
 BACK_T = 0.008        # rear plate thickness (X)
 BACK_Y = SHELF_Y      # 0.17
-BACK_H = 0.13         # rear plate height
-BACK_XC = -DEPTH / 2.0 + BACK_T / 2.0  # -0.026, flush with post rear face
-BACK_ZC = 0.165       # spans 0.10..0.23, rises above the posts
+BACK_H = 0.28         # rear plate height
+BACK_XC = -DEPTH / 2.0 + BACK_T / 2.0  # -0.066, flush with post rear face
+BACK_ZC = 0.19        # spans 0.05..0.33, rises above the posts
 
 # 4x Oe6.5 mm floor-mounting holes, two per foot (front/back), documented in
 # metadata; not subtracted from the primitive geometry (cosmetic for sim).

@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import select
 import subprocess
 import threading
 from typing import Sequence
@@ -44,12 +45,19 @@ class RocRoboServeClient:
         container: str | None = None,
         *,
         serve_argv: Sequence[str] | None = None,
-        timeout_s: float = 120.0,
+        timeout_s: float | None = None,
     ) -> None:
         self._container = container or os.environ.get(
             "ROCROBO_CONTAINER", "rocrobo_dev"
         )
         self._serve_argv = list(serve_argv) if serve_argv else None
+        # Per-request wall-clock budget. The first request after a cold JAX
+        # compilation cache can legitimately take minutes (XLA compile, GPU idle
+        # / CPU-bound); once the on-disk cache is warm every shape is a fast cache
+        # load, so this is a *stuck-serve* guard, not a latency target. Generous by
+        # default; override with ROCROBO_REQUEST_TIMEOUT_S.
+        if timeout_s is None:
+            timeout_s = float(os.environ.get("ROCROBO_REQUEST_TIMEOUT_S", "300"))
         self._timeout_s = timeout_s
         self._proc: subprocess.Popen | None = None
         self._lock = threading.Lock()
@@ -58,14 +66,21 @@ class RocRoboServeClient:
     def _argv(self) -> list[str]:
         if self._serve_argv is not None:
             return self._serve_argv
-        # rocRobo (RocRobSim repo) is mounted at /rocrobsim; the package lives under
-        # /rocrobsim/rocRobo/core and resolves its sphere assets via ROCROBO_ASSETS
-        # (NOT CWD). Keep CWD at /rocrobsim top level — do NOT cd into
-        # /rocrobsim/pyroki/examples, which holds a stray ``rocrobo.py`` shim that
+        # rocRobo is mounted at /rocrobo; the package lives under
+        # /rocrobo/rocRobo/core and resolves its sphere assets via ROCROBO_ASSETS
+        # (NOT CWD). Keep CWD at /rocrobo top level — do NOT cd into
+        # /rocrobo/pyroki/examples, which holds a stray ``rocrobo.py`` shim that
         # shadows the package under ``python -m`` and breaks ``rocrobo.serve``.
-        workdir = os.environ.get("ROCROBO_WORKDIR", "/rocrobsim")
-        pythonpath = os.environ.get("ROCROBO_PYTHONPATH", "/rocrobsim/rocRobo/core")
-        assets = os.environ.get("ROCROBO_ASSETS", "/rocrobsim/pyroki/examples/assets")
+        workdir = os.environ.get("ROCROBO_WORKDIR", "/rocrobo")
+        pythonpath = os.environ.get("ROCROBO_PYTHONPATH", "/rocrobo/rocRobo/core")
+        assets = os.environ.get("ROCROBO_ASSETS", "/rocrobo/pyroki/examples/assets")
+        # Persist XLA compiled executables to disk so the multi-minute first-call
+        # JIT is paid ONCE *ever* (not once per fresh serve / per run): the warm
+        # serve only amortises within a single process, but each scenario run spawns
+        # a new serve, so without this every run recompiles from scratch. The cache
+        # dir lives on the /rocrobo bind mount, so it survives container restarts.
+        # MIN_*=0 caches even quick/small compiles (avoids partial warm caches).
+        cache_dir = os.environ.get("ROCROBO_JAX_CACHE", f"{workdir}/.jax_cache")
         return [
             "docker",
             "exec",
@@ -76,6 +91,12 @@ class RocRoboServeClient:
             f"PYTHONPATH={pythonpath}",
             "-e",
             f"ROCROBO_ASSETS={assets}",
+            "-e",
+            f"JAX_COMPILATION_CACHE_DIR={cache_dir}",
+            "-e",
+            "JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS=0",
+            "-e",
+            "JAX_PERSISTENT_CACHE_MIN_ENTRY_SIZE_BYTES=0",
             self._container,
             "python",
             "-u",
@@ -98,8 +119,25 @@ class RocRoboServeClient:
             bufsize=1,
         )
 
+    def _kill(self) -> None:
+        if self._proc is not None:
+            try:
+                self._proc.kill()
+            except Exception:  # noqa: BLE001 - best-effort teardown
+                pass
+            self._proc = None
+
     def request(self, payload: dict) -> dict:
-        """Send one JSON request line, return the parsed JSON response line."""
+        """Send one JSON request line, return the parsed JSON response line.
+
+        Bounded by ``self._timeout_s``: a serve that does not answer within the
+        budget is treated as stuck — we tear it down and mark the client
+        unavailable so the caller degrades to the Genesis fallback instead of
+        blocking the whole rollout forever (the readline below is an unbounded
+        blocking read otherwise). The serve is single-request/response over JSONL,
+        so we cannot safely reuse a process whose in-flight response we abandoned;
+        ``available=False`` keeps the rest of the run on the fallback path.
+        """
         if not self.available:
             raise RuntimeError("rocrobo serve marked unavailable")
         with self._lock:
@@ -108,12 +146,29 @@ class RocRoboServeClient:
             try:
                 self._proc.stdin.write(json.dumps(payload) + "\n")
                 self._proc.stdin.flush()
+            except (BrokenPipeError, OSError) as exc:
+                self.available = False
+                self._kill()
+                raise RuntimeError(f"rocrobo serve io error: {exc}") from exc
+            ready, _, _ = select.select(
+                [self._proc.stdout], [], [], self._timeout_s
+            )
+            if not ready:
+                self.available = False
+                self._kill()
+                raise RuntimeError(
+                    f"rocrobo serve timeout after {self._timeout_s:.0f}s "
+                    f"(op={payload.get('op')})"
+                )
+            try:
                 line = self._proc.stdout.readline()
             except (BrokenPipeError, OSError) as exc:
                 self.available = False
+                self._kill()
                 raise RuntimeError(f"rocrobo serve io error: {exc}") from exc
             if not line:
                 self.available = False
+                self._kill()
                 raise RuntimeError("rocrobo serve closed (empty response)")
             return json.loads(line)
 

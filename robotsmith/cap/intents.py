@@ -49,13 +49,14 @@ def place(
 ) -> SkillIntentSpec:
     """Create a place intent over an object or target position.
 
-    Release height defaults to the held object's selected grasp at runtime.
-    Pass ``place_z`` (height above the table) to drop into a raised container
-    such as an open drawer tray, where the tabletop pick height is too low.
+    The drop point is the target's resolved world xyz lifted by the held
+    object's grasp-relative offset (captured at pick), so the object bottom
+    lands on the target surface — no hand-authored height needed. ``place_z`` is
+    an optional override of that offset for edge cases; prefer leaving it unset
+    and letting the resolved marker world z drive the drop (feature12 §5 W2).
 
     Example:
         place("goal", category="fruit")
-        place("drawer_open_slot", place_z=0.12)
     """
 
     params: dict[str, Any] = {}

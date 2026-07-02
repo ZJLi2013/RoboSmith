@@ -74,15 +74,21 @@ def run_scenario_episode(
     """
     target_frames = target_frames or {}
 
-    # Reset free bodies to their resolved tabletop XY and settle; articulated
-    # assets stay anchored at their built pose (targets are not entities).
+    # Reset free bodies to their resolved world pose (full xyz, not just XY) and
+    # settle. The resolver is the single source of truth for the spawn z (shelf /
+    # in-drawer starts keep their height); the sim must not recompute it from the
+    # table surface. Articulated assets stay anchored at their built pose, and
+    # fixtures (fixed-base weldments like a shelf) are anchored at load time and
+    # must not be re-set. See docs/design.md §5.1 and docs/features/feature12_pick_place_into_drawer.md §5.
     articulated = set(getattr(env, "articulated_joint_dofs", {}) or {})
-    obj_xy_map = {
-        name: (float(pos[0]), float(pos[1]))
+    obj_xyz_map = {
+        name: (float(pos[0]), float(pos[1]), float(pos[2]))
         for name, pos in _resolved_entity_positions(env).items()
-        if name in env.entity_map and name not in articulated
+        if name in env.entity_map
+        and name not in articulated
+        and not _is_fixture(env, name)
     }
-    env.reset(obj_xy_map, settle_steps=settle_steps)
+    env.reset(obj_xyz_map, settle_steps=settle_steps)
 
     initial_positions = collect_object_positions(env)
     skill_traces: list[dict] = []
@@ -155,11 +161,44 @@ def collect_object_positions(env) -> dict[str, np.ndarray]:
     }
 
 
+# Frame kinds that resolve to a *fixed* world marker (no joint travel), so they
+# are valid static success/diagnostic targets. Articulated / opening anchors move
+# with a joint and are deliberately excluded (their tasks assert success via joint
+# predicates or a physical container, not a frozen marker).
+_STATIC_TARGET_FRAME_KINDS = ("world", "placement")
+
+
+def resolve_static_target_positions(env, target_frames: dict | None) -> dict[str, np.ndarray]:
+    """World xyz of statically-anchored targets, resolved against the live world.
+
+    Uses the same frame seam (``resolve_frame``) the motion layer uses, so a
+    placement affordance on a fixture (e.g. a shelf surface, possibly yawed)
+    becomes the exact world point the place aimed at. Lets success/diagnostics
+    treat asset-anchored static targets as markers — the gap that left
+    ``on_placement`` targets out of ``target_positions`` (KeyError at eval).
+    """
+    if not target_frames:
+        return {}
+    scene_state = _live_scene_state(env, target_frames, [])
+    return {
+        name: np.asarray(scene_state["positions"][name], dtype=np.float32)
+        for name, frame in target_frames.items()
+        if getattr(frame, "kind", "world") in _STATIC_TARGET_FRAME_KINDS
+    }
+
+
 def _resolved_entity_positions(env) -> dict[str, np.ndarray]:
     positions: dict[str, np.ndarray] = {}
     for name, placed in env.placed_map.items():
         positions[name] = np.asarray(placed.position, dtype=np.float32)
     return positions
+
+
+def _is_fixture(env, name: str) -> bool:
+    """True if the named entity is a fixed-base fixture (anchored at load time)."""
+    placed = env.placed_map.get(name)
+    asset = getattr(placed, "asset", None)
+    return bool(getattr(asset, "is_fixture", False))
 
 
 def _live_scene_state(

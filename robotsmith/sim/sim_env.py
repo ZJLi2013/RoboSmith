@@ -54,24 +54,6 @@ def ensure_display():
         logger.debug("[display] Xvfb started (PID=%s)", proc.pid)
 
 
-def _env_vec3(name: str, default: tuple[float, float, float]) -> tuple[float, float, float]:
-    raw = os.environ.get(name)
-    if not raw:
-        return default
-    try:
-        values = tuple(float(part.strip()) for part in raw.split(","))
-    except ValueError as exc:
-        raise ValueError(f"{name} must be comma-separated floats") from exc
-    if len(values) != 3:
-        raise ValueError(f"{name} must have exactly three comma-separated floats")
-    return values
-
-
-def _env_float(name: str, default: float) -> float:
-    raw = os.environ.get(name)
-    return default if raw is None else float(raw)
-
-
 def render_cam(cam) -> np.ndarray:
     """Render an RGB image from a Genesis camera."""
     rgb, _, _, _ = cam.render(rgb=True, depth=False,
@@ -175,15 +157,13 @@ class SimEnv:
             object_quats[name] = np.array(po.quaternion, dtype=np.float32)
         object_scales = {po.name: po.metric_scale for po in handle.placed}
 
-        # Cameras
-        cam_up_pos = _env_vec3("ROBOTSMITH_CAM_UP_POS", (0.55, 0.55, table_z + 0.55))
-        cam_up_lookat = _env_vec3("ROBOTSMITH_CAM_UP_LOOKAT", (0.55, 0.0, table_z + 0.10))
-        cam_up_fov = _env_float("ROBOTSMITH_CAM_UP_FOV", 45)
+        # Overview camera: single source of truth is the scenario's
+        # SceneConfig.camera_position / camera_target. No env overrides.
         cam_up = handle.scene.add_camera(
             res=(640, 480),
-            pos=cam_up_pos,
-            lookat=cam_up_lookat,
-            fov=cam_up_fov, GUI=False,
+            pos=tuple(scene_config.camera_position),
+            lookat=tuple(scene_config.camera_target),
+            fov=45, GUI=False,
         )
         cam_wrist = handle.scene.add_camera(
             res=(640, 480),
@@ -431,33 +411,44 @@ class SimEnv:
     # ---- Reset ----
 
     def get_initial_z(self, name: str) -> float:
-        """Spawn z for reset: table_surface + half_height + margin.
+        """Fallback spawn z when the caller omits it: table_surface + half_height + margin.
 
-        Places the object so its bottom just touches the table surface
-        (plus a small 2mm margin to avoid interpenetration).
-        ``object_heights`` is the quaternion-aware world-frame Z extent
-        computed by ``PlacedObject.object_height_m``.
+        Only used when ``reset`` receives a 2-tuple (no resolved z). Places the
+        object so its bottom just touches the table surface (plus a small 2mm
+        margin to avoid interpenetration). ``object_heights`` is the
+        quaternion-aware world-frame Z extent computed by
+        ``PlacedObject.object_height_m``. The primary path is the resolver's
+        world z carried through ``reset`` (docs/design.md §5.1); this assumes
+        "object spawns on the table", which is wrong for shelved/in-drawer
+        starts, so it must remain a fallback only.
         """
         h = self.object_heights.get(name, 0.04)
         return self.table_surface_z + h / 2.0 + 0.002
 
     def reset(
         self,
-        obj_positions: dict[str, tuple[float, float]],
+        obj_positions: dict[str, tuple[float, float] | tuple[float, float, float]],
         marker_xy: tuple[float, float] | None = None,
         target_marker=None,
         settle_steps: int = 30,
     ) -> dict[str, np.ndarray]:
-        """Reset robot home + reposition objects by name → (x, y)."""
+        """Reset robot home + reposition objects by name → (x, y[, z]).
+
+        ``z`` is the spawn height. When the caller supplies it (3-tuple), it is
+        the resolver's already-resolved world Z (single source of truth); the
+        sim must not recompute it. Only fall back to the table-relative
+        ``get_initial_z`` when z is omitted (2-tuple). See docs/design.md §5.1.
+        """
         self.franka.set_dofs_position(HOME_QPOS, self.motors_dof)
         self.franka.control_dofs_position(HOME_QPOS, self.motors_dof)
         self.franka.zero_all_dofs_velocity()
 
-        for name, (x, y) in obj_positions.items():
+        for name, pos in obj_positions.items():
             ent = self.entity_map.get(name)
             if ent is None:
                 continue
-            z = self.get_initial_z(name)
+            x, y = float(pos[0]), float(pos[1])
+            z = float(pos[2]) if len(pos) >= 3 else self.get_initial_z(name)
             ent.set_pos(
                 torch.tensor([x, y, z], dtype=torch.float32,
                              device=self._device).unsqueeze(0),

@@ -85,12 +85,15 @@ def _skipped_ik_metrics() -> dict:
     }
 
 
-def _support_band_metrics(plan: GraspPlan, table_z: float) -> dict:
+def _support_band_metrics(plan: GraspPlan, support_z: float) -> dict:
     """Reject grasps whose finger line enters the bottom no-entry band.
 
-    The support band is the thin bottom layer of an object sitting on the
-    table. A grasp whose finger line enters that band is asking for space
-    between the supported object bottom and the table, which does not exist.
+    ``support_z`` is the surface the object rests on (its own bottom = center −
+    half-height), NOT necessarily the global table — so this works for objects
+    on a shelf / inside a fixture as well as on the table. The support band is
+    the thin bottom layer just above that surface; a grasp whose finger line
+    enters it is asking for space between the object bottom and its support,
+    which does not exist.
     """
     band_m = float(os.environ.get("GRASP_EVAL_SUPPORT_BAND_M", "0.01"))
     # ``finger_open`` is full jaw opening; each finger pad is half of that
@@ -103,8 +106,8 @@ def _support_band_metrics(plan: GraspPlan, table_z: float) -> dict:
     axis_points = center[None, :] + ts[:, None] * finger_axis[None, :]
     z_min = float(axis_points[:, 2].min())
     z_max = float(axis_points[:, 2].max())
-    band_lo = float(table_z)
-    band_hi = float(table_z + band_m)
+    band_lo = float(support_z)
+    band_hi = float(support_z + band_m)
     finger_intersects = bool(z_min <= band_hi and z_max >= band_lo)
 
     rejected = finger_intersects
@@ -124,10 +127,10 @@ def _feasibility_score(
     solve_ik: Callable,
     init_qpos: np.ndarray,
     *,
-    table_z: float,
+    support_z: float,
 ) -> tuple[float, GraspPlan, dict]:
     """Apply P0 checks and rank passing candidates mostly by planner quality."""
-    support = _support_band_metrics(plan, table_z)
+    support = _support_band_metrics(plan, support_z)
     ik = (
         _ik_chain_metrics(plan, solve_ik, init_qpos)
         if support["ok"]
@@ -173,7 +176,7 @@ def evaluate_grasp_candidates(
     solve_ik: Callable,
     init_qpos: np.ndarray,
     *,
-    table_z: float = 0.0,
+    support_z: float = 0.0,
 ) -> GraspCandidateEvaluation:
     """Run P0 checks and bucket bookkeeping without choosing a final policy."""
     candidates: list[EvaluatedGraspCandidate] = []
@@ -184,7 +187,7 @@ def evaluate_grasp_candidates(
     n_support_ok = 0
 
     for plan in plans:
-        policy_bucket = assign_policy_bucket(plan, table_z)
+        policy_bucket = assign_policy_bucket(plan, support_z)
         bucket_candidate_counts[policy_bucket] = (
             bucket_candidate_counts.get(policy_bucket, 0) + 1
         )
@@ -192,7 +195,7 @@ def evaluate_grasp_candidates(
             plan,
             solve_ik,
             init_qpos,
-            table_z=table_z,
+            support_z=support_z,
         )
         if bool(diag.get("support", {}).get("ok", False)):
             n_support_ok += 1
@@ -289,7 +292,7 @@ def select_best_grasp_plan(
     solve_ik: Callable,
     init_qpos: np.ndarray,
     *,
-    table_z: float = 0.0,
+    support_z: float = 0.0,
     asset=None,
     object_quat: np.ndarray | None = None,
     object_scale: float = 1.0,
@@ -338,7 +341,7 @@ def select_best_grasp_plan(
         plans,
         solve_ik,
         init_qpos,
-        table_z=table_z,
+        support_z=support_z,
     )
     policy_selection = (
         select_from_bucket_policy(evaluation, bucket_priority)
