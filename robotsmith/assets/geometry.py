@@ -23,13 +23,14 @@ def sample_mesh_pointcloud(
     n_points: int,
     *,
     scale: float = 1.0,
+    seed: int | None = None,
 ) -> np.ndarray:
-    """Sample a scaled mesh surface into a float32 point cloud."""
+    """Sample a scaled mesh surface into a float32 point cloud; ``seed`` makes the draw reproducible."""
     import trimesh
 
     mesh = trimesh.load(str(mesh_path), force="mesh")
     mesh.apply_scale(float(scale))
-    points, _ = trimesh.sample.sample_surface(mesh, int(n_points))
+    points, _ = trimesh.sample.sample_surface(mesh, int(n_points), seed=seed)
     return np.asarray(points, dtype=np.float32)
 
 

@@ -161,6 +161,7 @@ class GraspGenModel:
                 logger.info("Using ROCm-converted checkpoint: %s", rocm_path)
 
         self._sampler = GraspGenSampler(cfg)
+        self._gripper_name = str(cfg.data.gripper_name)
         self._run_inference = GraspGenSampler.run_inference
         logger.info(
             "GraspGen model loaded (gripper: %s, backbone: %s)",
@@ -168,21 +169,54 @@ class GraspGenModel:
             cfg.diffusion.obs_backbone,
         )
 
+    def _gripper_info(self):
+        self._ensure_loaded()
+        from grasp_gen.robot import get_gripper_info
+
+        return get_gripper_info(self._gripper_name)
+
+    def gripper_collision_points(self, n_points: int = 2000) -> np.ndarray:
+        """Surface samples of the gripper collision mesh, in the grasp-pose frame.
+
+        No ``offset_transform`` is applied: GraspGen renders ``collision_mesh``
+        at ``transform=grasp``, so the mesh already sits in the grasp-pose frame.
+        Seeded and cached, since a resampled gripper changes which candidates
+        the support-clearance screen admits.
+        """
+        cached = getattr(self, "_gripper_points", None)
+        if cached is not None and len(cached) == n_points:
+            return cached
+
+        import trimesh
+
+        mesh = self._gripper_info().collision_mesh
+        points, _ = trimesh.sample.sample_surface(mesh, int(n_points), seed=0)
+        self._gripper_points = np.asarray(points, dtype=np.float32)
+        return self._gripper_points
+
     def predict(
         self,
         point_cloud: np.ndarray,
+        *,
+        seed: int | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Run GraspGen inference on a point cloud.
 
         Args:
             point_cloud: (N, 3) object point cloud, **already centered**
                          (mean-subtracted) as GraspGen expects.
+            seed: seeds torch so the diffusion draw is reproducible.
 
         Returns:
             grasp_poses: (M, 4, 4) SE3 homogeneous transforms.
             grasp_scores: (M,) confidence scores (higher = better).
         """
         self._ensure_loaded()
+
+        if seed is not None:
+            import torch
+
+            torch.manual_seed(int(seed))
 
         grasps, scores = self._run_inference(
             point_cloud,
@@ -212,6 +246,8 @@ class GraspGenModel:
         mesh_path: str | Path,
         scale: float = 1.0,
         num_sample_points: int = 2000,
+        *,
+        seed: int | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Load a mesh, sample points, run inference — follows GraspGen demo_object_mesh.py.
 
@@ -228,6 +264,7 @@ class GraspGenModel:
             scale: Scale factor applied to the mesh before sampling.
             num_sample_points: Number of surface points to sample (default
                 2000, matching GraspGen training).
+            seed: seeds both the surface sampling and the diffusion draw.
 
         Returns:
             grasp_poses: (M, 4, 4) SE3 in the original mesh frame.
@@ -239,12 +276,13 @@ class GraspGenModel:
             mesh_path,
             num_sample_points,
             scale=scale,
+            seed=seed,
         )
 
         T_center = tra.translation_matrix(-xyz.mean(axis=0))
         xyz_centered = tra.transform_points(xyz, T_center)
 
-        poses_centered, scores = self.predict(xyz_centered)
+        poses_centered, scores = self.predict(xyz_centered, seed=seed)
 
         if len(poses_centered) == 0:
             return poses_centered, scores
@@ -256,6 +294,8 @@ class GraspGenModel:
     def predict_from_points(
         self,
         points: np.ndarray,
+        *,
+        seed: int | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Run inference on an object-frame point cloud and return object-frame poses."""
         if points.ndim != 2 or points.shape[1] != 3:
@@ -270,7 +310,7 @@ class GraspGenModel:
         T_center = tra.translation_matrix(-xyz.mean(axis=0))
         xyz_centered = tra.transform_points(xyz, T_center)
 
-        poses_centered, scores = self.predict(xyz_centered)
+        poses_centered, scores = self.predict(xyz_centered, seed=seed)
         if len(poses_centered) == 0:
             return poses_centered, scores
 

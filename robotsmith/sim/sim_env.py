@@ -233,9 +233,13 @@ class SimEnv:
             max_az = float(os.environ.get("MAX_APPROACH_Z", "1.0"))
             top_k = int(os.environ.get("GRASP_TOP_K", "100"))
             fixed_ori = os.environ.get("GRASP_FIXED_ORI", "0") == "1"
+            # 0 disables the screen. Not GraspGenX's 0.02: that is calibrated against a
+            # sparse sampled scene cloud and over-rejects low top-down grasps on an exact plane.
+            clearance = float(os.environ.get("GRASP_SUPPORT_CLEARANCE_M", "0.01"))
             planner = LearnedGraspPlanner(
                 model, z_offset=table_z, max_approach_z=max_az,
                 fixed_orientation=fixed_ori, top_k=top_k,
+                support_clearance=clearance, seed=seed,
             )
             logger.debug("[grasp] using LearnedGraspPlanner")
         except Exception as exc:

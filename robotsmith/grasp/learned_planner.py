@@ -20,6 +20,7 @@ from typing import Any, Optional
 
 import numpy as np
 
+from robotsmith.grasp.collision_screen import support_clearance_mask
 from robotsmith.grasp.planner import GraspPlan, Waypoint
 from robotsmith.grasp.planner import GraspPlanner
 from robotsmith.grasp.transforms import (
@@ -78,6 +79,8 @@ class LearnedGraspPlanner(GraspPlanner):
         top_k: int = 100,
         max_approach_z: float = 1.0,
         fixed_orientation: bool = False,
+        support_clearance: float = 0.01,
+        seed: int | None = None,
     ):
         self._model = graspgen_model
         self._z_offset = z_offset
@@ -88,6 +91,19 @@ class LearnedGraspPlanner(GraspPlanner):
         self._top_k = top_k
         self._max_approach_z = max_approach_z
         self._fixed_orientation = fixed_orientation
+        self._support_clearance = support_clearance
+        self._seed = seed
+
+    def _clearance_mask(self, poses: np.ndarray, support_z: float) -> np.ndarray | None:
+        """Support-plane clearance mask, or None when the screen is off or has no gripper geometry."""
+        if self._support_clearance <= 0.0:
+            return None
+        points = getattr(self._model, "gripper_collision_points", None)
+        if points is None:
+            return None
+        return support_clearance_mask(
+            poses, points(), support_z=support_z, clearance=self._support_clearance,
+        )
 
     def _predict_grasps(
         self,
@@ -98,7 +114,7 @@ class LearnedGraspPlanner(GraspPlanner):
         scale: float,
     ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
         poses, scores = self._model.predict_from_mesh(
-            mesh_path, scale=scale, num_sample_points=self._n_points,
+            mesh_path, scale=scale, num_sample_points=self._n_points, seed=self._seed,
         )
         return poses, scores, {"input_mode": "mesh_full_surface"}
 
@@ -167,6 +183,11 @@ class LearnedGraspPlanner(GraspPlanner):
         else:
             support_z = self._z_offset
         min_z = support_z + self._min_z_margin
+        # Screened before the top-k cut so the cap counts only placeable poses.
+        clear = self._clearance_mask(world_poses, support_z)
+        n_clearance_reject = 0 if clear is None else int((~clear).sum())
+        input_stats = {**input_stats, "support_clearance_m": self._support_clearance,
+                       "clearance_reject": n_clearance_reject if clear is not None else None}
         n_z_reject = 0
         n_approach_reject = 0
         plans: list[GraspPlan] = []
@@ -183,6 +204,8 @@ class LearnedGraspPlanner(GraspPlanner):
         logger.debug("[learned] orientation mode: %s", mode)
 
         for i in range(len(world_poses)):
+            if clear is not None and not clear[i]:
+                continue
             pose = world_poses[i]
             grasp_pos = pose[:3, 3].astype(np.float64)
 
@@ -239,8 +262,8 @@ class LearnedGraspPlanner(GraspPlanner):
                 break
 
         logger.debug(
-            f"[learned] filter: {n_raw} total → z_reject={n_z_reject}, "
-            f"approach_reject={n_approach_reject}, accepted={len(plans)} "
+            f"[learned] filter: {n_raw} total → clearance_reject={n_clearance_reject}, "
+            f"z_reject={n_z_reject}, approach_reject={n_approach_reject}, accepted={len(plans)} "
             f"(mode={mode})"
         )
         if plans:
@@ -257,7 +280,8 @@ class LearnedGraspPlanner(GraspPlanner):
         else:
             logger.warning(
                 f"[learned] WARNING: no grasps passed filters "
-                f"(z_reject={n_z_reject}, approach_reject={n_approach_reject})"
+                f"(clearance_reject={n_clearance_reject}, z_reject={n_z_reject}, "
+                f"approach_reject={n_approach_reject})"
             )
         return plans
 

@@ -8,6 +8,7 @@ from robotsmith.grasp.feasibility import (
     select_best_grasp_plan,
     select_from_bucket_policy,
 )
+from robotsmith.grasp.collision_screen import support_clearance_mask
 from robotsmith.grasp.learned_planner import LearnedGraspPlanner
 from robotsmith.grasp.policy_onboarding import (
     POLICY_BUCKETS,
@@ -25,6 +26,7 @@ __all__ = [
     "select_best_grasp_plan",
     "select_from_bucket_policy",
     "LearnedGraspPlanner",
+    "support_clearance_mask",
     "POLICY_BUCKETS",
     "eligible_probe_buckets",
     "select_positive_winners",
