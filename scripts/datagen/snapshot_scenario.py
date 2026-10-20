@@ -105,6 +105,7 @@ def render_scenario(
     gs,
     settle_steps: int,
     style: str,
+    overview_override: dict | None = None,
 ):
     from robotsmith.assets.library import AssetLibrary
     from robotsmith.scenes.backend import ProgrammaticSceneBackend
@@ -123,6 +124,9 @@ def render_scenario(
     franka = handle.franka
 
     views = _camera_views(scene_config, style)
+    if overview_override:
+        views["overview"].update(overview_override)
+        print(f"  [override] overview cam = {views['overview']}")
     cam_overview = scene.add_camera(res=(960, 720), GUI=False, **views["overview"])
     cam_topdown = scene.add_camera(res=(960, 720), GUI=False, **views["topdown"])
 
@@ -166,7 +170,24 @@ def main():
         default="presentation",
         help="Snapshot visual style. 'debug' preserves the old wide camera.",
     )
+    ap.add_argument("--overview-pos", type=float, nargs=3, default=None,
+                    metavar=("X", "Y", "Z"),
+                    help="Override overview camera position (world).")
+    ap.add_argument("--overview-lookat", type=float, nargs=3, default=None,
+                    metavar=("X", "Y", "Z"),
+                    help="Override overview camera look-at target (world).")
+    ap.add_argument("--fov", type=float, default=None,
+                    help="Override overview camera vertical FOV (deg).")
     args = ap.parse_args()
+
+    overview_override = {}
+    if args.overview_pos is not None:
+        overview_override["pos"] = tuple(args.overview_pos)
+    if args.overview_lookat is not None:
+        overview_override["lookat"] = tuple(args.overview_lookat)
+    if args.fov is not None:
+        overview_override["fov"] = args.fov
+    overview_override = overview_override or None
 
     ensure_display()
 
@@ -179,7 +200,7 @@ def main():
 
     render_scenario(
         args.scenario, args.seed, assets_root, out_dir, gs,
-        args.settle_steps, args.style,
+        args.settle_steps, args.style, overview_override,
     )
 
     pngs = sorted(out_dir.glob("*.png"))

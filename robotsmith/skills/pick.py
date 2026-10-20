@@ -16,7 +16,11 @@ from robotsmith.grasp.feasibility import select_best_grasp_plan
 from robotsmith.grasp.planner import GraspPlan
 from robotsmith.grasp.transforms import pose_matrix
 from robotsmith.motion.params import MotionParams
-from robotsmith.motion.rocrobo_world import PANDA_FINGER_LINKS, build_payload_spheres
+from robotsmith.motion.rocrobo_world import (
+    PANDA_FINGER_LINKS,
+    build_obstacle_world,
+    build_payload_spheres,
+)
 from robotsmith.skills.base import Skill, SkillContext
 from robotsmith.skills.frames import _float_or_none
 from robotsmith.skills.registry import register
@@ -108,7 +112,7 @@ def _select_pick_plan(ctx: SkillContext) -> GraspPlan:
     # (object bottom), not the global table — so a shelved / in-fixture object
     # rejects sub-object grasps correctly. Tabletop objects have
     # support_z == table_surface_z (byte-identical). See
-    # docs/features/grasp_support_z.md.
+    # docs/grasping.md, Runtime P0 Feasibility.
     obj_h_for_support = float(
         skill.params.get("object_height")
         or scene_state.get("object_heights", {}).get(skill.target, 0.0)
@@ -239,7 +243,22 @@ def run_pick(ctx: SkillContext) -> list[np.ndarray]:
             for _ in range(max(ctx.params.min_steps, ctx.params.finger_steps))
         ]
     seed, transit = _pick_seed_transit(ctx, plan)
-    seg = ctx.executor.pick(plan, ctx.motion_planner, seed, _pick_motion_params(ctx))
+    # Collision-aware backend: build the obstacle world from every scene fixture so
+    # the free pick segments (home→pre-grasp, lift/retreat) route through
+    # plan_motion instead of punching a straight IK line through a shelf/cabinet.
+    # The grasp target is role `object`, not a fixture, so it is never in the world
+    # (no exemption needed). Collision-blind runs pass world=None (unchanged).
+    world = (
+        build_obstacle_world(
+            ctx.scene_state,
+            ground_z=float(ctx.scene_state.get("table_surface_z", 0.0)),
+        )
+        if ctx.motion_planner.collision_aware
+        else None
+    )
+    seg = ctx.executor.pick(
+        plan, ctx.motion_planner, seed, _pick_motion_params(ctx), world=world
+    )
     ctx.held_category = ctx.category
     # Grasp-relative offset: EE-flange height above the picked object's *support
     # surface* (object bottom = center − half-height), NOT above the table. A
