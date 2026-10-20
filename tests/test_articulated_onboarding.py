@@ -1,4 +1,4 @@
-"""Feature A: articulated asset onboarding.
+"""Articulated asset onboarding.
 
 Loader reads URDF joints (type/axis/limits) at load time; AssetMetadata carries
 only thin semantic annotations (task_joints/handles/joint_init). Rigid assets stay

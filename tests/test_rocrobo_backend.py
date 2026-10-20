@@ -1,4 +1,4 @@
-"""Unit tests for the rocRobo motion backend (feature1).
+"""Unit tests for the rocRobo motion backend.
 
 Node-independent: World builder (URDF parse + live-pose transform), trajectory
 resampling, and the MotionPlanner fallback/padding logic with a fake serve
@@ -175,11 +175,14 @@ def test_genesis_backend_plan_motion_unsupported():
     assert isinstance(res, PlanResult) and not res.success
 
 
-def test_solve_ik_falls_back_without_world():
-    backend = RocRoboBackend(_fake_genesis_solve_ik, client=_FakeClient({}))
-    q = backend.solve_ik(np.zeros(3), np.array([1, 0, 0, 0]), 0.04, world=None)
-    assert q.shape == (9,)
-    assert np.isclose(q[7], 0.04) and np.isclose(q[8], 0.04)
+@pytest.mark.parametrize("response, world", [
+    ({}, None),
+    ({"ok": False, "reason": "no-solution"}, [{"type": "box"}]),
+])
+def test_solve_ik_falls_back_to_genesis(response, world):
+    backend = RocRoboBackend(_fake_genesis_solve_ik, client=_FakeClient(response))
+    q = backend.solve_ik(np.zeros(3), np.array([1, 0, 0, 0]), 0.04, world=world)
+    assert np.allclose(q, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.04, 0.04])
 
 
 def test_solve_ik_uses_serve_and_pads_fingers():
@@ -189,13 +192,6 @@ def test_solve_ik_uses_serve_and_pads_fingers():
     assert q.shape == (9,)
     assert np.isclose(q[7], 0.02) and np.isclose(q[8], 0.02)
     assert client.requests[0]["op"] == "solve_ik"
-
-
-def test_solve_ik_falls_back_when_serve_not_ok():
-    client = _FakeClient({"ok": False, "reason": "no-solution"})
-    backend = RocRoboBackend(_fake_genesis_solve_ik, client=client)
-    q = backend.solve_ik(np.zeros(3), np.array([1, 0, 0, 0]), 0.04, world=[{"type": "box"}])
-    assert np.allclose(q[:7], [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7])  # genesis fallback
 
 
 def test_plan_motion_success_pads_and_resamples():
@@ -228,18 +224,15 @@ def test_plan_motion_uses_raw_traj_when_no_timing():
     assert res.success and len(res.trajectory) == 2
 
 
-def test_plan_motion_failure_returns_unsuccessful():
-    client = _FakeClient({"ok": False, "reason": "infeasible"})
-    backend = RocRoboBackend(_fake_genesis_solve_ik, client=client)
+@pytest.mark.parametrize("response, world", [
+    ({"ok": False, "reason": "infeasible"}, [{"type": "box"}]),
+    ({}, None),
+])
+def test_plan_motion_unsuccessful(response, world):
+    backend = RocRoboBackend(_fake_genesis_solve_ik, client=_FakeClient(response))
     res = backend.plan_motion(
-        np.zeros(9),
-        [Waypoint(np.zeros(3), np.array([1, 0, 0, 0]), 0.0)],
-        world=[{"type": "box"}],
+        np.zeros(9), [Waypoint(np.zeros(3), np.array([1, 0, 0, 0]), 0.0)], world=world,
     )
-    assert not res.success and "infeasible" in res.reason
-
-
-def test_plan_motion_without_world_unsuccessful():
-    backend = RocRoboBackend(_fake_genesis_solve_ik, client=_FakeClient({}))
-    res = backend.plan_motion(np.zeros(9), [Waypoint(np.zeros(3), np.array([1, 0, 0, 0]), 0.0)])
     assert not res.success
+    if response:
+        assert "infeasible" in res.reason

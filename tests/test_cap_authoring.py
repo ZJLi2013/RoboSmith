@@ -33,7 +33,7 @@ from robotsmith.tasks.predicates import evaluate_predicate, evaluate_success
 from robotsmith.tasks.task_spec import SuccessNode
 
 
-def test_cap_scene_lowers_part6_regions_to_legacy_scene_config():
+def test_cap_scene_lowers_regions_to_legacy_scene_config():
     cap_scene = scene(
         "cap_align_die_mug_apple",
         layout=layout(
@@ -247,8 +247,6 @@ def test_composite_success_lowers_to_runtime_tree_and_unions_refs():
 
 
 def test_predicate_helpers_self_describe_refs():
-    # Each leaf carries its own refs (Feature 5), replacing the old
-    # name-based predicate_refs switch. Values must match the legacy mapping.
     assert object_lifted("die").refs == ("die", "table")
     assert object_in_container("die", "goal").refs == ("die", "goal")
     assert objects_aligned(["die", "mug", "apple"]).refs == ("die", "mug", "apple")

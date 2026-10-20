@@ -1,4 +1,4 @@
-"""Feature C: joint-state success predicates.
+"""Joint-state success predicates.
 
 Runtime ``joint_opened`` / ``joint_closed`` read ``env_state["joint_positions"]``;
 authoring helpers lower into the composable success tree with self-describing refs
