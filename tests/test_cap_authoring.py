@@ -15,7 +15,6 @@ from robotsmith.cap.intents import (
 )
 from robotsmith.cap.predicates import (
     all_of,
-    any_of,
     negate,
     object_in_container,
     object_lifted,
@@ -97,19 +96,23 @@ def test_cap_task_lowers_success_and_contact_objects_to_legacy_task_spec():
     assert legacy.contact_objects == ["die", "table"]
 
 
-def test_resolved_target_positions_resolves_fixed_targets():
+def _place_die_at_goal_task():
     cap_scene = scene(
         "cap_place_die_at_goal",
-        layout=layout(
-            regions=[
-                region("left_reachable", ((0.42, -0.14), (0.50, -0.06))),
-            ],
-        ),
+        layout=layout(regions=[region("left_reachable", ((0.42, -0.14), (0.50, -0.06)))]),
         objects=[obj("die", asset="die_01", region="left_reachable")],
-        target_positions=[
-            target_position("goal", fixed_position=(0.60, 0.10, 0.809)),
-        ],
+        target_positions=[target_position("goal", fixed_position=(0.60, 0.10, 0.809))],
     )
+    return task(
+        "cap_place_die_at_goal",
+        scene=cap_scene,
+        instruction="Place the die at the goal",
+        success=object_in_container("die", "goal", xy_threshold=0.02),
+    )
+
+
+def test_resolved_target_positions_resolves_fixed_targets():
+    cap_scene = _place_die_at_goal_task().scene
 
     validate_scene(cap_scene)
     assert resolved_target_positions(cap_scene) == {"goal": (0.60, 0.10, 0.809)}
@@ -167,24 +170,7 @@ def test_validator_rejects_unknown_region_and_unknown_success_ref():
 
 
 def test_skill_intents_lower_to_legacy_runtime_skills():
-    cap_scene = scene(
-        "cap_place_die_at_goal",
-        layout=layout(
-            regions=[
-                region("left_reachable", ((0.42, -0.14), (0.50, -0.06))),
-            ],
-        ),
-        objects=[obj("die", asset="die_01", region="left_reachable")],
-        target_positions=[
-            target_position("goal", fixed_position=(0.60, 0.10, 0.809)),
-        ],
-    )
-    cap_task = task(
-        "cap_place_die_at_goal",
-        scene=cap_scene,
-        instruction="Place the die at the goal",
-        success=object_in_container("die", "goal", xy_threshold=0.02),
-    )
+    cap_task = _place_die_at_goal_task()
     intents = intent_sequence([
         pick("die", category="die"),
         place("goal", category="die"),
@@ -207,24 +193,7 @@ def test_skill_intents_lower_to_legacy_runtime_skills():
 
 
 def test_skill_intent_validator_rejects_invalid_refs_and_names():
-    cap_scene = scene(
-        "cap_place_die_at_goal",
-        layout=layout(
-            regions=[
-                region("left_reachable", ((0.42, -0.14), (0.50, -0.06))),
-            ],
-        ),
-        objects=[obj("die", asset="die_01", region="left_reachable")],
-        target_positions=[
-            target_position("goal", fixed_position=(0.60, 0.10, 0.809)),
-        ],
-    )
-    cap_task = task(
-        "cap_place_die_at_goal",
-        scene=cap_scene,
-        instruction="Place the die at the goal",
-        success=object_in_container("die", "goal", xy_threshold=0.02),
-    )
+    cap_task = _place_die_at_goal_task()
 
     with pytest.raises(ValidationError, match="unknown object 'goal'"):
         validate_skill_intent_sequence(intent_sequence([pick("goal")]), cap_task)

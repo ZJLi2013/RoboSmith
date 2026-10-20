@@ -119,6 +119,12 @@ Current limitations:
 - [Objaverse](https://objaverse.allenai.org/) — 3D object dataset
 - [GraspGen](https://github.com/NVlabs/GraspGen) — learned grasping (NVlabs · research/eval license)
 
+## Contributing
+
+All changes land through pull requests; see [CONTRIBUTING.md](CONTRIBUTING.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md),
+and [AI_POLICY.md](AI_POLICY.md). Report vulnerabilities privately per [SECURITY.md](SECURITY.md). Changes are
+listed in [CHANGELOG.md](CHANGELOG.md).
+
 ## License
 
 Apache-2.0, see [LICENSE](LICENSE).

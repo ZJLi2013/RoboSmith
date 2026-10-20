@@ -7,14 +7,11 @@ backward compatible (empty joints, empty annotation fields).
 
 from pathlib import Path
 
-import pytest
-
 from robotsmith.assets.library import AssetLibrary
 from robotsmith.assets.schema import AssetMetadata, parse_urdf_joints
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DRAWER_DIR = REPO_ROOT / "assets" / "articraft" / "drawer_cabinet"
-DRAWER_URDF = DRAWER_DIR / "model.urdf"
+DRAWER_URDF = REPO_ROOT / "assets" / "articraft" / "drawer_cabinet" / "model.urdf"
 
 _RIGID_URDF = """<robot name="rigid_box">
   <link name="box">
@@ -55,7 +52,6 @@ class TestParseUrdfJoints:
         assert j.lower == 0.0 and j.upper == 1.2
         assert j.is_movable
 
-    @pytest.mark.skipif(not DRAWER_URDF.exists(), reason="drawer_cabinet asset not present")
     def test_drawer_prismatic_joint(self):
         joints = parse_urdf_joints(DRAWER_URDF)
         movable = [j for j in joints if j.is_movable]
@@ -67,23 +63,15 @@ class TestParseUrdfJoints:
         assert j.lower == 0.0 and j.upper == 0.35
 
 
-class TestMetadataAnnotations:
-    def test_rigid_defaults_are_empty(self):
-        m = AssetMetadata()
-        assert m.task_joints == []
-        assert m.handles == []
-        assert m.joint_init == {}
-
-    def test_load_ignores_unknown_and_fills_defaults(self, tmp_path):
-        # An old rigid metadata.json without articulated fields still loads.
-        p = tmp_path / "metadata.json"
-        p.write_text('{"mass_kg": 0.2, "tags": ["cube"]}', encoding="utf-8")
-        m = AssetMetadata.load(p)
-        assert m.mass_kg == 0.2
-        assert m.task_joints == [] and m.handles == [] and m.joint_init == {}
+def test_metadata_load_fills_articulated_defaults(tmp_path):
+    # An old rigid metadata.json without articulated fields still loads.
+    p = tmp_path / "metadata.json"
+    p.write_text('{"mass_kg": 0.2, "tags": ["cube"]}', encoding="utf-8")
+    m = AssetMetadata.load(p)
+    assert m.mass_kg == 0.2
+    assert m.task_joints == [] and m.handles == [] and m.joint_init == {}
 
 
-@pytest.mark.skipif(not DRAWER_URDF.exists(), reason="drawer_cabinet asset not present")
 class TestArticulatedAssetLoad:
     def test_library_discovers_and_annotates_drawer(self):
         lib = AssetLibrary(REPO_ROOT / "assets")
