@@ -17,7 +17,7 @@
 <!-- Commands and their output. For behavior changes, the GPU e2e: scenario, seeds, success rate, image tag. -->
 
 ```text
-python -m pytest tests -q --ignore=tests/test_sim_env.py
+python -m pytest tests -q
 ```
 
 ## Compatibility

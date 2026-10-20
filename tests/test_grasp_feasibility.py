@@ -57,71 +57,44 @@ def test_learned_planner_floor_is_object_support_not_table(tmp_path):
     assert len(plans_no_h) == 2
 
 
-def test_feasibility_selection_keeps_raw_orientation():
-    plan = GraspPlan(
-        grasp_pos=np.zeros(3),
-        grasp_quat=np.array([1.0, 0.0, 0.0, 0.0]),
-        pre_grasp_pos=np.zeros(3),
-        pre_grasp_quat=np.array([1.0, 0.0, 0.0, 0.0]),
-        retreat_pos=np.array([0.0, 0.0, 0.1]),
-        retreat_quat=np.array([1.0, 0.0, 0.0, 0.0]),
+IDENTITY = np.array([1.0, 0.0, 0.0, 0.0])
+TOP_DOWN_HORIZONTAL = {"approach_dir": [0.0, 0.0, 1.0], "finger_dir": [1.0, 0.0, 0.0]}
+SIDE_VERTICAL = {"approach_dir": [1.0, 0.0, 0.0], "finger_dir": [0.0, 0.0, 1.0]}
+
+
+def make_plan(z: float = 0.03, quality: float = 1.0, **metadata) -> GraspPlan:
+    return GraspPlan(
+        grasp_pos=np.array([0.0, 0.0, z]),
+        grasp_quat=IDENTITY,
+        pre_grasp_pos=np.array([0.0, 0.0, z + 0.05]),
+        pre_grasp_quat=IDENTITY,
+        retreat_pos=np.array([0.0, 0.0, z + 0.1]),
+        retreat_quat=IDENTITY,
         finger_open=0.04,
         finger_closed=0.01,
-        metadata={
-            "source": "graspgen",
-            "finger_dir": [1.0, 0.0, 0.0],
-            "approach_dir": [0.0, 0.0, 1.0],
-        },
+        quality=quality,
+        metadata={"source": "graspgen", **metadata},
     )
 
-    def solve_ik(pos, quat, finger_width=None, *, init_qpos=None):
-        if init_qpos is None:
-            init_qpos = np.zeros(9)
-        return np.asarray(init_qpos, dtype=np.float64).copy()
 
-    selected = select_best_grasp_plan(
-        [plan],
-        solve_ik,
-        np.zeros(9),
-        support_z=-1.0,
-        category="mug",
-    )
+def solve_ik(pos, quat, finger_width=None, *, init_qpos=None):
+    return np.zeros(9) if init_qpos is None else np.asarray(init_qpos, dtype=np.float64).copy()
 
+
+def test_feasibility_selection_keeps_raw_orientation():
+    plan = make_plan(**TOP_DOWN_HORIZONTAL)
+    selected = select_best_grasp_plan([plan], solve_ik, np.zeros(9), support_z=-1.0, category="mug")
     np.testing.assert_allclose(selected.grasp_quat, plan.grasp_quat)
     assert "yaw_variant_deg" not in selected.metadata
 
 
 def test_support_band_rejects_bottom_crossing_grasp(monkeypatch):
     monkeypatch.setenv("GRASP_EVAL_SUPPORT_BAND_M", "0.01")
-
-    def make_plan(z: float, quality: float) -> GraspPlan:
-        return GraspPlan(
-            grasp_pos=np.array([0.0, 0.0, z]),
-            grasp_quat=np.array([1.0, 0.0, 0.0, 0.0]),
-            pre_grasp_pos=np.array([0.0, 0.0, z + 0.05]),
-            pre_grasp_quat=np.array([1.0, 0.0, 0.0, 0.0]),
-            retreat_pos=np.array([0.0, 0.0, z + 0.1]),
-            retreat_quat=np.array([1.0, 0.0, 0.0, 0.0]),
-            finger_open=0.04,
-            finger_closed=0.01,
-            quality=quality,
-            metadata={"source": "graspgen"},
-        )
-
-    def solve_ik(pos, quat, finger_width=None, *, init_qpos=None):
-        if init_qpos is None:
-            init_qpos = np.zeros(9)
-        return np.asarray(init_qpos, dtype=np.float64).copy()
-
     bottom_crossing = make_plan(0.005, 0.99)
     above_support = make_plan(0.03, 0.50)
 
     selected = select_best_grasp_plan(
-        [bottom_crossing, above_support],
-        solve_ik,
-        np.zeros(9),
-        support_z=0.0,
-        category="mug",
+        [bottom_crossing, above_support], solve_ik, np.zeros(9), support_z=0.0, category="mug",
     )
 
     assert selected is above_support
@@ -130,117 +103,32 @@ def test_support_band_rejects_bottom_crossing_grasp(monkeypatch):
 
 
 def test_bucket_policy_selection_is_explicit():
-    def make_plan(
-        *,
-        quality: float,
-        approach_dir: list[float],
-        finger_dir: list[float],
-    ) -> GraspPlan:
-        return GraspPlan(
-            grasp_pos=np.array([0.0, 0.0, 0.03]),
-            grasp_quat=np.array([1.0, 0.0, 0.0, 0.0]),
-            pre_grasp_pos=np.array([0.0, 0.0, 0.08]),
-            pre_grasp_quat=np.array([1.0, 0.0, 0.0, 0.0]),
-            retreat_pos=np.array([0.0, 0.0, 0.13]),
-            retreat_quat=np.array([1.0, 0.0, 0.0, 0.0]),
-            finger_open=0.04,
-            finger_closed=0.01,
-            quality=quality,
-            metadata={
-                "source": "graspgen",
-                "approach_dir": approach_dir,
-                "finger_dir": finger_dir,
-            },
-        )
+    top_down = make_plan(quality=0.4, **TOP_DOWN_HORIZONTAL)
+    side = make_plan(quality=0.9, **SIDE_VERTICAL)
 
-    top_down_horizontal = make_plan(
-        quality=0.4,
-        approach_dir=[0.0, 0.0, 1.0],
-        finger_dir=[1.0, 0.0, 0.0],
-    )
-    side_vertical = make_plan(
-        quality=0.9,
-        approach_dir=[1.0, 0.0, 0.0],
-        finger_dir=[0.0, 0.0, 1.0],
-    )
-
-    def solve_ik(pos, quat, finger_width=None, *, init_qpos=None):
-        if init_qpos is None:
-            init_qpos = np.zeros(9)
-        return np.asarray(init_qpos, dtype=np.float64).copy()
-
-    evaluation = evaluate_grasp_candidates(
-        [top_down_horizontal, side_vertical],
-        solve_ik,
-        np.zeros(9),
-        support_z=-1.0,
-    )
-
+    evaluation = evaluate_grasp_candidates([top_down, side], solve_ik, np.zeros(9), support_z=-1.0)
     assert evaluation.bucket_hard_ok_counts == {
         "top_down_axis_horizontal": 1,
         "side_axis_vertical": 1,
     }
 
-    selected = select_from_bucket_policy(
-        evaluation,
-        ["side_axis_vertical", "top_down_axis_horizontal"],
+    selected_plan, _, _ = select_from_bucket_policy(
+        evaluation, ["side_axis_vertical", "top_down_axis_horizontal"],
     )
-
-    assert selected is not None
-    selected_plan, _, _ = selected
-    assert selected_plan is side_vertical
+    assert selected_plan is side
     assert selected_plan.metadata["selected_policy_bucket"] == "side_axis_vertical"
 
 
 def test_select_best_grasp_plan_accepts_explicit_bucket_priority():
-    def make_plan(
-        *,
-        quality: float,
-        approach_dir: list[float],
-        finger_dir: list[float],
-    ) -> GraspPlan:
-        return GraspPlan(
-            grasp_pos=np.array([0.0, 0.0, 0.03]),
-            grasp_quat=np.array([1.0, 0.0, 0.0, 0.0]),
-            pre_grasp_pos=np.array([0.0, 0.0, 0.08]),
-            pre_grasp_quat=np.array([1.0, 0.0, 0.0, 0.0]),
-            retreat_pos=np.array([0.0, 0.0, 0.13]),
-            retreat_quat=np.array([1.0, 0.0, 0.0, 0.0]),
-            finger_open=0.04,
-            finger_closed=0.01,
-            quality=quality,
-            metadata={
-                "source": "graspgen",
-                "approach_dir": approach_dir,
-                "finger_dir": finger_dir,
-            },
-        )
-
-    lower_score_bucket = make_plan(
-        quality=0.4,
-        approach_dir=[0.0, 0.0, 1.0],
-        finger_dir=[1.0, 0.0, 0.0],
-    )
-    higher_score_bucket = make_plan(
-        quality=0.9,
-        approach_dir=[1.0, 0.0, 0.0],
-        finger_dir=[0.0, 0.0, 1.0],
-    )
-
-    def solve_ik(pos, quat, finger_width=None, *, init_qpos=None):
-        if init_qpos is None:
-            init_qpos = np.zeros(9)
-        return np.asarray(init_qpos, dtype=np.float64).copy()
+    lower_score = make_plan(quality=0.4, **TOP_DOWN_HORIZONTAL)
+    higher_score = make_plan(quality=0.9, **SIDE_VERTICAL)
 
     selected = select_best_grasp_plan(
-        [lower_score_bucket, higher_score_bucket],
-        solve_ik,
-        np.zeros(9),
-        support_z=-1.0,
+        [lower_score, higher_score], solve_ik, np.zeros(9), support_z=-1.0,
         bucket_priority=["top_down_axis_horizontal"],
     )
 
-    assert selected is lower_score_bucket
+    assert selected is lower_score
     assert selected.metadata["requested_policy_bucket"] == "top_down_axis_horizontal"
     assert selected.metadata["requested_policy_bucket_missing"] is False
 

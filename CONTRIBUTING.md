@@ -38,11 +38,11 @@ Requirements: Python 3.10+ and git. The unit tests need no GPU, Genesis, or Gras
 
 ```shell
 python -m pip install -e ".[dev]"
-python -m pytest tests -q --ignore=tests/test_sim_env.py
+python -m pytest tests -q
 git diff --check
 ```
 
-`tests/test_sim_env.py` needs `torch` and Genesis (`pip install -e ".[sim,genesis]"`). Changes to motion,
+`tests/test_sim_env.py` is skipped unless `torch` and Genesis are installed (`pip install -e ".[sim,genesis]"`). Changes to motion,
 grasp, or rollout behavior also need a GPU end-to-end run in the ROCm image (`docker/README.md`); report the
 scenario, seed count, success rate, and image tag in the pull request.
 

@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
+pytest.importorskip("torch")
 from robotsmith.sim.sim_env import SimEnv
 
 

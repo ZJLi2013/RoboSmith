@@ -215,157 +215,72 @@ def test_run_scenario_episode_reanchors_to_live_resolved_positions(monkeypatch):
     assert recorded == [1, 1]
 
 
-def test_place_z_override_is_honored():
-    identity_quat = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64)
+def _fake_plan(x, y, z):
+    q = np.array([1.0, 0.0, 0.0, 0.0])
+    return GraspPlan(
+        grasp_pos=np.array([x, y, z]),
+        grasp_quat=q,
+        pre_grasp_pos=np.array([x, y, z + 0.1]),
+        pre_grasp_quat=q,
+        retreat_pos=np.array([x, y, z + 0.15]),
+        retreat_quat=q,
+        finger_open=0.04,
+        finger_closed=0.01,
+        metadata={"source": "fake"},
+    )
 
-    class FakePlanner:
-        resolved_place_z = None
 
-        def plan(self, *args, **kwargs):
-            return [
-                GraspPlan(
-                    grasp_pos=np.array([0.5, -0.1, 0.92], dtype=np.float64),
-                    grasp_quat=identity_quat,
-                    pre_grasp_pos=np.array([0.5, -0.1, 1.02], dtype=np.float64),
-                    pre_grasp_quat=identity_quat,
-                    retreat_pos=np.array([0.5, -0.1, 1.07], dtype=np.float64),
-                    retreat_quat=identity_quat,
-                    finger_open=0.04,
-                    finger_closed=0.01,
-                    metadata={"source": "fake"},
-                )
-            ]
+class _FakePlanner:
+    resolved_place_z = None
 
-        def plan_place(self, place_pos, *, category="block", place_point_world=None, approach=None):
-            self.place_point_world = np.asarray(place_point_world, dtype=np.float64)
-            px, py, pz = (float(v) for v in place_point_world)
-            return GraspPlan(
-                grasp_pos=np.array([px, py, pz], dtype=np.float64),
-                grasp_quat=identity_quat,
-                pre_grasp_pos=np.array([px, py, pz + 0.1], dtype=np.float64),
-                pre_grasp_quat=identity_quat,
-                retreat_pos=np.array([px, py, pz + 0.1], dtype=np.float64),
-                retreat_quat=identity_quat,
-                finger_open=0.04,
-                finger_closed=0.01,
-            )
+    def plan(self, *args, **kwargs):
+        return [_fake_plan(0.5, -0.1, 0.92)]
 
-    class FakeExecutor:
-        last_motion_trace = None
+    def plan_place(self, place_pos, *, category="block", place_point_world=None, approach=None):
+        self.place_point_world = np.asarray(place_point_world, dtype=np.float64)
+        return _fake_plan(*self.place_point_world)
 
-        def pick(self, plan, motion_planner, qpos, params, **kwargs):
-            return [np.ones(9, dtype=np.float64)]
 
-        def place(self, plan, motion_planner, qpos, params, *, phase="all", **kwargs):
-            self.last_motion_trace = {"action": "place", "segments": []}
-            return [np.full(9, 2.0, dtype=np.float64)]
+class _FakeExecutor:
+    last_motion_trace = None
 
-    planner = FakePlanner()
+    def pick(self, plan, motion_planner, qpos, params, **kwargs):
+        return [np.ones(9)]
+
+    def place(self, plan, motion_planner, qpos, params, *, phase="all", **kwargs):
+        self.last_motion_trace = {"action": "place", "segments": []}
+        return [np.full(9, 2.0)]
+
+
+# Drop point = goal marker z 0.809 + place_z. Unset place_z falls back to the
+# held grasp's offset above the support: 0.92 - 0.80 = 0.12.
+@pytest.mark.parametrize("place_params, drop_z, resolved, source", [
+    ({"place_z": 0.82}, 1.629, 0.82, "requested"),
+    ({}, 0.929, 0.12, "selected_grasp"),
+])
+def test_place_z_resolution(place_params, drop_z, resolved, source):
+    planner = _FakePlanner()
     scene_state = {
-        "home_qpos": np.zeros(9, dtype=np.float64),
+        "home_qpos": np.zeros(9),
         "positions": {
-            "die": np.array([0.45, -0.1, 0.80], dtype=np.float64),
-            "goal": np.array([0.52, -0.11, 0.809], dtype=np.float64),
+            "die": np.array([0.45, -0.1, 0.80]),
+            "goal": np.array([0.52, -0.11, 0.809]),
         },
         "table_surface_z": 0.80,
         "skill_traces": [],
     }
 
     run_skills(
-        [
-            Skill("pick", "die", "die"),
-            Skill("place", "goal", "die", {"place_z": 0.82}),
-        ],
+        [Skill("pick", "die", "die"), Skill("place", "goal", "die", place_params)],
         planner,
-        FakeExecutor(),
-        solve_ik=lambda *args, **kwargs: np.zeros(9, dtype=np.float64),
+        _FakeExecutor(),
+        solve_ik=lambda *args, **kwargs: np.zeros(9),
         scene_state=scene_state,
         params=MotionParams(),
     )
 
-    # An explicit place_z overrides the grasp-derived offset; the drop point is
-    # the marker world xyz lifted by that offset: goal.z 0.809 + 0.82 = 1.629.
-    assert planner.place_point_world[2] == pytest.approx(1.629)
+    assert planner.place_point_world[2] == pytest.approx(drop_z)
     place_trace = scene_state["skill_traces"][-1]
-    assert place_trace["requested_place_z"] == pytest.approx(0.82)
-    assert place_trace["resolved_place_z"] == pytest.approx(0.82)
-    assert place_trace["place_z_source"] == "requested"
-
-
-def test_place_z_defaults_to_selected_grasp_height_when_unset():
-    identity_quat = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64)
-
-    class FakePlanner:
-        resolved_place_z = None
-
-        def plan(self, *args, **kwargs):
-            return [
-                GraspPlan(
-                    grasp_pos=np.array([0.5, -0.1, 0.92], dtype=np.float64),
-                    grasp_quat=identity_quat,
-                    pre_grasp_pos=np.array([0.5, -0.1, 1.02], dtype=np.float64),
-                    pre_grasp_quat=identity_quat,
-                    retreat_pos=np.array([0.5, -0.1, 1.07], dtype=np.float64),
-                    retreat_quat=identity_quat,
-                    finger_open=0.04,
-                    finger_closed=0.01,
-                    metadata={"source": "fake"},
-                )
-            ]
-
-        def plan_place(self, place_pos, *, category="block", place_point_world=None, approach=None):
-            self.place_point_world = np.asarray(place_point_world, dtype=np.float64)
-            px, py, pz = (float(v) for v in place_point_world)
-            return GraspPlan(
-                grasp_pos=np.array([px, py, pz], dtype=np.float64),
-                grasp_quat=identity_quat,
-                pre_grasp_pos=np.array([px, py, pz + 0.1], dtype=np.float64),
-                pre_grasp_quat=identity_quat,
-                retreat_pos=np.array([px, py, pz + 0.1], dtype=np.float64),
-                retreat_quat=identity_quat,
-                finger_open=0.04,
-                finger_closed=0.01,
-            )
-
-    class FakeExecutor:
-        last_motion_trace = None
-
-        def pick(self, plan, motion_planner, qpos, params, **kwargs):
-            return [np.ones(9, dtype=np.float64)]
-
-        def place(self, plan, motion_planner, qpos, params, *, phase="all", **kwargs):
-            self.last_motion_trace = {"action": "place", "segments": []}
-            return [np.full(9, 2.0, dtype=np.float64)]
-
-    planner = FakePlanner()
-    scene_state = {
-        "home_qpos": np.zeros(9, dtype=np.float64),
-        "positions": {
-            "die": np.array([0.45, -0.1, 0.80], dtype=np.float64),
-            "goal": np.array([0.52, -0.11, 0.809], dtype=np.float64),
-        },
-        "table_surface_z": 0.80,
-        "skill_traces": [],
-    }
-
-    run_skills(
-        [
-            Skill("pick", "die", "die"),
-            Skill("place", "goal", "die"),
-        ],
-        planner,
-        FakeExecutor(),
-        solve_ik=lambda *args, **kwargs: np.zeros(9, dtype=np.float64),
-        scene_state=scene_state,
-        params=MotionParams(),
-    )
-
-    # No place_z requested -> fall back to the held object's grasp-relative
-    # offset (grasp z 0.92 - support 0.80 = 0.12), re-added to the marker world
-    # z: goal.z 0.809 + 0.12 = 0.929.
-    assert planner.place_point_world[2] == pytest.approx(0.929)
-    place_trace = scene_state["skill_traces"][-1]
-    assert place_trace["requested_place_z"] is None
-    assert place_trace["resolved_place_z"] == pytest.approx(0.12)
-    assert place_trace["place_z_source"] == "selected_grasp"
-
+    assert place_trace["requested_place_z"] == place_params.get("place_z")
+    assert place_trace["resolved_place_z"] == pytest.approx(resolved)
+    assert place_trace["place_z_source"] == source
