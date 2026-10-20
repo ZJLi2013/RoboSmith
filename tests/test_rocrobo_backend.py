@@ -2,7 +2,7 @@
 
 Node-independent: World builder (URDF parse + live-pose transform), trajectory
 resampling, and the MotionPlanner fallback/padding logic with a fake serve
-client. The actual collision-free solve runs on wbb3 (e2e), not here.
+client. The actual collision-free solve runs in the GPU e2e, not here.
 """
 
 from __future__ import annotations
