@@ -10,8 +10,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
-import trimesh.transformations as tf
-
 from robotsmith.assets import store
 from robotsmith.assets.schema import Asset
 
@@ -22,8 +20,6 @@ SUPPORT_ASSETS = {"table_simple", "plane"}
 class AuditConfig:
     # Conservative Franka 8cm gripper stroke limit.
     max_width: float = 0.075
-    # Scale recommendation target with about 10% grasp-width margin.
-    target_width: float = 0.0675
     # Lightweight visual/collision surface consistency check.
     consistency_sample_points: int = 800
     consistency_grid: int = 24
@@ -146,34 +142,6 @@ def _visual_collision_consistency(
     }
 
 
-def _upright_quat(asset: Asset) -> list[float]:
-    pose = asset.metadata.task_poses.get("upright", {})
-    quat = pose.get("quat_object") or pose.get("quat") or pose.get("quaternion")
-    return [float(v) for v in (quat or [1.0, 0.0, 0.0, 0.0])]
-
-
-def _extents(asset: Asset, scale: float, quat: list[float]) -> list[float]:
-    import numpy as np
-
-    sx, sy, sz = [float(v) / 100.0 * scale for v in asset.metadata.size_cm]
-    rmat = tf.quaternion_matrix(quat)[:3, :3]
-    corners = np.array(
-        [
-            [dx * sx / 2, dy * sy / 2, dz * sz / 2]
-            for dx in (-1, 1)
-            for dy in (-1, 1)
-            for dz in (-1, 1)
-        ]
-    )
-    rotated = corners @ rmat.T
-    return list((rotated.max(axis=0) - rotated.min(axis=0)).astype(float))
-
-
-def _grasp_xy(asset: Asset, scale: float, quat: list[float]) -> list[float]:
-    ex, ey, _ = _extents(asset, scale, quat)
-    return [float(ex), float(ey)]
-
-
 def audit_mesh(asset: Asset, config: AuditConfig | None = None) -> dict[str, Any]:
     """Return compact mesh audit, stored as ``mesh_consistency`` check metrics."""
 
@@ -197,13 +165,6 @@ def audit_mesh(asset: Asset, config: AuditConfig | None = None) -> dict[str, Any
         if c_ext is None:
             issues.append("no_collision")
 
-    ratio = None
-    size_m = [float(v) / 100.0 for v in asset.metadata.size_cm]
-    if v_ext is not None and all(v > 1e-9 for v in size_m):
-        ratio = [v_ext[i] / size_m[i] for i in range(3)]
-        if max(ratio) > 1.35 or min(ratio) < 0.65:
-            issues.append("size_mismatch")
-
     consistency = _visual_collision_consistency(visual_mesh, collision_mesh, config)
     if not primitive and consistency.get("available") and not consistency.get("ok"):
         issues.append("visual_collision_mismatch")
@@ -216,33 +177,19 @@ def audit_mesh(asset: Asset, config: AuditConfig | None = None) -> dict[str, Any
     }
 
 
-def _audit_metric_scale(asset: Asset, config: AuditConfig | None = None) -> dict[str, Any]:
-    """Return compact metric-scale audit and recommendation."""
+def _audit_gripper_fit(asset: Asset, config: AuditConfig | None = None) -> dict[str, Any]:
+    """Whether both horizontal extents fit the gripper stroke."""
 
     config = config or AuditConfig()
-    metric_scale = float(asset.metadata.metric_scale)
-    quat = _upright_quat(asset)
-    xy = _grasp_xy(asset, metric_scale, quat)
-    width = max(xy)
-    rec = (
-        min(1.0, metric_scale * config.target_width / width)
-        if width > 1e-9
-        else 1.0
-    )
-    return {
-        "ok": width <= config.max_width,
-        "xy": [round(float(v), 5) for v in xy],
-        "rec": round(float(rec), 5),
-    }
+    xy = [float(v) / 100.0 for v in asset.metadata.size_cm[:2]]
+    return {"ok": max(xy) <= config.max_width, "xy": [round(v, 5) for v in xy]}
 
 
 def audit_asset(asset: Asset, config: AuditConfig | None = None) -> dict[str, Any]:
-    mesh = audit_mesh(asset, config)
-    metric_scale = _audit_metric_scale(asset, config)
     return {
         "asset": asset.name,
-        "mesh": mesh,
-        "metric_scale": metric_scale,
+        "mesh": audit_mesh(asset, config),
+        "gripper_fit": _audit_gripper_fit(asset, config),
     }
 
 
@@ -255,7 +202,7 @@ def audit_assets(
         "summary": {
             "n": len(rows),
             "mesh": [row["asset"] for row in rows if row["mesh"]["issues"]],
-            "wide": [row["asset"] for row in rows if not row["metric_scale"]["ok"]],
+            "wide": [row["asset"] for row in rows if not row["gripper_fit"]["ok"]],
         },
         "assets": rows,
     }
@@ -265,19 +212,15 @@ def audit_and_update(
     asset: Asset,
     config: AuditConfig | None = None,
 ) -> dict[str, Any]:
-    """Audit one asset: append ``mesh_consistency`` / ``gripper_fit`` check records and
-    set the ``metric_scale`` annotation to the gripper-fit recommendation."""
+    """Audit one asset: append ``mesh_consistency`` / ``gripper_fit`` check records."""
 
     row = audit_asset(asset, config)
     mesh = row["mesh"]
-    fit = row["metric_scale"]
+    fit = row["gripper_fit"]
     store.append_check(asset.root_dir, "mesh_consistency", "fail" if mesh["issues"] else "pass", mesh)
     store.append_check(
         asset.root_dir, "gripper_fit", "pass" if fit["ok"] else "fail",
-        {"xy": fit["xy"], "rec": fit["rec"]}, embodiment="franka",
+        {"xy": fit["xy"]}, embodiment="franka",
     )
-    rec = float(fit["rec"])
-    store.set_annotation(asset.root_dir, "metric_scale", rec, f"check:gripper_fit@{store.CHECK_VERSION}")
     asset.metadata.mesh = mesh
-    asset.metadata.metric_scale = rec
     return row

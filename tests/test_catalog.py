@@ -25,6 +25,6 @@ class TestCatalog:
         assert asset.name == "test_gen"
         assert asset.metadata.description == "Generated from prompt: red mug"
         assert asset.metadata.size_cm == [8.0, 8.0, 12.0]
-        assert asset.metadata.task_poses == {}
+        assert not asset.metadata.upright_verified
         assert asset.metadata.source == "generated"
         assert (out / "asset.json").exists()

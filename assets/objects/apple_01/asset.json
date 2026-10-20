@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "apple_01",
-  "revision": 1,
+  "revision": 2,
   "kind": "rigid",
   "source": {
     "type": "objaverse",
@@ -19,29 +19,16 @@
       "visual.glb",
       "visual.obj"
     ],
-    "hash": "f392b7c7ed48d3d4e5bb5b52b4afce51daf9fb3e805201aebd9e547672348816"
+    "hash": "5ca18d2b1b28c6cfef686f3fa5135046f377f7dfbe7fa7f796158ee6f05ef22f"
   },
   "annotations": {
     "description": {
       "value": "Toy apple (Objaverse) [uid=50ffb91434ea4d978eaefe03220d36fe]",
       "by": "legacy"
     },
-    "metric_scale": {
-      "value": 0.84375,
-      "by": "check:gripper_fit@legacy"
-    },
     "friction": {
       "value": 0.5,
       "by": "legacy"
-    },
-    "upright": {
-      "value": [
-        0.0,
-        0.707107,
-        0.707107,
-        -0.0
-      ],
-      "by": "human"
     }
   }
 }

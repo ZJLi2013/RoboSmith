@@ -8,18 +8,17 @@ Core data flow:
         -> SimEnv
 
 This module does not create simulator entities. It resolves a declarative
-SceneConfig into concrete assets, upright poses, metric scales, names, and collision-checked
-placements that downstream simulator adapters can load.
+SceneConfig into concrete assets, poses, names, and collision-checked placements that
+downstream simulator adapters can load. Asset build files are metric and +Z up, so an
+asset stands upright at identity rotation; only the scene's yaw is applied.
 
 Main pieces:
-    PlacedObject: one concrete asset instance with pose, fixed asset scale,
-        and skill name.
+    PlacedObject: one concrete asset instance with pose and skill name.
     ResolvedScene: backend output consumed by simulator or visualization adapters.
-    ProgrammaticSceneBackend: current resolver for asset lookup, upright pose,
-        asset metric scale, workspace sampling, and object-object spacing.
+    ProgrammaticSceneBackend: current resolver for asset lookup, admission gates,
+        workspace sampling, and object-object spacing.
 
 Important helpers:
-    _resolve_upright_pose: asset task pose -> table z-offset + quaternion.
     _CollisionChecker: FCL-backed spacing check with AABB fallback.
 """
 
@@ -48,7 +47,6 @@ from robotsmith.assets.library import AssetLibrary
 from robotsmith.assets.audit import audit_and_update
 from robotsmith.assets.schema import Asset
 from robotsmith.scenes.config import SceneConfig, ObjectPlacement
-from robotsmith.scenes.pose_utils import task_pose_quat, task_pose_verified
 
 logger = logging.getLogger(__name__)
 
@@ -61,24 +59,14 @@ class PlacedObject:
     position: list[float]
     rotation: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
     quaternion: list[float] = field(default_factory=lambda: [1.0, 0.0, 0.0, 0.0])
-    """Orientation as [w, x, y, z] quaternion (upright task pose)."""
+    """Orientation as [w, x, y, z] quaternion (scene yaw)."""
     name: str = ""
     """Logical name for skill-target matching (e.g. 'cube', 'bowl')."""
 
     @property
-    def metric_scale(self) -> float:
-        return float(self.asset.metadata.metric_scale)
-
-    @property
     def object_height_m(self) -> float:
-        """World-frame height (Z extent) after applying upright rotation and metric scale.
-
-        For axis-aligned objects (identity quat) this equals
-        ``size_cm[2] * metric_scale``.
-        For rotated objects like bowls (Y-up mesh rotated to Z-up), the
-        quaternion maps the correct local axis onto world Z.
-        """
-        return _height_for_quat(self.asset, self.metric_scale, self.quaternion)
+        """World-frame height (Z extent) of the asset at this orientation."""
+        return _height_for_quat(self.asset, self.quaternion)
 
 
 @dataclass
@@ -93,13 +81,9 @@ class ResolvedScene:
         lines = [f"Scene: {self.config.name} ({len(self.placed_objects)} objects)"]
         for po in self.placed_objects:
             pos = [round(v, 3) for v in po.position]
-            scale_str = (
-                f" metric_scale={po.metric_scale:.3f}"
-                if po.metric_scale != 1.0 else ""
-            )
             lines.append(
                 f"  {po.name:20s} ({po.asset.name}) pos={pos} "
-                f"h={po.object_height_m:.4f}m{scale_str}"
+                f"h={po.object_height_m:.4f}m"
             )
         return "\n".join(lines)
 
@@ -123,8 +107,8 @@ def _quat_to_euler(quat: list[float]) -> list[float]:
     return list(tf.euler_from_matrix(mat, axes="sxyz"))
 
 
-def _height_for_quat(asset: Asset, scale: float, quat: list[float]) -> float:
-    sx, sy, sz = [v / 100.0 * scale for v in asset.metadata.size_cm]
+def _height_for_quat(asset: Asset, quat: list[float]) -> float:
+    sx, sy, sz = [v / 100.0 for v in asset.metadata.size_cm]
     rmat = tf.quaternion_matrix(quat)[:3, :3]
     corners = np.array(
         [
@@ -136,12 +120,6 @@ def _height_for_quat(asset: Asset, scale: float, quat: list[float]) -> float:
     )
     rotated = corners @ rmat.T
     return float(rotated[:, 2].max() - rotated[:, 2].min())
-
-
-def _resolve_upright_pose(asset: Asset, scale: float) -> tuple[float, list[float]]:
-    """Resolve the runtime object pose from canonical upright asset metadata."""
-    quat = task_pose_quat(asset, "upright") or [1.0, 0.0, 0.0, 0.0]
-    return _height_for_quat(asset, scale, quat) / 2.0, quat
 
 
 class _CollisionChecker:
@@ -182,13 +160,13 @@ class ProgrammaticSceneBackend:
     """Collision-aware scene backend with upright object placement.
 
     For each object:
-    1. Resolve the canonical upright pose from asset metadata.
+    1. Orient by the scene yaw (assets stand upright at identity rotation).
     2. Sample (x, y) within workspace_xy (or per-object position_range).
     3. Compute z = table_height + table_thickness/2 + upright half-height.
     4. Check collision against already-placed objects via trimesh CollisionManager.
     5. Retry up to max_placement_retries; skip object if all retries fail.
 
-    Missing assets, illegal asset metric scales, and placement failures are warning + skip
+    Missing assets, failed admission gates, and placement failures are warning + skip
     by design so asset-browsing scenes can degrade gracefully. Fixed positions
     are trusted as explicit layouts and bypass random sampling/retry.
     """
@@ -231,50 +209,31 @@ class ProgrammaticSceneBackend:
                             mesh_issues,
                         )
                         continue
-                scale = float(asset.metadata.metric_scale)
-                if scale <= 0.0:
-                    logger.debug(
-                        "[scene] skip %s: metric_scale must be positive, got %s",
-                        asset.name,
-                        scale,
-                    )
-                    continue
-                # Fixtures carry an authored upright pose + fixed base; only
-                # grasp-targeted objects go through the 24-candidate upright QA.
+                # Fixtures have a fixed base; only grasp-targeted objects must
+                # pass the upright check.
                 if (
                     not asset.is_fixture
                     and asset.metadata.source != "builtin_primitive"
-                    and not task_pose_verified(asset, "upright")
+                    and not asset.metadata.upright_verified
                 ):
                     logger.debug(
-                        "[scene] skip %s: task_poses.upright is missing or unverified",
+                        "[scene] skip %s: no passing upright check",
                         asset.name,
                     )
                     continue
-                base_z, quat = _resolve_upright_pose(asset, scale)
 
                 mesh = _load_collision_mesh(asset)
                 if mesh is None:
                     continue
 
-                if scale != 1.0:
-                    mesh = mesh.copy()
-                    mesh.apply_scale(scale)
+                z_offset = asset.metadata.size_cm[2] / 200.0
 
-                z_offset = base_z
-                euler = _quat_to_euler(quat)
-
-                # Optional per-scenario yaw about world +Z, composed on top of the
-                # asset upright pose (e.g. face a shelf fixture's open side toward
-                # the arm). Yaw about Z preserves the Z extent, so base_z stays
-                # valid. quat stays [w,x,y,z] (genesis/metadata convention).
+                # Optional per-scenario yaw about world +Z (e.g. face a shelf
+                # fixture's open side toward the arm). Yaw preserves the Z extent.
+                # quat stays [w,x,y,z] (genesis convention).
                 yaw_deg = float(getattr(obj_spec, "yaw_deg", 0.0) or 0.0)
-                if yaw_deg:
-                    yaw_quat = tf.quaternion_about_axis(
-                        math.radians(yaw_deg), (0.0, 0.0, 1.0)
-                    )
-                    quat = list(tf.quaternion_multiply(yaw_quat, quat))
-                    euler = _quat_to_euler(quat)
+                quat = list(tf.quaternion_about_axis(math.radians(yaw_deg), (0.0, 0.0, 1.0)))
+                euler = _quat_to_euler(quat)
 
                 logical_name = obj_spec.name_override or f"{asset.name}_{i}"
 

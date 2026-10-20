@@ -144,7 +144,6 @@ def test_run_scenario_episode_reanchors_to_live_resolved_positions(monkeypatch):
             self.object_heights = {"die": 0.02, "mug": 0.08}
             self.asset_map = {}
             self.object_quats = {}
-            self.object_scales = {"die": 1.0, "mug": 1.0}
             self.table_surface_z = 0.80
             self.articulated_joint_dofs = {}
             self.planner = object()

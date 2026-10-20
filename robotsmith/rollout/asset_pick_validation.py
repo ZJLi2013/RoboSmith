@@ -35,7 +35,6 @@ EPISODE_DIAGNOSTIC_FIELDS = (
     "episode_index",
     "success",
     "frame_count",
-    "object_scale",
     "selected_candidate_index",
     "selected_policy_bucket",
     "selected_policy_bucket_rank",
@@ -166,7 +165,6 @@ def _prepare_asset_pick_episode(
         "object_heights": env.object_heights,
         "assets": env.asset_map,
         "object_quats": env.object_quats,
-        "object_scales": env.object_scales,
         "table_surface_z": env.table_surface_z,
         "skill_traces": [],
     }
@@ -232,12 +230,10 @@ def run_asset_pick(config: AssetPickValidationConfig, asset_name: str) -> dict:
     )
     if config.grasp_policy_bucket_override:
         env.asset_map["object"].metadata.grasp_policy_bucket = config.grasp_policy_bucket_override
-    object_scale = env.object_scales.get("object", 1.0)
     print(f"======== START {asset_name} ========")
     print(
         "[scene] "
         "pose=upright "
-        f"metric_scale={object_scale} "
         f"grasp_planner={config.grasp_planner} "
         f"settle_steps={config.settle_steps}"
     )
@@ -300,7 +296,6 @@ def run_asset_pick(config: AssetPickValidationConfig, asset_name: str) -> dict:
             "asset": asset_name,
             "success": bool(success),
             "frame_count": len(traj),
-            "object_scale": pick_trace.get("object_scale", object_scale),
             "selected_candidate_index": pick_trace.get("selected_candidate_index"),
             "selected_policy_bucket": pick_trace.get("selected_policy_bucket"),
             "selected_policy_bucket_rank": pick_trace.get(

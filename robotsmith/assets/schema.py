@@ -147,18 +147,12 @@ def parse_urdf_collision_boxes(urdf_path: Path, element: str = "collision") -> l
 class AssetMetadata:
     """In-memory view of an asset's ``asset.json`` annotations and current checks
     (assembled by ``robotsmith.assets.store.load_metadata``). Mass, inertia and joint
-    limits live only in the URDF."""
+    limits live only in the URDF. Build files are metric and ``+Z`` up: the asset
+    frame is the upright object frame."""
 
     friction: float = 0.5
     size_cm: list[float] = field(default_factory=lambda: [5.0, 5.0, 5.0])
     """Visual-geometry extent in the asset frame (cm), derived from the URDF at load."""
-    metric_scale: float = 1.0
-    """Fixed asset-level scale applied when loading this asset into metric scenes.
-
-    This calibrates raw/generated meshes to the Franka/table world scale. It is
-    intentionally asset-owned: every scene sees the same asset at the same
-    physical size.
-    """
     source: str = "builtin"
     role: str = "object"
     """Asset role: ``"object"`` (robot-manipulated, dynamic, grasp-planned) or
@@ -166,13 +160,8 @@ class AssetMetadata:
     grasp-planned). Orthogonal to geometry (mesh vs primitive). Articulated
     assets are fixtures regardless of this field (see ``Asset.is_fixture``)."""
     description: str = ""
-    task_poses: dict = field(default_factory=dict)
-    """Named semantic poses in the canonical object frame.
-
-    Example:
-      {"upright": {"quat_object": [w, x, y, z], "description": "..."}}
-    Scene placement consumes these instead of guessing from mesh identity.
-    """
+    upright_verified: bool = False
+    """True when a current ``upright`` check record passes (the asset stands on +Z)."""
     grasp_policy_bucket: str | list[str] | None = None
     """Validated Stage 1 bucket(s), or ``no_positive`` after a full failed probe.
     Read from the grasp sidecar ``assets/grasp_policy_buckets.json``, not ``asset.json``."""
@@ -204,8 +193,7 @@ class AssetMetadata:
       point = ``parent_pose ∘ surface_local`` (tracks pose incl. yaw, no joint).
       (kind ``placement``.)
 
-    All offsets are in the asset frame and scaled by ``metric_scale`` at resolve
-    time. Optional ``approach`` (unit insert direction in the asset frame, default
+    All offsets are in the asset frame. Optional ``approach`` (unit insert direction in the asset frame, default
     top-down ``-Z``) is rotated to world by ``resolve_approach`` — e.g. ``[-1,0,0]``
     for a shelf whose open side faces local ``+X`` (side tuck-under)."""
 

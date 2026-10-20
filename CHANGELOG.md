@@ -20,6 +20,11 @@ All notable user-facing changes are documented here. This project follows Semant
   `size_cm` is the visual-geometry extent, the task joint is the movable joint, and `handles` / `place_targets` name
   a link or collision box whose position is read from the URDF. `drawer_cabinet` grows from 45 to 57.5 cm in x (the
   stored value left out the front panel and handle) and its opening lip moves 10 mm to the tray's front edge.
+- Asset build files are metric and `+Z` up: the upright rotation and metric scale are baked into the meshes and URDFs
+  of `apple_01`, `die_01`, `lego_02`, `mug_02` and `drawer_cabinet` (0.7), with URDF mass and inertia scaled to match.
+  World-frame geometry is unchanged (within 0.001 mm). Fixture yaw moved from the asset into the scenes (`yaw_deg`).
+  `gripper_fit` is a check only and no longer rewrites the scale. `render_asset_table.py --apply-upright-index`
+  becomes `--record-upright pass|fail`.
 - `assets/objects/` keeps only the assets the scenarios load: `apple_01`, `die_01`, `lego_02`, `mug_02`, `plane`,
   `table_simple`.
 - `README.md` is in English, with the Chinese version in `README.zh-CN.md`; the demo videos render as GIFs. The code
@@ -33,6 +38,8 @@ All notable user-facing changes are documented here. This project follows Semant
 - `task_joints`, `joint_init` (default 0; scenes still override), `canonical_frame`, `mounting_holes`,
   `upright_candidates`, and the `tray_floor_z` / `travel_fraction` / `extent_xy` place-target fields, with the
   `render_asset_table.py` modes that read `upright_candidates`.
+- The `metric_scale` and `upright` annotations, `AssetMetadata.task_poses`, `scene_state["object_scales"]`, and
+  `robotsmith.scenes.pose_utils`.
 
 ### Fixed
 

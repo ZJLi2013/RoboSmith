@@ -22,23 +22,9 @@
       "value": "Two-layer support stand (rigid weldment, no movable joints). Two posts 220 mm apart and 310 mm tall, bridged by a tall rear plate and two horizontal shelves (lower top ~54 mm, upper top ~304 mm; 250 mm inter-shelf gap). The gap was widened by lowering the bottom shelf (so the upper-shelf pick height is unchanged), sized so a top-down gripper can enter from the open side instead of a near-singular horizontal tuck (docs/refactor.md R6). Shelves are 140 mm deep so an ~80 mm object rests with clearance and the gripper fingers can reach in. Bolts to the floor through foot plates with 4x Oe6.5 mm mounting holes. Authored at true metric scale (metric_scale 1.0, no scenario scaling). Authored by articraft from 2-layer-supporter.png; kinematics (none) live in model.urdf, this metadata carries only RoboSmith semantic annotations. Static support fixture, not a graspable target.",
       "by": "legacy"
     },
-    "metric_scale": {
-      "value": 1.0,
-      "by": "legacy"
-    },
     "friction": {
       "value": 0.6,
       "by": "legacy"
-    },
-    "upright": {
-      "value": [
-        0.0,
-        0.0,
-        0.0,
-        1.0
-      ],
-      "by": "agent:articraft",
-      "note": "stand upright on its foot plates, open shelf side facing +X toward the workspace"
     },
     "place_targets": {
       "value": [

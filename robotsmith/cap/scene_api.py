@@ -27,7 +27,7 @@ def on_articulated(
         target_position(
             "drawer_open_slot",
             anchor=on_articulated("drawer", "drawer_slide",
-                                  local_offset=(0.035, 0.0, 0.136)),
+                                  local_offset=(0.0245, 0.0, 0.0952)),
         )
     """
 

@@ -50,7 +50,6 @@ class TestResolveHandleDrag:
             "positions": {"drawer": np.array([0.55, 0.0, 0.0])},
             "assets": {"drawer": _drawer_asset()},
             "object_quats": {"drawer": list(opening_quat)},
-            "object_scales": {"drawer": 1.0},
         }
         return SimpleNamespace(skill=Skill("open", "drawer"), scene_state=scene_state, obj_pos=scene_state["positions"]["drawer"])
 
@@ -84,7 +83,6 @@ class TestResolveFrame:
             "positions": {"drawer": np.array([0.55, 0.0, 0.0])},
             "assets": {"drawer": _drawer_asset()},
             "object_quats": {"drawer": [1.0, 0.0, 0.0, 0.0]},
-            "object_scales": {"drawer": 1.0},
             "joint_positions": {"drawer": {"drawer_slide": slide}},
         }
 
@@ -158,7 +156,6 @@ def _scene_state():
         "positions": {"die": np.array([0.5, 0.0, 0.0]), "drawer": np.array([0.55, 0.0, 0.0])},
         "assets": {"drawer": _drawer_asset()},
         "object_quats": {"drawer": [1.0, 0.0, 0.0, 0.0]},
-        "object_scales": {"drawer": 1.0},
         "table_surface_z": 0.0,
     }
 

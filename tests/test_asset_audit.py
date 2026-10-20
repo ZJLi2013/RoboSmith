@@ -16,14 +16,8 @@ def _write_asset(tmp_path, visual_mesh, collision_mesh, size_cm) -> Asset:
         '<robot name="asset"><link name="l"><visual><geometry>'
         '<mesh filename="visual.obj"/></geometry></visual></link></robot>'
     )
-    metadata = AssetMetadata(
-        size_cm=size_cm,
-        source="objaverse",
-        metric_scale=1.0,
-    )
-    store.new_asset(asset_dir, "rigid", "objaverse", {
-        "metric_scale": store.annotation(1.0, "human"),
-    })
+    metadata = AssetMetadata(size_cm=size_cm, source="objaverse")
+    store.new_asset(asset_dir, "rigid", "objaverse", {})
     return Asset(
         name="asset",
         root_dir=asset_dir,
@@ -74,9 +68,9 @@ def test_audit_and_update_records_checks_bound_to_build_files(tmp_path):
 
     meta = store.load_metadata(asset.root_dir)
     assert meta.mesh["issues"] == []
-    assert meta.metric_scale == asset.metadata.metric_scale
     data = store.read_asset(asset.root_dir)
-    assert data["annotations"]["metric_scale"]["by"] == "check:gripper_fit@1"
+    assert data["annotations"] == {}
+    assert store.current_checks(asset.root_dir, data)["gripper_fit"]["metrics"] == {"xy": [0.08, 0.05]}
     assert set(store.current_checks(asset.root_dir, data)) == {"mesh_consistency", "gripper_fit"}
 
     trimesh.creation.box(extents=[0.02, 0.02, 0.02]).export(str(asset.collision_mesh))

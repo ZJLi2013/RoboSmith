@@ -69,21 +69,17 @@ What an asset can do follows from its annotations, not from its category:
 
 | Asset kind | Unlocked by | Actions | Success predicates |
 |---|---|---|---|
-| rigid | a graspable mesh with a verified upright pose and a metric scale | `pick`, `place` | `object_in_container`, `object_above`, `stacked`, `objects_aligned` |
+| rigid | a graspable mesh with a passing `upright` check | `pick`, `place` | `object_in_container`, `object_above`, `stacked`, `objects_aligned` |
 | articulated | a movable URDF joint + `handles` | `open`, `close` | `joint_opened`, `joint_closed` |
 | supporter / fixture | `kind: fixture` or any movable joint | none (it is a place target or an obstacle) | — |
 
-Three annotations carry most of the physics:
-
-- **`metric_scale`** is the single owner of scale. Point clouds, grasp gates, and support clearances are all computed
-  in metres from it; a wrong scale makes all of them wrong without an error.
-- **Frames.** Mesh frame → object frame (canonical, `+Z` up) → scene frame. `upright` is the pose used at runtime
-  and counts as verified only with a passing `upright` check record, written after human visual QA
-  (`scripts/assets/render_asset_table.py`).
-- **Gate.** An asset enters default experiments only with a passing `upright` record and a passing
-  `mesh_consistency` record. The audit also writes a `gripper_fit` record (8 cm Franka gripper) and sets
-  `metric_scale` to its recommendation. Fixtures are exempt: they load with `fixed=True`, are never grasped, and use
-  their bounding box for placement collision.
+- **Build files are the geometry.** The URDF and meshes are in metres with `+Z` up, so the asset frame is the
+  upright object frame and the scene adds only a position and a yaw. Point clouds, grasp gates, and support
+  clearances are all computed from the files as they are; there is no scale or upright annotation to apply.
+- **Gate.** An asset enters default experiments only with a passing `upright` record (the as-built orientation stands
+  upright) and a passing `mesh_consistency` record. The audit also writes a `gripper_fit` record (8 cm Franka
+  gripper), which is a check only. Fixtures are exempt: they load with `fixed=True`, are never grasped, and use their
+  bounding box for placement collision.
 
 Geometry is derived from the URDF and meshes at load (`robotsmith/assets/derive.py`), not stored: `size_cm` is the
 visual-geometry extent, the task joint is the movable joint, and a handle or place target only names a link or
@@ -161,7 +157,7 @@ If `plan_motion` fails, the segment falls back to a straight line **without coll
 
 Articulated assets load as URDF joint bodies, reset to joint value 0 (or the scene's `joint_init`), and expose joint values in
 `env_state.joint_positions`. `open` / `close` drag the handle along the joint axis ("open" means the joint value
-increases), with travel scaled by `metric_scale`. Long-horizon tasks such as `open → pick → place → close` re-anchor
+increases) by the URDF joint travel. Long-horizon tasks such as `open → pick → place → close` re-anchor
 every segment on the live simulation through `skills/frames.py::resolve_frame`, so a place target inside a drawer
 moves with the drawer.
 

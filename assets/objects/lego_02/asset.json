@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "lego_02",
-  "revision": 1,
+  "revision": 2,
   "kind": "rigid",
   "source": {
     "type": "objaverse",
@@ -19,29 +19,16 @@
       "visual.glb",
       "visual.obj"
     ],
-    "hash": "39674c10c728908392e4a591e2ca65a9732b2b3aae57610bcdd81809adf76102"
+    "hash": "a75abc75d0e3d5a2284c8ab9b6a00057c29595014e82f7286f933e8663ec137f"
   },
   "annotations": {
     "description": {
       "value": "Lego-style building block (Objaverse) [uid=9d5df16b87514d06bf9fb5e147509415]",
       "by": "legacy"
     },
-    "metric_scale": {
-      "value": 1.0,
-      "by": "check:gripper_fit@legacy"
-    },
     "friction": {
       "value": 0.55,
       "by": "legacy"
-    },
-    "upright": {
-      "value": [
-        0.0,
-        0.707107,
-        0.707107,
-        -0.0
-      ],
-      "by": "human"
     }
   }
 }

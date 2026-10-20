@@ -37,9 +37,8 @@ def resolve_frame(frame, scene_state: dict, *, slide_override: float | None = No
 
     - ``kind="world"``: return the constant ``xyz``.
     - ``kind="articulated"``: the parent asset's live pose offset by
-      ``local_offset`` (in the asset frame, scaled by the asset's metric scale)
-      and carried along the task joint by its live travel. ``slide_override``
-      lets the open/close drag pass the travel it already read (with its nominal
+      ``local_offset`` (in the asset frame) and carried along the task joint by
+      its live travel. ``slide_override`` lets the open/close drag pass the travel it already read (with its nominal
       endpoint fallback); otherwise the live ``joint_positions`` reading is used.
     - ``kind="placement"``: a named static placement affordance (``place_targets``
       entry with ``surface_local``) on any asset — parent pose ∘ surface_local, no
@@ -57,25 +56,24 @@ def resolve_frame(frame, scene_state: dict, *, slide_override: float | None = No
         raise ValueError(f"frame anchor parent {parent!r} not found in scene assets")
     parent_pos = np.asarray(scene_state["positions"][parent], dtype=np.float64)
     quat = scene_state.get("object_quats", {}).get(parent, [1.0, 0.0, 0.0, 0.0])
-    scale = float(scene_state.get("object_scales", {}).get(parent, 1.0))
 
     if kind == "articulated_opening":
         # Live midpoint of the asset's exposed opening: lip + open_dir*(slide*frac)
         # at tray-floor height. Geometry from the asset's place_targets metadata
         # (no per-scene numbers); tracks the real opening as the part recoils.
         spec = _place_target_spec(asset, frame.opening)
-        local = np.asarray(spec["lip_local"], dtype=np.float64) * scale
+        local = np.asarray(spec["lip_local"], dtype=np.float64)
         joint_name = spec.get("joint")
         travel_fraction = 0.5
     elif kind == "placement":
         # Static placement surface (e.g. a fixture shelf): parent pose ∘ surface_local,
         # no joint travel. Geometry from the asset's place_targets metadata.
         spec = _place_target_spec(asset, frame.opening)
-        local = np.asarray(spec["surface_local"], dtype=np.float64) * scale
+        local = np.asarray(spec["surface_local"], dtype=np.float64)
         joint_name = None
         travel_fraction = 1.0
     else:
-        local = np.asarray(frame.local_offset, dtype=np.float64) * scale
+        local = np.asarray(frame.local_offset, dtype=np.float64)
         joint_name = frame.joint
         travel_fraction = 1.0
 
@@ -174,18 +172,15 @@ def _resolve_handle_drag(ctx: SkillContext, *, opening: bool):
     if joint is None:
         raise ValueError(f"{skill.target!r} has no task joint for {skill.name}")
 
-    scale = float(scene_state.get("object_scales", {}).get(skill.target, 1.0))
     quat = scene_state.get("object_quats", {}).get(skill.target, [1.0, 0.0, 0.0, 0.0])
     open_dir_world = rotate_vec_wxyz(quat, np.asarray(joint.axis, dtype=np.float64))
     norm = float(np.linalg.norm(open_dir_world))
     if norm > 1e-9:
         open_dir_world = open_dir_world / norm
 
-    # The URDF joint travel is in the asset's native (unscaled) frame; the entity
-    # is loaded at ``metric_scale``, so world-frame travel scales with it.
     travel = float(joint.upper if joint.upper is not None else 0.3)
     distance = _float_or_none(skill.params.get("distance"))
-    full_travel = distance if distance is not None else travel * scale
+    full_travel = distance if distance is not None else travel
 
     # Re-anchor to the joint's live opening so the grasp lands on the handle where
     # it actually is. The runtime refreshes ``joint_positions`` before each

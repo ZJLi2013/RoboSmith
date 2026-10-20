@@ -13,8 +13,3 @@ from robotsmith.scenes.backend import (  # noqa: F401
     ResolvedScene,
     ProgrammaticSceneBackend,
 )
-from robotsmith.scenes.pose_utils import (  # noqa: F401
-    task_pose_quat,
-    task_pose_verified,
-    task_upright_quat,
-)

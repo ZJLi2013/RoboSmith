@@ -43,7 +43,7 @@ def _drawer_asset() -> Asset:
                 child="drawer",
                 axis=(1.0, 0.0, 0.0),
                 lower=0.0,
-                upper=0.35,
+                upper=0.245,
             ),
             # Handle on its own fixed-jointed link (mirrors the real URDF); the
             # world builder must carry it along the slide via _rigid_moving_links.
@@ -64,9 +64,9 @@ def test_parse_collision_boxes_has_base_and_drawer_links():
     links = {b.link for b in boxes}
     assert "base" in links and "drawer" in links
     # Spherical handle (on the fixed-jointed drawer_handle link) becomes a 2r cube
-    # (radius 0.025 -> 0.05 side).
-    handle = [b for b in boxes if b.link == "drawer_handle" and np.allclose(b.size, (0.05, 0.05, 0.05))]
-    assert handle, "spherical handle should be approximated by a 0.05 box"
+    # (radius 0.0175 -> 0.035 side).
+    handle = [b for b in boxes if b.link == "drawer_handle" and np.allclose(b.size, (0.035, 0.035, 0.035))]
+    assert handle, "spherical handle should be approximated by a 0.035 box"
 
 
 # --- World builder ----------------------------------------------------------
@@ -75,8 +75,8 @@ def test_build_collision_world_drawer_slides_along_axis():
     asset = _drawer_asset()
     pos = (0.8, 0.0, 0.775)
     quat = (1.0, 0.0, 0.0, 0.0)  # identity
-    closed = build_collision_world(asset, pos, quat, 1.0, joint_value=0.0, moving_link="drawer")
-    opened = build_collision_world(asset, pos, quat, 1.0, joint_value=0.35, moving_link="drawer")
+    closed = build_collision_world(asset, pos, quat, joint_value=0.0, moving_link="drawer")
+    opened = build_collision_world(asset, pos, quat, joint_value=0.245, moving_link="drawer")
     # Build order matches parse_urdf_collision_boxes, so we can attribute each
     # delta to its source link and assert per-link (not just "something moved").
     box_links = [b.link for b in parse_urdf_collision_boxes(_DRAWER_URDF)]
@@ -91,28 +91,28 @@ def test_build_collision_world_drawer_slides_along_axis():
     for link in ("drawer", "drawer_handle"):
         assert by_link.get(link), f"expected collision boxes on {link!r}"
         for d in by_link[link]:
-            assert np.allclose(d, [0.35, 0.0, 0.0], atol=1e-6), f"{link} box must slide"
+            assert np.allclose(d, [0.245, 0.0, 0.0], atol=1e-6), f"{link} box must slide"
     for d in by_link.get("base", []):
         assert np.linalg.norm(d) < 1e-9, "base boxes stay put"
 
 
-def test_build_collision_world_scale_and_ground():
+def test_build_collision_world_metric_extent_and_ground():
     asset = _drawer_asset()
     world = build_collision_world(
-        asset, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0), 0.5, joint_value=0.0,
+        asset, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0), joint_value=0.0,
         moving_link="drawer", ground_z=0.75,
     )
     assert any(p["type"] == "halfspace" and p["point"][2] == 0.75 for p in world)
-    # extent = FULL size (serve halves it): 0.45-wide box at scale 0.5 -> 0.225
-    bottom = next(b for b in world if np.isclose(b["extent"][0], 0.225))
+    # extent = FULL size (serve halves it): the 0.315-wide bottom panel
+    bottom = next(b for b in world if np.isclose(b["extent"][0], 0.315))
     assert bottom
 
 
 def test_build_collision_world_exempt_link_dropped():
     asset = _drawer_asset()
-    full = build_collision_world(asset, (0, 0, 0), (1, 0, 0, 0), 1.0, moving_link="drawer")
+    full = build_collision_world(asset, (0, 0, 0), (1, 0, 0, 0), moving_link="drawer")
     no_drawer = build_collision_world(
-        asset, (0, 0, 0), (1, 0, 0, 0), 1.0, moving_link="drawer", exempt_links=["drawer"]
+        asset, (0, 0, 0), (1, 0, 0, 0), moving_link="drawer", exempt_links=["drawer"]
     )
     assert all("box" == p["type"] for p in no_drawer)
     assert len(no_drawer) < len(full)
@@ -124,7 +124,6 @@ def test_build_obstacle_world_from_scene_state():
         "assets": {"drawer": asset, "die": None},
         "positions": {"drawer": np.array([0.8, 0.0, 0.775]), "die": np.array([0.45, 0.32, 0.8])},
         "object_quats": {"drawer": (1.0, 0.0, 0.0, 0.0)},
-        "object_scales": {"drawer": 1.0},
         "joint_positions": {"drawer": {"drawer_slide": 0.3}},
     }
     world = build_obstacle_world(scene_state, ground_z=0.75)

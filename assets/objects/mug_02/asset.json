@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "mug_02",
-  "revision": 1,
+  "revision": 2,
   "kind": "rigid",
   "source": {
     "type": "objaverse",
@@ -19,29 +19,16 @@
       "visual.glb",
       "visual.obj"
     ],
-    "hash": "53fec2956913a3d5c3aac876f2259d237d8a7e70c4c5a1794a857b00ca296852"
+    "hash": "8031083a627221dfab0de2afd3a58ed136ea118b8aa2c5ccaf1af1f9b2b37b9b"
   },
   "annotations": {
     "description": {
       "value": "Ceramic mug (Objaverse) [uid=4fbb57124fec47d8b216101e19f5d385]",
       "by": "legacy"
     },
-    "metric_scale": {
-      "value": 0.675,
-      "by": "check:gripper_fit@legacy"
-    },
     "friction": {
       "value": 0.6,
       "by": "legacy"
-    },
-    "upright": {
-      "value": [
-        0.5,
-        0.5,
-        0.5,
-        0.5
-      ],
-      "by": "human"
     }
   }
 }
