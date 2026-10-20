@@ -31,6 +31,23 @@ Each arrow is one typed contract, and each layer has one owner in the code:
 | Execution → motion backend | the `MotionPlanner` protocol (`robotsmith/motion/`) |
 | Simulator / recorder | `robotsmith/sim/sim_env.py`, `robotsmith/sim/recorder.py` (the only adapters) |
 
+## Code layout
+
+```text
+robotsmith/
+├── assets/            # Asset / AssetMetadata / AssetLibrary, builtin assets + catalog
+├── cap/               # declarative task layer: scene, task, success, skill intents
+├── scenes/            # SceneConfig / ObjectPlacement, upright pose, Genesis loader
+├── tasks/             # TaskSpec, predicates, task presets
+├── scenario_runtime/  # scenario load, materialize, segment-level runner
+├── grasp/             # learned grasp planner + feasibility gate
+├── motion/            # motion planning, rocRobo backend, collision world
+├── execution/         # executor: skills to joint trajectories
+├── skills/            # pick / place / open / close + registry
+├── sim/               # Genesis SimEnv, Franka, LeRobot recorder
+└── rollout/           # rollout orchestration, episode layout, video export
+```
+
 ## Key concepts
 
 ### Asset and affordance
@@ -153,3 +170,13 @@ the initial state, run the skills, then evaluate the success tree. The run write
 - One asset per process: `SimEnv.build` initialises Genesis every time, so a second build in the same process fails.
 - The first `plan_motion` of a new scene shape compiles for about 10 minutes; later runs reuse the JAX disk cache.
 - Data comes from scripted IK replay only; there is no DAgger-style or closed-loop evaluation backend yet.
+
+## Built on
+
+- [Genesis](https://github.com/Genesis-Embodied-AI/Genesis): GPU physics simulation.
+- [LeRobot](https://github.com/huggingface/lerobot): dataset format and the SmolVLA training entry.
+- [rocRobo](https://github.com/ZJLi2013/rocRobo) on [PyRoki](https://github.com/chungmin99/pyroki): collision-free IK
+  and trajectory optimisation.
+- [GraspGen](https://github.com/NVlabs/GraspGen): learned grasp proposals (NVIDIA research / evaluation license).
+- [Objaverse](https://objaverse.allenai.org/), [RocRecon](https://github.com/ZJLi2013/RocRecon), and
+  [Articraft](https://github.com/mattzh72/articraft): asset sources.

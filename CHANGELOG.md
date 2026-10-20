@@ -4,6 +4,11 @@ All notable user-facing changes are documented here. This project follows Semant
 
 ## [Unreleased]
 
+### Changed
+
+- `README.md` is in English, with the Chinese version in `README.zh-CN.md`; the demo videos render as GIFs. The code
+  layout and the upstream projects moved to `docs/design.md`.
+
 ## [0.1.0] - 2026-10-20
 
 First public release: scripted-teacher synthetic data generation. Assets plus a CAP scenario go in; Genesis

@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for improving RoboSmith. Read the [README](README-en.md) first: RoboSmith turns sim-ready assets into
+Thanks for improving RoboSmith. Read the [README](README.md) first: RoboSmith turns sim-ready assets into
 scenes, expert trajectories, and LeRobot datasets, and each layer below has one owner in the code.
 Participation is governed by [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
 
