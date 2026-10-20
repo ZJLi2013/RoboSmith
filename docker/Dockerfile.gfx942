@@ -107,10 +107,12 @@ RUN python -m pip install "lerobot==0.4.4" \
 # numpy/scikit-image/setuptools are re-pinned afterwards because the
 # diffusers/transformers/huggingface-hub deps pull a newer numpy that would
 # otherwise reintroduce the Genesis 0.4.5 skimage ABI break.
+# tensordict is pinned: newer releases require a newer torch, and pip then
+# replaces the base image's ROCm torch 2.6 with a CUDA wheel.
 RUN python -m pip install --no-cache-dir \
       "git+https://github.com/ZJLi2013/spconv_rocm.git@rocm" \
     && python -m pip install --no-cache-dir \
-      transformers==4.45.2 tensordict diffusers==0.11.1 \
+      transformers==4.45.2 tensordict==0.7.2 diffusers==0.11.1 \
       huggingface-hub==0.25.2 sharedarray \
     && if [ -f scripts/setup/_install_scatter_shim.py ]; then \
          python scripts/setup/_install_scatter_shim.py; \
