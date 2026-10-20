@@ -1,0 +1,57 @@
+name: Bug report
+description: Report a reproducible RoboSmith defect
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: checkboxes
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed credentials, hostnames, personal paths, and unpublished data.
+          required: true
+        - label: This is not a security vulnerability.
+          required: true
+  - type: input
+    attributes:
+      label: Commit or release
+      placeholder: "c844c78 or v0.2.0"
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Environment
+      description: OS, Python version, GPU arch and Docker image tag if any, Genesis version
+      placeholder: "Ubuntu 22.04; Python 3.10; gfx942; robotsmith:gfx942-rocm6.4.3-genesis0.4.5"
+    validations:
+      required: true
+  - type: dropdown
+    attributes:
+      label: Layer
+      options:
+        - Assets
+        - Scene and task authoring (CAP)
+        - Grasp
+        - Motion and execution
+        - Rollout and data export
+        - Runtime images
+        - Documentation
+        - Unsure
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Reproduction
+      description: Scenario, command, seed, and the smallest asset set that reproduces it
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Actual result and evidence
+      description: Sanitized log, exit code, success-rate numbers, or a frame from the rollout video
+    validations:
+      required: true

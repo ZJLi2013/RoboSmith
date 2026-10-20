@@ -1,0 +1,46 @@
+name: Feature proposal
+description: Propose a problem to solve before proposing code
+title: "[proposal] "
+labels: ["proposal"]
+body:
+  - type: textarea
+    attributes:
+      label: Problem
+      description: What data-generation workflow fails or is missing today? Include evidence, not only a preferred solution.
+    validations:
+      required: true
+  - type: dropdown
+    attributes:
+      label: Proposed layer
+      options:
+        - Assets
+        - Scene and task authoring (CAP)
+        - Grasp
+        - Motion and execution
+        - Rollout and data export
+        - Runtime images
+        - Unsure
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Why the current owner is insufficient
+      description: Point to the module that owns this today and explain what it cannot do.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Acceptance evidence
+      description: Which test, scenario, or success rate would prove this solved?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Compatibility
+      description: Affected CAP API, asset metadata, scenario files, LeRobot layout, or dependencies
+  - type: checkboxes
+    attributes:
+      label: Scope
+      options:
+        - label: I will remove the path this proposal replaces.
+          required: true

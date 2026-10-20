@@ -119,6 +119,11 @@ robotsmith/
 - [Objaverse](https://objaverse.allenai.org/) — 3D 物体数据集
 - [GraspGen](https://github.com/NVlabs/GraspGen) — learned grasping(NVlabs · research/eval 许可)
 
+## 参与贡献
+
+所有改动都经 pull request 合入，见 [CONTRIBUTING.md](CONTRIBUTING.md)、[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+与 [AI_POLICY.md](AI_POLICY.md)。安全问题按 [SECURITY.md](SECURITY.md) 私下报告。变更记录见 [CHANGELOG.md](CHANGELOG.md)。
+
 ## License
 
 Apache-2.0,见 [LICENSE](LICENSE)。
