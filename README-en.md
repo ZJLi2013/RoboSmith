@@ -55,6 +55,9 @@ Example scenario: [`scenarios/pick_place_into_drawer.py`](scenarios/pick_place_i
 
 ## Quick start
 
+Step-by-step setup from a fresh GPU node (image, GraspGen weights, rocRobo sidecar, first run):
+[`docs/quick-start.md`](docs/quick-start.md). Design and key concepts: [`docs/design.md`](docs/design.md).
+
 ```bash
 pip install -e .
 
