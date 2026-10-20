@@ -11,6 +11,8 @@ All notable user-facing changes are documented here. This project follows Semant
 - Unit test suite under `tests/`, run in CI on every pull request.
 - `snapshot_scenario.py` accepts `--overview-pos`, `--overview-lookat`, and `--fov`.
 - Contribution guide, code of conduct, security policy, AI contribution policy, and issue / PR templates.
+- `scripts/assets/import_objaverse.py`, which produced the Objaverse assets in `assets/objects/`.
+- `scripts/train_smolvla.py` for SmolVLA post-training on a recorded dataset, and a `lerobot` extra.
 
 ### Changed
 

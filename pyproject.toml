@@ -17,4 +17,5 @@ dependencies = [
 sim = ["torch>=2.0"]
 viz = ["viser>=1.0"]
 genesis = ["genesis-world>=0.2"]
+lerobot = ["lerobot"]
 dev = ["pytest>=8.0"]
