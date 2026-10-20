@@ -30,7 +30,7 @@ $HOME/.cache/huggingface  LeRobot datasets are written here
 ```bash
 cd $HOME
 git clone https://github.com/ZJLi2013/RoboSmith.git
-git clone https://github.com/ZJLi2013/rocRobo.git
+git clone --recurse-submodules https://github.com/ZJLi2013/rocRobo.git
 git clone --depth 1 https://github.com/NVlabs/GraspGen.git
 ```
 
@@ -78,10 +78,11 @@ This writes `*_rocm.pth` next to the originals; the grasp wrapper prefers them a
 
 ## 4. Start the rocRobo sidecar
 
-Once per machine. The container must be named `rocrobo_dev` (or set `ROCROBO_CONTAINER`) and mount rocRobo at
-`/rocrobo`:
+Once per machine. The image is not published; build it from the rocRobo checkout. The container must be named
+`rocrobo_dev` (or set `ROCROBO_CONTAINER`) and mount rocRobo at `/rocrobo`:
 
 ```bash
+cd $HOME/rocRobo && docker build -t rocrobo/pyroki:rocm7.2.4-jax0.8.2 .
 docker run -d --name rocrobo_dev \
   --device=/dev/kfd --device=/dev/dri --group-add video --ipc=host \
   -e AMD_COMGR_NAMESPACE=1 -e HIP_VISIBLE_DEVICES=0 \

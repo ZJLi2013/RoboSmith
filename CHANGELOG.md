@@ -14,6 +14,14 @@ All notable user-facing changes are documented here. This project follows Semant
 - `README.md` is in English, with the Chinese version in `README.zh-CN.md`; the demo videos render as GIFs. The code
   layout and the upstream projects moved to `docs/design.md`.
 
+### Fixed
+
+- The gfx942 image pins `tensordict==0.7.2`. Unpinned, the GraspGen layer pulled a release that requires
+  `torch>=2.11`, which replaced the ROCm torch 2.6 with a CUDA wheel and broke startup
+  (`operator torchvision::nms does not exist`).
+- `docs/quick-start.md` clones rocRobo with its `pyroki` submodule and builds the `rocrobo/pyroki` sidecar image,
+  which is not published.
+
 ## [0.1.0] - 2026-10-20
 
 First public release: scripted-teacher synthetic data generation. Assets plus a CAP scenario go in; Genesis
