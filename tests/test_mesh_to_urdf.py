@@ -1,9 +1,12 @@
 """Tests for mesh_to_urdf conversion and produce-time prompt constraints."""
 
+from types import SimpleNamespace
+
 import trimesh
 
-from robotsmith.assets.producers import mesh_to_urdf
-from robotsmith.assets.producers.produce import _with_canonical_asset_constraint
+from robotsmith.assets.library import AssetLibrary
+from robotsmith.assets.producers import mesh_to_urdf, produce
+from robotsmith.assets.producers.produce import _with_canonical_asset_constraint, generate_asset
 
 
 class TestMeshToURDF:
@@ -45,3 +48,18 @@ class TestProducePrompt:
         prompt = _with_canonical_asset_constraint("red mug")
         assert "red mug" in prompt
         assert "+Z is semantic up" in prompt
+
+
+def test_generated_asset_is_loadable(tmp_path, monkeypatch):
+    fake = SimpleNamespace(
+        info=SimpleNamespace(model_name="fake", has_pbr=False),
+        generate=lambda prompt, **_: trimesh.creation.box(extents=[0.08, 0.05, 0.1]),
+    )
+    monkeypatch.setattr(produce, "get_backend", lambda name, **_: fake)
+
+    generate_asset("red mug", tmp_path / "assets" / "generated" / "red_mug", backend="fake")
+
+    asset = AssetLibrary(tmp_path / "assets").get("red_mug")
+    assert asset is not None
+    assert asset.metadata.source == "generated"
+    assert asset.metadata.description == "Generated from prompt: red mug"
