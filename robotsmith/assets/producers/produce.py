@@ -3,7 +3,7 @@
 Pipeline: 3D gen backend -> trimesh -> mesh_to_urdf -> asset directory.
 
 It writes files only (model.urdf, visual mesh, collision.obj, reference.png,
-generation.json) into an output directory; ``AssetLibrary`` loads the result.
+generation.json, asset.json) into an output directory; ``AssetLibrary`` loads the result.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from robotsmith.assets.catalog import catalog_asset
 from robotsmith.assets.producers.backend import get_backend
 from robotsmith.assets.producers.mesh_to_urdf import mesh_to_urdf
 
@@ -117,6 +118,7 @@ def generate_asset(
     (output_dir / "generation.json").write_text(
         json.dumps(manifest, indent=2), encoding="utf-8"
     )
+    catalog_asset(output_dir, prompt)
 
     print(f"[produce] Produced {asset_name} in {total:.1f}s "
           f"(gen={t_gen:.1f}s, backend={backend}) -> {output_dir}")
