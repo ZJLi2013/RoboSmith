@@ -55,6 +55,9 @@ SDG 的价值直接:在仿真里制造演示,物理 / 随机化 / 标签全部�
 
 ## 快速开始
 
+从一台全新 GPU 节点跑通(镜像、GraspGen 权重、rocRobo sidecar、首次运行)见 [`docs/quick-start.md`](docs/quick-start.md);
+设计与关键概念见 [`docs/design.md`](docs/design.md)。
+
 ```bash
 pip install -e .
 

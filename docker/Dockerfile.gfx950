@@ -3,7 +3,7 @@
 # RoboSmith ROCm runtime.
 #
 # Build from the repository root:
-#   docker build -f docker/Dockerfile -t robotsmith:rocm-headless .
+#   docker build -f docker/Dockerfile.gfx950 -t robotsmith:rocm-headless .
 #
 # The important invariant is headless rendering through Xvfb/GLX.  Do not set
 # PYOPENGL_PLATFORM=egl for Genesis runs; EGL has been brittle on the cluster.
