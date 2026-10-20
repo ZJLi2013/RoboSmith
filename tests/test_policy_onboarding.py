@@ -10,7 +10,11 @@ from robotsmith.grasp.policy_onboarding import (
 def _write_asset(tmp_path, subdir: str, name: str):
     asset_dir = tmp_path / "assets" / subdir / name
     asset_dir.mkdir(parents=True)
-    (asset_dir / "model.urdf").write_text("<robot name='test'></robot>", encoding="utf-8")
+    (asset_dir / "model.urdf").write_text(
+        "<robot name='test'><link name='l'><visual><geometry><box size='0.05 0.05 0.05'/>"
+        "</geometry></visual></link></robot>",
+        encoding="utf-8",
+    )
     store.new_asset(asset_dir, "rigid", "generated", {})
     return asset_dir
 

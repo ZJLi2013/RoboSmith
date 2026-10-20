@@ -16,6 +16,10 @@ All notable user-facing changes are documented here. This project follows Semant
   the files change. The audit writes `mesh_consistency` and `gripper_fit` records; `render_asset_table.py` writes a
   human `upright` record. Grasp policy buckets moved to `assets/grasp_policy_buckets.json`. Loaded values are
   unchanged for all assets.
+- Asset geometry is derived from the URDF and meshes at load (`robotsmith/assets/derive.py`) instead of being stored:
+  `size_cm` is the visual-geometry extent, the task joint is the movable joint, and `handles` / `place_targets` name
+  a link or collision box whose position is read from the URDF. `drawer_cabinet` grows from 45 to 57.5 cm in x (the
+  stored value left out the front panel and handle) and its opening lip moves 10 mm to the tray's front edge.
 - `assets/objects/` keeps only the assets the scenarios load: `apple_01`, `die_01`, `lego_02`, `mug_02`, `plane`,
   `table_simple`.
 - `README.md` is in English, with the Chinese version in `README.zh-CN.md`; the demo videos render as GIFs. The code
@@ -26,6 +30,9 @@ All notable user-facing changes are documented here. This project follows Semant
 - `mass_kg`, `density_kg_m3`, `restitution`, `stable_poses` and `grasp_strategy` asset fields (mass comes from the
   URDF; the rest had no readers), `assets/catalog.json` and `AssetLibrary.save_catalog`,
   `scripts/assets/compute_stable_poses.py`, and `scripts/assets/import_objaverse.py`.
+- `task_joints`, `joint_init` (default 0; scenes still override), `canonical_frame`, `mounting_holes`,
+  `upright_candidates`, and the `tray_floor_z` / `travel_fraction` / `extent_xy` place-target fields, with the
+  `render_asset_table.py` modes that read `upright_candidates`.
 
 ### Fixed
 

@@ -326,8 +326,8 @@ class SimEnv:
         """Map each articulated object's joints to local DOF indices and resolve
         the initial joint state.
 
-        Initial qpos = asset metadata default, overlaid by the per-scenario
-        ``ObjectPlacement.joint_init`` override (scene override > asset default).
+        Initial qpos = 0, overlaid by the per-scenario ``ObjectPlacement.joint_init``
+        override.
         Joints must be passive (no position actuator): the robot opens/closes
         them through contact, then the slide must *stay where it was dragged*.
 
@@ -374,8 +374,7 @@ class SimEnv:
                 logger.warning(
                     "[articulation] %s passivize failed: %s", name, exc
                 )
-            init = dict(getattr(asset.metadata, "joint_init", {}) or {})
-            init.update(scene_joint_init.get(name, {}) or {})
+            init = scene_joint_init.get(name, {}) or {}
             self.articulated_joint_init[name] = {
                 j: float(init.get(j, 0.0)) for j in dof_map
             }

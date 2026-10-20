@@ -162,23 +162,18 @@ def orientation_candidates() -> list[list[float]]:
     return candidates
 
 
-def apply_upright_candidates(library: AssetLibrary, asset_name: str, indices: list[int]) -> None:
-    """Write selected visual QA candidates as the upright annotation + a human upright check."""
+def apply_upright(library: AssetLibrary, asset_name: str, index: int) -> None:
+    """Write a visual QA candidate as the upright annotation + a human upright check."""
     asset = library.get(asset_name)
     if asset is None:
         raise ValueError(f"Unknown asset: {asset_name}")
     candidates = orientation_candidates()
-    if not indices:
-        raise ValueError("at least one upright candidate index is required")
-    for index in indices:
-        if index < 0 or index >= len(candidates):
-            raise ValueError(f"candidate index must be 0..{len(candidates) - 1}, got {index}")
-    store.set_annotation(asset.root_dir, "upright", candidates[indices[0]], "human",
-                         "Primary upright pose; see upright_candidates for all visually valid poses.")
-    store.set_annotation(asset.root_dir, "upright_candidates", [candidates[i] for i in indices], "human")
+    if index < 0 or index >= len(candidates):
+        raise ValueError(f"candidate index must be 0..{len(candidates) - 1}, got {index}")
+    store.set_annotation(asset.root_dir, "upright", candidates[index], "human")
     store.append_check(asset.root_dir, "upright", "pass",
-                       {"method": "manual_visual_qa", "candidate_indices": indices}, by="human")
-    print(f"updated {asset.root_dir / store.ASSET_FILE} with upright candidates {indices}")
+                       {"method": "manual_visual_qa", "candidate_index": index}, by="human")
+    print(f"updated {asset.root_dir / store.ASSET_FILE} with upright candidate {index}")
 
 
 def main() -> None:
@@ -196,31 +191,19 @@ def main() -> None:
                         help="Render or annotate one exact asset name")
     parser.add_argument("--candidate-poses", action="store_true",
                         help="Render 24 right-angle orientation candidates for --asset")
-    parser.add_argument("--upright-candidates", action="store_true",
-                        help="Render the upright_candidates annotation for --asset")
     parser.add_argument("--apply-upright-index", type=int, default=None,
                         help="Write one candidate index as the upright annotation")
-    parser.add_argument("--apply-upright-indices", type=int, nargs="+", default=None,
-                        help="Write multiple valid upright candidate indices as upright annotations")
-    parser.add_argument("--sample-upright-candidates", type=int, default=0,
-                        help="Render 1..N random valid upright candidates per asset")
     parser.add_argument("--include-franka", action="store_true",
                         help="Add a Franka Panda at home pose on the table")
-    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--cpu", action="store_true")
     args = parser.parse_args()
 
     assets_root = Path(args.assets_root) if args.assets_root else REPO_ROOT / "assets"
     library = AssetLibrary(assets_root)
-    if args.apply_upright_index is not None or args.apply_upright_indices is not None:
+    if args.apply_upright_index is not None:
         if not args.asset:
-            raise ValueError("--apply-upright-index/--apply-upright-indices requires --asset")
-        indices = (
-            args.apply_upright_indices
-            if args.apply_upright_indices is not None
-            else [args.apply_upright_index]
-        )
-        apply_upright_candidates(library, args.asset, indices)
+            raise ValueError("--apply-upright-index requires --asset")
+        apply_upright(library, args.asset, args.apply_upright_index)
         return
 
     ensure_display()
@@ -242,14 +225,7 @@ def main() -> None:
     if args.out:
         out_dir = Path(args.out)
     elif args.asset:
-        if args.candidate_poses:
-            mode_name = "candidate_poses"
-        elif args.upright_candidates:
-            mode_name = "upright_candidates"
-        elif args.sample_upright_candidates:
-            mode_name = "sample_upright_candidates"
-        else:
-            mode_name = "overview"
+        mode_name = "candidate_poses" if args.candidate_poses else "overview"
         out_dir = assets[0].root_dir / "qa" / "render_asset_table" / mode_name
     else:
         out_dir = REPO_ROOT / "output" / "asset_table_overview"
@@ -281,7 +257,6 @@ def main() -> None:
             )
         )
 
-    rng = __import__("random").Random(args.seed)
     manifest = []
     if args.candidate_poses:
         if not args.asset:
@@ -290,46 +265,6 @@ def main() -> None:
             (assets[0], i, quat)
             for i, quat in enumerate(orientation_candidates())
         ]
-    elif args.upright_candidates:
-        if not args.asset:
-            raise ValueError("--upright-candidates requires --asset")
-        task_poses = assets[0].metadata.task_poses or {}
-        candidates_meta = task_poses.get("upright_candidates") or []
-        if not candidates_meta and isinstance(task_poses.get("upright"), dict):
-            candidates_meta = [task_poses["upright"]]
-        render_items = [
-            (
-                assets[0],
-                candidate.get("candidate_index"),
-                list(candidate.get("quat_object") or candidate.get("quat") or candidate.get("quaternion")),
-            )
-            for candidate in candidates_meta
-            if isinstance(candidate, dict)
-            and (candidate.get("quat_object") or candidate.get("quat") or candidate.get("quaternion")) is not None
-        ]
-        if not render_items:
-            raise ValueError(f"{args.asset} has no upright candidates in asset.json")
-    elif args.sample_upright_candidates:
-        render_items = []
-        for asset in assets:
-            task_poses = asset.metadata.task_poses or {}
-            candidates_meta = task_poses.get("upright_candidates") or []
-            if not candidates_meta and isinstance(task_poses.get("upright"), dict):
-                candidates_meta = [task_poses["upright"]]
-            valid = [
-                (
-                    candidate.get("candidate_index"),
-                    candidate.get("quat_object") or candidate.get("quat") or candidate.get("quaternion"),
-                )
-                for candidate in candidates_meta
-                if isinstance(candidate, dict)
-            ]
-            valid = [(index, quat) for index, quat in valid if quat is not None]
-            if not valid:
-                valid = [(None, [1.0, 0.0, 0.0, 0.0])]
-            sample_count = rng.randint(1, min(args.sample_upright_candidates, len(valid)))
-            for index, quat in rng.sample(valid, sample_count):
-                render_items.append((asset, index, list(quat)))
     else:
         render_items = [(asset, None, None) for asset in assets]
 

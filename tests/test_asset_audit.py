@@ -12,13 +12,16 @@ def _write_asset(tmp_path, visual_mesh, collision_mesh, size_cm) -> Asset:
     collision_path = asset_dir / "collision.obj"
     visual_mesh.export(str(visual_path))
     collision_mesh.export(str(collision_path))
+    (asset_dir / "model.urdf").write_text(
+        '<robot name="asset"><link name="l"><visual><geometry>'
+        '<mesh filename="visual.obj"/></geometry></visual></link></robot>'
+    )
     metadata = AssetMetadata(
         size_cm=size_cm,
         source="objaverse",
         metric_scale=1.0,
     )
     store.new_asset(asset_dir, "rigid", "objaverse", {
-        "size_cm": store.annotation(size_cm, "human"),
         "metric_scale": store.annotation(1.0, "human"),
     })
     return Asset(

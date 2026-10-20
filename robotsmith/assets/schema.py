@@ -103,8 +103,8 @@ def _origin_of(el) -> tuple[tuple[float, float, float], tuple[float, float, floa
     return xyz, rpy
 
 
-def parse_urdf_collision_boxes(urdf_path: Path) -> list[UrdfCollisionBox]:
-    """Parse every link's ``<collision>`` geometry into per-link boxes.
+def parse_urdf_collision_boxes(urdf_path: Path, element: str = "collision") -> list[UrdfCollisionBox]:
+    """Parse every link's ``<collision>`` (or ``<visual>``) geometry into per-link boxes.
 
     Boxes keep their size; spheres become a cube of side ``2*radius``; cylinders
     become a box of ``(2r, 2r, length)``. Geometry types without a clear box
@@ -114,7 +114,7 @@ def parse_urdf_collision_boxes(urdf_path: Path) -> list[UrdfCollisionBox]:
     boxes: list[UrdfCollisionBox] = []
     for link in root.findall("link"):
         link_name = link.get("name", "")
-        for col in link.findall("collision"):
+        for col in link.findall(element):
             geom = col.find("geometry")
             if geom is None:
                 continue
@@ -151,6 +151,7 @@ class AssetMetadata:
 
     friction: float = 0.5
     size_cm: list[float] = field(default_factory=lambda: [5.0, 5.0, 5.0])
+    """Visual-geometry extent in the asset frame (cm), derived from the URDF at load."""
     metric_scale: float = 1.0
     """Fixed asset-level scale applied when loading this asset into metric scenes.
 
@@ -165,12 +166,6 @@ class AssetMetadata:
     grasp-planned). Orthogonal to geometry (mesh vs primitive). Articulated
     assets are fixtures regardless of this field (see ``Asset.is_fixture``)."""
     description: str = ""
-    canonical_frame: dict = field(default_factory=dict)
-    """How the raw mesh frame maps into RoboSmith's semantic object frame.
-
-    Reserved for import-time canonicalization metadata such as unit, up axis,
-    origin convention, and T_object_mesh. Existing assets may leave this empty.
-    """
     task_poses: dict = field(default_factory=dict)
     """Named semantic poses in the canonical object frame.
 
@@ -183,32 +178,27 @@ class AssetMetadata:
     Read from the grasp sidecar ``assets/grasp_policy_buckets.json``, not ``asset.json``."""
     mesh: dict = field(default_factory=dict)
     """Metrics of the current ``mesh_consistency`` check record (empty if none)."""
-    task_joints: list[str] = field(default_factory=list)
-    """Articulated assets only: URDF joint names that are task-relevant (e.g. the
-    drawer slide). Empty for rigid assets. Joint kinematics stay in the URDF; this
-    only marks *which* joints carry task semantics."""
     handles: list[dict] = field(default_factory=list)
     """Articulated assets only: graspable parts for open/close, each
-    ``{"name": str, "link": str}``. Empty for rigid assets."""
+    ``{"link": str, "local_pos": [x, y, z]}`` (position derived from the URDF)."""
     place_targets: list[dict] = field(default_factory=list)
     """Named placement affordances on **any** asset (fixtures included, not just
-    articulated): where a ``place`` drops into/onto the asset, derived from asset
-    geometry (no per-scene magic numbers). Two shapes:
+    articulated): where a ``place`` drops into/onto the asset. The annotation names
+    a collision box; the geometry is derived from it (``robotsmith.assets.derive``).
+    Two shapes:
 
-    - **Joint opening** (articulated, e.g. a drawer tray)::
+    - **Joint opening** (box on a link driven by a movable joint, e.g. a drawer tray)::
 
-        {"name": "drawer_opening", "joint": "drawer_slide",
-         "lip_local": [x, y, z], "tray_floor_z": z, "travel_fraction": 0.5}
+        {"name": "drawer_opening", "joint": "drawer_slide", "lip_local": [x, y, z]}
 
-      ``lip_local`` is the front opening edge in the asset (URDF) frame at tray-floor
-      height; ``tray_floor_z`` the cavity floor top. Live drop point =
-      ``lip + open_dir * (live_slide * travel_fraction)`` — the exposed-opening
-      midpoint — so it tracks the part as it recoils. (kind ``articulated_opening``.)
+      ``lip_local`` is the front opening edge on the tray-floor top in the asset
+      (URDF) frame. Live drop point = ``lip + open_dir * (live_slide * 0.5)`` — the
+      exposed-opening midpoint — so it tracks the part as it recoils. (kind
+      ``articulated_opening``.)
 
     - **Static surface** (e.g. a fixture shelf)::
 
-        {"name": "shelf_lower", "surface_local": [x, y, z],
-         "extent_xy": [dx, dy], "approach": [ax, ay, az]}
+        {"name": "shelf_lower", "surface_local": [x, y, z], "approach": [ax, ay, az]}
 
       ``surface_local`` is the support-surface point in the asset frame; the drop
       point = ``parent_pose ∘ surface_local`` (tracks pose incl. yaw, no joint).
@@ -218,9 +208,6 @@ class AssetMetadata:
     time. Optional ``approach`` (unit insert direction in the asset frame, default
     top-down ``-Z``) is rotated to world by ``resolve_approach`` — e.g. ``[-1,0,0]``
     for a shelf whose open side faces local ``+X`` (side tuck-under)."""
-    joint_init: dict = field(default_factory=dict)
-    """Articulated assets only: default initial joint state ``{joint: qpos}``
-    applied on reset (e.g. ``{"drawer_slide": 0.0}`` = closed). Empty for rigid."""
 
 
 @dataclass

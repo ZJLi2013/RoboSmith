@@ -29,23 +29,6 @@
       "value": 0.6,
       "by": "legacy"
     },
-    "size_cm": {
-      "value": [
-        45.0,
-        62.0,
-        36.5
-      ],
-      "by": "legacy"
-    },
-    "canonical_frame": {
-      "value": {
-        "up_axis": "+Z",
-        "front_axis": "+X",
-        "origin": "footprint_center_floor",
-        "T_object_mesh": null
-      },
-      "by": "legacy"
-    },
     "upright": {
       "value": [
         0.0,
@@ -56,47 +39,23 @@
       "by": "agent:articraft",
       "note": "cabinet stands upright with its drawer face toward the workspace (180 deg yaw of the URDF frame, whose +X is the drawer pull direction), so a front-mounted arm pulls the drawer toward itself"
     },
-    "task_joints": {
-      "value": [
-        "drawer_slide"
-      ],
-      "by": "legacy"
-    },
     "handles": {
       "value": [
         {
-          "name": "handle",
           "link": "drawer_handle",
-          "local_pos": [
-            0.268,
-            0.0,
-            0.2125
-          ]
+          "collision": "handle_neck"
         }
       ],
-      "by": "legacy"
-    },
-    "joint_init": {
-      "value": {
-        "drawer_slide": 0.0
-      },
-      "by": "legacy"
+      "by": "agent:articraft"
     },
     "place_targets": {
       "value": [
         {
           "name": "drawer_opening",
-          "joint": "drawer_slide",
-          "lip_local": [
-            0.235,
-            0.0,
-            0.142
-          ],
-          "tray_floor_z": 0.142,
-          "travel_fraction": 0.5
+          "surface": "tray_floor"
         }
       ],
-      "by": "legacy"
+      "by": "agent:articraft"
     }
   }
 }

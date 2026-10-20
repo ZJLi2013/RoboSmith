@@ -65,9 +65,8 @@ def resolve_frame(frame, scene_state: dict, *, slide_override: float | None = No
         # (no per-scene numbers); tracks the real opening as the part recoils.
         spec = _place_target_spec(asset, frame.opening)
         local = np.asarray(spec["lip_local"], dtype=np.float64) * scale
-        local[2] = float(spec.get("tray_floor_z", spec["lip_local"][2])) * scale
         joint_name = spec.get("joint")
-        travel_fraction = float(spec.get("travel_fraction", 0.5))
+        travel_fraction = 0.5
     elif kind == "placement":
         # Static placement surface (e.g. a fixture shelf): parent pose ∘ surface_local,
         # no joint travel. Geometry from the asset's place_targets metadata.
@@ -169,8 +168,8 @@ def _resolve_handle_drag(ctx: SkillContext, *, opening: bool):
         raise ValueError(f"{skill.target!r} has no handle annotation for {skill.name}")
     local_pos = handles[0].get("local_pos", [0.0, 0.0, 0.0])
 
-    task_joints = list(getattr(asset.metadata, "task_joints", []) or [])
-    joint_name = skill.params.get("joint") or (task_joints[0] if task_joints else None)
+    movable = asset.movable_joints
+    joint_name = skill.params.get("joint") or (movable[0].name if movable else None)
     joint = asset.get_joint(joint_name) if joint_name else None
     if joint is None:
         raise ValueError(f"{skill.target!r} has no task joint for {skill.name}")

@@ -13,7 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from robotsmith.assets.schema import AssetMetadata
+from robotsmith.assets import derive
+from robotsmith.assets.schema import AssetMetadata, parse_urdf_joints
 
 ASSET_FILE = "asset.json"
 CHECKS_FILE = "checks.jsonl"
@@ -141,24 +142,19 @@ def load_metadata(asset_dir: Path, buckets: dict | None = None) -> AssetMetadata
             "quat_object": ann["upright"],
             "verified": bool(upright and upright["result"] == "pass"),
         }
-    if "upright_candidates" in ann:
-        task_poses["upright_candidates"] = [{"quat_object": q} for q in ann["upright_candidates"]]
-
+    urdf = asset_dir / "model.urdf"
     mesh_rec = checks.get("mesh_consistency")
     defaults = AssetMetadata()
     return AssetMetadata(
         friction=ann.get("friction", defaults.friction),
-        size_cm=ann.get("size_cm", defaults.size_cm),
+        size_cm=derive.size_cm(urdf),
         metric_scale=ann.get("metric_scale", defaults.metric_scale),
         source=data["source"]["type"],
         role="fixture" if data["kind"] == "fixture" else "object",
         description=ann.get("description", ""),
-        canonical_frame=ann.get("canonical_frame", {}),
         task_poses=task_poses,
         grasp_policy_bucket=(buckets or {}).get(data["id"]),
         mesh=dict(mesh_rec["metrics"]) if mesh_rec else {},
-        task_joints=ann.get("task_joints", []),
-        handles=ann.get("handles", []),
-        place_targets=ann.get("place_targets", []),
-        joint_init=ann.get("joint_init", {}),
+        handles=derive.handles(urdf, ann.get("handles", [])),
+        place_targets=derive.place_targets(urdf, ann.get("place_targets", []), parse_urdf_joints(urdf)),
     )

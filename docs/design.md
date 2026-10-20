@@ -70,23 +70,25 @@ What an asset can do follows from its annotations, not from its category:
 | Asset kind | Unlocked by | Actions | Success predicates |
 |---|---|---|---|
 | rigid | a graspable mesh with a verified upright pose and a metric scale | `pick`, `place` | `object_in_container`, `object_above`, `stacked`, `objects_aligned` |
-| articulated | `task_joints` + `handles` | `open`, `close` | `joint_opened`, `joint_closed` |
+| articulated | a movable URDF joint + `handles` | `open`, `close` | `joint_opened`, `joint_closed` |
 | supporter / fixture | `kind: fixture` or any movable joint | none (it is a place target or an obstacle) | — |
 
 Three annotations carry most of the physics:
 
 - **`metric_scale`** is the single owner of scale. Point clouds, grasp gates, and support clearances are all computed
   in metres from it; a wrong scale makes all of them wrong without an error.
-- **Frames.** Mesh frame → object frame (canonical, `+Z` up) → scene frame. `canonical_frame` is the import
-  correction; `upright` is the pose used at runtime and counts as verified only with a passing `upright` check record,
-  written after human visual QA (`scripts/assets/render_asset_table.py`).
+- **Frames.** Mesh frame → object frame (canonical, `+Z` up) → scene frame. `upright` is the pose used at runtime
+  and counts as verified only with a passing `upright` check record, written after human visual QA
+  (`scripts/assets/render_asset_table.py`).
 - **Gate.** An asset enters default experiments only with a passing `upright` record and a passing
   `mesh_consistency` record. The audit also writes a `gripper_fit` record (8 cm Franka gripper) and sets
   `metric_scale` to its recommendation. Fixtures are exempt: they load with `fixed=True`, are never grasped, and use
   their bounding box for placement collision.
 
-Articulated assets keep their kinematics in the URDF. Annotations only add task semantics: `task_joints`, `handles`,
-`joint_init`, and `place_targets`.
+Geometry is derived from the URDF and meshes at load (`robotsmith/assets/derive.py`), not stored: `size_cm` is the
+visual-geometry extent, the task joint is the movable joint, and a handle or place target only names a link or
+collision box whose position the loader reads at zero joint configuration. Annotations keep only the semantic
+choices: which link is the `handle`, which boxes are `place_targets` (with an optional insert `approach`).
 
 ### Scenario and CAP
 
@@ -101,7 +103,7 @@ agents is [`scenarios/AGENT_PROMPT.md`](../scenarios/AGENT_PROMPT.md).
   `cap/predicates.py` plus its registration.
 - **Target positions** are named points, not physical objects; place targets on an articulated fixture
   (`on_articulated_opening(...)`) follow the joint as it opens.
-- `ObjectSpec.joint_init` sets a scene-level initial joint value that overrides the asset's.
+- `ObjectSpec.joint_init` sets a scene-level initial joint value (default 0).
 - Scenario loading executes Python, so only load trusted scenario files.
 
 ### Grasp: generate, then only subtract
@@ -157,7 +159,7 @@ If `plan_motion` fails, the segment falls back to a straight line **without coll
 
 ### Articulation
 
-Articulated assets load as URDF joint bodies, reset to `joint_init`, and expose joint values in
+Articulated assets load as URDF joint bodies, reset to joint value 0 (or the scene's `joint_init`), and expose joint values in
 `env_state.joint_positions`. `open` / `close` drag the handle along the joint axis ("open" means the joint value
 increases), with travel scaled by `metric_scale`. Long-horizon tasks such as `open → pick → place → close` re-anchor
 every segment on the live simulation through `skills/frames.py::resolve_frame`, so a place target inside a drawer

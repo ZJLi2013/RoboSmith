@@ -93,7 +93,7 @@ class FrameRef:
         tracks the drawer as it opens/closes.
     kind="articulated_opening": the point is the live midpoint of asset
         ``parent``'s opening (a named ``place_targets`` entry in its metadata):
-        ``lip + open_dir * (live_slide * travel_fraction)`` at tray-floor height.
+        ``lip + open_dir * (live_slide * 0.5)`` at tray-floor height.
         Geometry lives in the asset metadata, so the scene carries no numbers.
     kind="placement": a named static placement affordance (``place_targets``
         entry with ``surface_local``) on any asset — e.g. a shelf surface on a
