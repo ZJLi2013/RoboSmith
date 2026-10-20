@@ -21,7 +21,7 @@ def _local_grasp_pose(approach_z: float, hand_offset_z: float) -> np.ndarray:
 
 
 def test_learned_planner_floor_is_object_support_not_table(tmp_path):
-    """Regression for s10: a grasp BELOW a shelved object must be rejected.
+    """A grasp BELOW a shelved object must be rejected.
 
     The object floats at z=1.10 (on a shelf, well above the table at z=0).
     GraspGen offers a clean top-down grasp (hand 0.11 above center) and a

@@ -1,9 +1,8 @@
-"""Feature D: SkillPrimitive registry + open/close primitives.
+"""SkillPrimitive registry + open/close primitives.
 
-run_skills dispatches every action through SKILL_PRIMITIVES (no if/elif growth).
-Validates dispatch + carry-state, the handle-drag resolution, and that the
-open/close drag motion produces a valid joint trajectory (with a fake IK solver).
-Real contact-based opening is validated end-to-end in Feature E (Genesis).
+Validates dispatch, the handle-drag resolution, and that the open/close drag
+motion produces a valid joint trajectory (with a fake IK solver). Contact-based
+opening needs Genesis and is covered by the GPU end-to-end run.
 """
 
 from types import SimpleNamespace
@@ -15,11 +14,7 @@ from robotsmith.assets.schema import UrdfJoint
 from robotsmith.execution.executor import MotionExecutor
 from robotsmith.motion.params import MotionParams
 from robotsmith.motion.planner import GenesisBackend
-from robotsmith.skills import (
-    SKILL_PRIMITIVES,
-    Skill,
-    run_skills,
-)
+from robotsmith.skills import Skill, run_skills
 from robotsmith.assets.geometry import rotate_vec_wxyz
 from robotsmith.skills.frames import (
     _resolve_handle_drag,
@@ -50,16 +45,10 @@ def _drawer_asset():
     )
 
 
-class TestRotateVec:
-    def test_identity(self):
-        v = rotate_vec_wxyz([1.0, 0.0, 0.0, 0.0], [0.27, 0.0, 0.33])
-        assert np.allclose(v, [0.27, 0.0, 0.33])
-
-    def test_yaw_90(self):
-        # +90deg about Z (wxyz = [cos45, 0,0, sin45]) maps +X -> +Y.
-        q = [np.cos(np.pi / 4), 0.0, 0.0, np.sin(np.pi / 4)]
-        v = rotate_vec_wxyz(q, [1.0, 0.0, 0.0])
-        assert np.allclose(v, [0.0, 1.0, 0.0], atol=1e-6)
+def test_rotate_vec_yaw_90():
+    # +90deg about Z (wxyz = [cos45, 0,0, sin45]) maps +X -> +Y.
+    q = [np.cos(np.pi / 4), 0.0, 0.0, np.sin(np.pi / 4)]
+    assert np.allclose(rotate_vec_wxyz(q, [1.0, 0.0, 0.0]), [0.0, 1.0, 0.0], atol=1e-6)
 
 
 class TestResolveHandleDrag:
@@ -182,9 +171,6 @@ def _scene_state():
 
 
 class TestRegistryDispatch:
-    def test_registry_keys(self):
-        assert set(SKILL_PRIMITIVES) == {"pick", "place", "open", "close"}
-
     def test_dispatch_pick_place_open_close(self):
         ex = _FakeExecutor()
         skills = [

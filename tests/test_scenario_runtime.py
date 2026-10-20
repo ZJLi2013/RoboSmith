@@ -151,8 +151,7 @@ def test_run_scenario_episode_reanchors_to_live_resolved_positions(monkeypatch):
             self.did_reset = False
 
         def reset(self, obj_xyz_map, *, settle_steps):
-            # Reset now receives the resolver's full world pose (xyz), not just XY,
-            # so shelf/in-drawer starts keep their resolved height (W1).
+            # Reset receives the full resolved xyz so shelf/in-drawer starts keep their height.
             assert obj_xyz_map == {
                 "die": (pytest.approx(0.42), pytest.approx(-0.10), pytest.approx(0.82)),
                 "mug": (pytest.approx(0.62), pytest.approx(0.10), pytest.approx(0.81)),
