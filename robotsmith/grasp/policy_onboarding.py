@@ -1,10 +1,12 @@
-"""Policy bucket onboarding decisions for asset-level grasp metadata."""
+"""Policy bucket onboarding decisions, stored in the grasp sidecar
+``assets/grasp_policy_buckets.json`` (not in the asset model)."""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
 
+from robotsmith.assets import store
 from robotsmith.assets.library import AssetLibrary
 from robotsmith.assets.schema import AssetMetadata
 
@@ -21,15 +23,11 @@ POLICY_BUCKETS = (
 )
 
 
-def metadata_path(asset_name: str, assets_root: Path) -> Path:
-    asset = AssetLibrary(assets_root).get(asset_name)
-    if asset is not None:
-        return asset.root_dir / "metadata.json"
-    return assets_root / "objects" / asset_name / "metadata.json"
-
-
 def load_metadata(asset_name: str, assets_root: Path) -> AssetMetadata:
-    return AssetMetadata.load(metadata_path(asset_name, assets_root))
+    asset = AssetLibrary(assets_root).get(asset_name)
+    if asset is None:
+        raise KeyError(f"unknown asset {asset_name!r} under {assets_root}")
+    return asset.metadata
 
 
 def save_policy_bucket(
@@ -37,10 +35,7 @@ def save_policy_bucket(
     assets_root: Path,
     bucket: str | list[str],
 ) -> None:
-    meta_path = metadata_path(asset_name, assets_root)
-    meta = AssetMetadata.load(meta_path)
-    meta.grasp_policy_bucket = bucket
-    meta.save(meta_path)
+    store.save_bucket(assets_root, asset_name, bucket)
 
 
 def bucket_hard_ok_counts(result: dict[str, Any]) -> dict[str, int]:

@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "id": "lego_02",
+  "revision": 1,
+  "kind": "rigid",
+  "source": {
+    "type": "objaverse",
+    "rebuildable": false,
+    "files": [
+      "provenance.json"
+    ]
+  },
+  "build": {
+    "files": [
+      "collision.obj",
+      "material.mtl",
+      "material_0.png",
+      "model.urdf",
+      "visual.glb",
+      "visual.obj"
+    ],
+    "hash": "39674c10c728908392e4a591e2ca65a9732b2b3aae57610bcdd81809adf76102"
+  },
+  "annotations": {
+    "description": {
+      "value": "Lego-style building block (Objaverse) [uid=9d5df16b87514d06bf9fb5e147509415]",
+      "by": "legacy"
+    },
+    "metric_scale": {
+      "value": 1.0,
+      "by": "check:gripper_fit@legacy"
+    },
+    "friction": {
+      "value": 0.55,
+      "by": "legacy"
+    },
+    "size_cm": {
+      "value": [
+        3.3,
+        6.0,
+        1.9
+      ],
+      "by": "legacy"
+    },
+    "canonical_frame": {
+      "value": {
+        "up_axis": "+Z",
+        "front_axis": "+X",
+        "origin": "centered_mesh_centroid"
+      },
+      "by": "legacy",
+      "note": "Objaverse import contract: mesh is assumed to be in semantic object frame."
+    },
+    "upright": {
+      "value": [
+        0.0,
+        0.707107,
+        0.707107,
+        -0.0
+      ],
+      "by": "human",
+      "note": "Primary upright pose; see upright_candidates for all visually valid poses."
+    },
+    "upright_candidates": {
+      "value": [
+        [
+          0.0,
+          0.707107,
+          0.707107,
+          -0.0
+        ],
+        [
+          0.5,
+          0.5,
+          0.5,
+          0.5
+        ],
+        [
+          0.5,
+          -0.5,
+          -0.5,
+          0.5
+        ]
+      ],
+      "by": "human"
+    }
+  }
+}

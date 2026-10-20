@@ -8,7 +8,7 @@ backward compatible (empty joints, empty annotation fields).
 from pathlib import Path
 
 from robotsmith.assets.library import AssetLibrary
-from robotsmith.assets.schema import AssetMetadata, parse_urdf_joints
+from robotsmith.assets.schema import parse_urdf_joints
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DRAWER_URDF = REPO_ROOT / "assets" / "articraft" / "drawer_cabinet" / "model.urdf"
@@ -61,15 +61,6 @@ class TestParseUrdfJoints:
         assert j.type == "prismatic"
         assert j.axis == (1.0, 0.0, 0.0)
         assert j.lower == 0.0 and j.upper == 0.35
-
-
-def test_metadata_load_fills_articulated_defaults(tmp_path):
-    # An old rigid metadata.json without articulated fields still loads.
-    p = tmp_path / "metadata.json"
-    p.write_text('{"mass_kg": 0.2, "tags": ["cube"]}', encoding="utf-8")
-    m = AssetMetadata.load(p)
-    assert m.mass_kg == 0.2
-    assert m.task_joints == [] and m.handles == [] and m.joint_init == {}
 
 
 class TestArticulatedAssetLoad:

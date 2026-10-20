@@ -15,7 +15,7 @@ request, and rebase on `main` before asking for review.
 Open an Issue first when a change:
 
 - changes a public API: the CAP scene / task / intent authoring API, skill names, or success predicates;
-- changes an on-disk format: asset `metadata.json` / `provenance.json`, scenario files, or the LeRobot output layout;
+- changes an on-disk format: asset `asset.json` / `checks.jsonl` / `provenance.json`, scenario files, or the LeRobot output layout;
 - adds a runtime dependency, a new grasp model, or a new motion backend;
 - removes or renames a scenario, script, or asset.
 

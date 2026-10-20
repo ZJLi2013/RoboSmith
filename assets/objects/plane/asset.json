@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "id": "plane",
+  "revision": 1,
+  "kind": "fixture",
+  "source": {
+    "type": "builtin_primitive",
+    "rebuildable": false,
+    "files": []
+  },
+  "build": {
+    "files": [
+      "model.urdf"
+    ],
+    "hash": "bd5cb678cc6d0e692cf3a4817d87d7131528d8a34b8c91d0499692fee997d064"
+  },
+  "annotations": {
+    "description": {
+      "value": "Ground plane (10x10m)",
+      "by": "legacy"
+    },
+    "friction": {
+      "value": 0.5,
+      "by": "legacy"
+    },
+    "size_cm": {
+      "value": [
+        1000,
+        1000,
+        0.1
+      ],
+      "by": "legacy"
+    }
+  }
+}

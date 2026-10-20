@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "id": "mug_02",
+  "revision": 1,
+  "kind": "rigid",
+  "source": {
+    "type": "objaverse",
+    "rebuildable": false,
+    "files": [
+      "provenance.json"
+    ]
+  },
+  "build": {
+    "files": [
+      "Scene_-_Root.png",
+      "collision.obj",
+      "material.mtl",
+      "model.urdf",
+      "visual.glb",
+      "visual.obj"
+    ],
+    "hash": "53fec2956913a3d5c3aac876f2259d237d8a7e70c4c5a1794a857b00ca296852"
+  },
+  "annotations": {
+    "description": {
+      "value": "Ceramic mug (Objaverse) [uid=4fbb57124fec47d8b216101e19f5d385]",
+      "by": "legacy"
+    },
+    "metric_scale": {
+      "value": 0.675,
+      "by": "check:gripper_fit@legacy"
+    },
+    "friction": {
+      "value": 0.6,
+      "by": "legacy"
+    },
+    "size_cm": {
+      "value": [
+        10.0,
+        9.5,
+        6.4
+      ],
+      "by": "legacy"
+    },
+    "canonical_frame": {
+      "value": {
+        "up_axis": "+Z",
+        "front_axis": "+X",
+        "origin": "centered_mesh_centroid"
+      },
+      "by": "legacy",
+      "note": "Objaverse import contract: mesh is assumed to be in semantic object frame."
+    },
+    "upright": {
+      "value": [
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "by": "human",
+      "note": "Primary upright pose selected by runtime table-contact point-cloud QA; see upright_candidates for all visually valid poses."
+    },
+    "upright_candidates": {
+      "value": [
+        [
+          0.0,
+          0.707107,
+          0.707107,
+          -0.0
+        ],
+        [
+          0.5,
+          0.5,
+          0.5,
+          0.5
+        ],
+        [
+          0.5,
+          -0.5,
+          -0.5,
+          0.5
+        ]
+      ],
+      "by": "human"
+    }
+  }
+}

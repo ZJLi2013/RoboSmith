@@ -79,9 +79,7 @@ class GraspPlanner(ABC):
 # - General pickable assets are grasp-planned by the learned planner (GraspGen)
 #   -> ``"learned"``.
 #
-# ``--grasp-planner`` is the run-level *default* for general assets; an individual
-# asset may pin its own strategy via ``metadata.grasp_strategy`` (reserved/unused
-# until a scene needs it), e.g. ``"none"`` to skip grasp-planning one object.
+# ``--grasp-planner`` is the run-level *default* for general assets.
 
 GRASP_STRATEGIES = {"learned", "none"}
 
@@ -90,16 +88,8 @@ def resolve_grasp_strategy(asset, *, default: str = "learned") -> str:
     """Resolve the grasp strategy for one asset.
 
     Fixtures (static props and articulated furniture) always resolve to
-    ``"none"`` — they are never grasp-planned. Otherwise an explicit
-    ``metadata.grasp_strategy`` override wins, falling back to ``default``.
+    ``"none"`` — they are never grasp-planned. Everything else uses ``default``.
     """
     if getattr(asset, "is_fixture", False):
         return "none"
-    override = getattr(getattr(asset, "metadata", None), "grasp_strategy", None)
-    if override:
-        if override not in GRASP_STRATEGIES:
-            raise ValueError(
-                f"unknown grasp_strategy {override!r}; expected one of {GRASP_STRATEGIES}"
-            )
-        return override
     return default

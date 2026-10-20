@@ -1,8 +1,7 @@
-import json
-
 import trimesh
 
-from robotsmith.assets.audit import AuditConfig, audit_mesh
+from robotsmith.assets import store
+from robotsmith.assets.audit import AuditConfig, audit_and_update, audit_mesh
 from robotsmith.assets.schema import Asset, AssetMetadata
 
 
@@ -18,7 +17,10 @@ def _write_asset(tmp_path, visual_mesh, collision_mesh, size_cm) -> Asset:
         source="objaverse",
         metric_scale=1.0,
     )
-    (asset_dir / "metadata.json").write_text(json.dumps({}), encoding="utf-8")
+    store.new_asset(asset_dir, "rigid", "objaverse", {
+        "size_cm": store.annotation(size_cm, "human"),
+        "metric_scale": store.annotation(1.0, "human"),
+    })
     return Asset(
         name="asset",
         root_dir=asset_dir,
@@ -59,3 +61,21 @@ def test_audit_mesh_rejects_missing_visual_protrusion(tmp_path):
 
     assert "visual_collision_mismatch" in mesh["issues"]
     assert not mesh["visual_collision_consistency"]["ok"]
+
+
+def test_audit_and_update_records_checks_bound_to_build_files(tmp_path):
+    visual = trimesh.creation.box(extents=[0.08, 0.05, 0.1])
+    asset = _write_asset(tmp_path, visual, visual.copy(), [8.0, 5.0, 10.0])
+
+    audit_and_update(asset, AuditConfig(consistency_sample_points=1200, consistency_grid=12))
+
+    meta = store.load_metadata(asset.root_dir)
+    assert meta.mesh["issues"] == []
+    assert meta.metric_scale == asset.metadata.metric_scale
+    data = store.read_asset(asset.root_dir)
+    assert data["annotations"]["metric_scale"]["by"] == "check:gripper_fit@1"
+    assert set(store.current_checks(asset.root_dir, data)) == {"mesh_consistency", "gripper_fit"}
+
+    trimesh.creation.box(extents=[0.02, 0.02, 0.02]).export(str(asset.collision_mesh))
+    assert store.current_checks(asset.root_dir, data) == {}
+    assert store.load_metadata(asset.root_dir).mesh == {}

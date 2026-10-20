@@ -5,9 +5,8 @@ stage: **assets → datagen → setup**.
 
 ## `assets/` — asset onboarding
 
-- `import_objaverse.py`: curate Objaverse assets into `assets/objects/`.
-- `compute_stable_poses.py`: write stable-pose metadata for assets.
-- `render_asset_table.py`: render Genesis table QA views (frame/scale audit).
+- `render_asset_table.py`: render Genesis table QA views (frame/scale audit); `--apply-upright-index(es)` writes the
+  upright annotation and a human `upright` check record.
 
 ## `datagen/` — data generation (SDG)
 
