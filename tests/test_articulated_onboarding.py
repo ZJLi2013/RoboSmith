@@ -89,7 +89,7 @@ class TestArticulatedAssetLoad:
 
     def test_rigid_asset_not_articulated(self):
         lib = AssetLibrary(REPO_ROOT / "assets")
-        block = lib.get("block_blue")
+        block = lib.get("die_01")
         assert block is not None
         assert not block.is_articulated
         assert block.metadata.task_joints == []

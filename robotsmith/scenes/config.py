@@ -30,7 +30,7 @@ class ObjectPlacement:
     name_override: Optional[str] = None
     """Override the asset name in PlacedObject for skill-target matching.
     Useful when you need a specific name like 'cube' or 'bowl' regardless
-    of the underlying asset (e.g. 'block_blue')."""
+    of the underlying asset (e.g. 'die_01')."""
     joint_init: Optional[dict] = None
     """Articulated assets only: per-scenario initial joint state {joint: qpos}
     overriding the asset metadata default on reset. None = use asset default."""
