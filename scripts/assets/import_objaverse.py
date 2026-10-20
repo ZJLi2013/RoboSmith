@@ -233,13 +233,7 @@ def process_asset(
     Assets are named {category}_{variant_idx:02d}, e.g. mug_01.
     """
     import trimesh
-    try:
-        from rocrecon import mesh_to_urdf
-    except ImportError as exc:
-        raise RuntimeError(
-            "mesh_to_urdf now lives in the RocRecon real2sim pipeline. "
-            "Install it: pip install -e ../RocRecon  (or: pip install rocrecon)"
-        ) from exc
+    from robotsmith.assets.producers import mesh_to_urdf
     from robotsmith.assets.schema import AssetMetadata
 
     scene_or_mesh = trimesh.load(glb_path, force="mesh")

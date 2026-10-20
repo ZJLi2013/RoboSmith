@@ -1,6 +1,6 @@
 """assets — the asset facts source consumed by every downstream layer.
 
-``AssetLibrary`` onboards RocRecon output into a catalog; ``Asset`` /
+``producers`` generates asset directories and ``AssetLibrary`` loads them; ``Asset`` /
 ``AssetMetadata`` carry the facts (``metric_scale``, ``task_poses.upright``,
 physical params, provenance) that scene / grasp / motion layers read. This layer
 states *what an object is*; it does not decide scene placement, task, or grasp.

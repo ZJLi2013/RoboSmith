@@ -4,6 +4,11 @@ All notable user-facing changes are documented here. This project follows Semant
 
 ## [Unreleased]
 
+### Added
+
+- `robotsmith.assets.producers`: asset generation (TRELLIS.2 and Hunyuan3D backends, `generate_asset`) and
+  `mesh_to_urdf`, moved from RocRecon. `scripts/assets/import_objaverse.py` no longer needs RocRecon installed.
+
 ### Changed
 
 - `README.md` is in English, with the Chinese version in `README.zh-CN.md`; the demo videos render as GIFs. The code
