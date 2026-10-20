@@ -35,7 +35,7 @@ Each arrow is one typed contract, and each layer has one owner in the code:
 
 ```text
 robotsmith/
-├── assets/            # Asset / AssetMetadata / AssetLibrary, builtin assets + catalog
+├── assets/            # Asset / AssetMetadata / AssetLibrary; producers/ generates assets
 ├── cap/               # declarative task layer: scene, task, success, skill intents
 ├── scenes/            # SceneConfig / ObjectPlacement, upright pose, Genesis loader
 ├── tasks/             # TaskSpec, predicates, task presets
@@ -54,7 +54,9 @@ robotsmith/
 
 An asset is a directory `assets/objects/<name>/` (`model.urdf`, `metadata.json`, `visual.*`, `collision.obj`,
 `provenance.json`); articulated assets live in `assets/articraft/<name>/`. Assets come from
-[RocRecon](https://github.com/ZJLi2013/RocRecon) or `scripts/assets/import_objaverse.py`.
+`scripts/assets/import_objaverse.py` or the producers in `robotsmith/assets/producers/`: an image-to-3D backend
+(TRELLIS.2 or Hunyuan3D) followed by `mesh_to_urdf`. The backends import their model repositories lazily and run in
+their own image, not in the Genesis one.
 
 What an asset can do follows from its metadata, not from its category:
 
@@ -178,5 +180,6 @@ the initial state, run the skills, then evaluate the success tree. The run write
 - [rocRobo](https://github.com/ZJLi2013/rocRobo) on [PyRoki](https://github.com/chungmin99/pyroki): collision-free IK
   and trajectory optimisation.
 - [GraspGen](https://github.com/NVlabs/GraspGen): learned grasp proposals (NVIDIA research / evaluation license).
-- [Objaverse](https://objaverse.allenai.org/), [RocRecon](https://github.com/ZJLi2013/RocRecon), and
-  [Articraft](https://github.com/mattzh72/articraft): asset sources.
+- [Objaverse](https://objaverse.allenai.org/) and [Articraft](https://github.com/mattzh72/articraft): asset sources.
+- [TRELLIS.2](https://github.com/microsoft/TRELLIS.2) and [Hunyuan3D-2.1](https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1):
+  image-to-3D backends for generated assets.
