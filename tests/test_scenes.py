@@ -15,7 +15,7 @@ from robotsmith.scenes.pose_utils import task_pose_quat, task_pose_verified, tas
 tabletop_simple = SceneConfig(
     name="tabletop_simple",
     description="Simple tabletop with several blocks",
-    objects=[ObjectPlacement(asset_query="block_blue", count=5)],
+    objects=[ObjectPlacement(asset_query="die_01", count=5)],
     table_size=[1.2, 0.8, 0.05],
     table_height=0.75,
     workspace_xy=[[0.35, -0.20], [0.65, 0.20]],
@@ -29,7 +29,7 @@ def lib(tmp_path: Path) -> AssetLibrary:
     """Writable library seeded with the committed support assets."""
     objects = tmp_path / "assets" / "objects"
     objects.mkdir(parents=True)
-    for name in ("block_blue", "table_simple", "plane"):
+    for name in ("die_01", "table_simple", "plane"):
         shutil.copytree(REPO_OBJECTS / name, objects / name)
     return AssetLibrary(tmp_path / "assets")
 
@@ -78,7 +78,7 @@ class TestCollisionAwarePlacement:
         """Many objects should either place or skip gracefully."""
         cfg = SceneConfig(
             name="crowded",
-            objects=[ObjectPlacement(asset_query="block_blue", count=20)],
+            objects=[ObjectPlacement(asset_query="die_01", count=20)],
             workspace_xy=[[0.4, -0.1], [0.6, 0.1]],
         )
         scene = ProgrammaticSceneBackend(seed=7).resolve(cfg, lib)

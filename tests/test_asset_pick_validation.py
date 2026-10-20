@@ -20,10 +20,10 @@ def test_make_scene_wires_single_named_object():
 
 
 def test_make_task_derives_category_from_asset_name():
-    task = _make_task("fruit_03")
+    task = _make_task("apple_01")
 
-    assert task.name == "pick_fruit_03"
+    assert task.name == "pick_apple_01"
     assert task.success.predicate == "object_above"
     assert [skill.to_dict() for skill in task.skills] == [
-        {"name": "pick", "target": "object", "params": {}, "category": "fruit"},
+        {"name": "pick", "target": "object", "params": {}, "category": "apple"},
     ]

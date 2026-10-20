@@ -7,7 +7,7 @@ from robotsmith.assets.library import AssetLibrary
 from robotsmith.assets.schema import Asset, AssetMetadata
 
 REPO_OBJECTS = Path(__file__).resolve().parents[1] / "assets" / "objects"
-SUPPORT_ASSETS = ("block_blue", "table_simple", "plane")
+SUPPORT_ASSETS = ("die_01", "table_simple", "plane")
 BUILTIN_COUNT = len(SUPPORT_ASSETS)
 
 
@@ -27,9 +27,9 @@ class TestAssetLibrary:
 
     def test_get_by_name(self, tmp_path):
         lib = _make_lib(tmp_path)
-        a = lib.get("block_blue")
+        a = lib.get("die_01")
         assert a is not None
-        assert a.name == "block_blue"
+        assert a.name == "die_01"
         assert a.urdf_path.exists()
 
     def test_get_missing(self, tmp_path):

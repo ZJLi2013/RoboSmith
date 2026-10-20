@@ -18,17 +18,10 @@ from robotsmith.rollout.asset_pick_validation import (
 # Regression set: one asset per category from the c10/c11 "one success per
 # asset" demo (output/exp_c10_c11_one_success_per_asset_demo). Validates that
 # GraspGen + policy-bucket selection has no regression after refactors.
-# Objects-only here because git tracks asset metadata/URDF but ignores meshes
-# (assets/objects/**/*.glb etc) and all of assets/generated/*; append the c11
-# generated assets (battery_1_trellis2_20260527, glass_2_trellis2_20260527,
-# moto_1_trellis2_20260527, plastic_1_trellis2_20260527) via --assets once they
-# are synced onto the run host.
 DEFAULT_ASSETS = [
     "apple_01",
-    "carton_01",
     "die_01",
     "mug_02",
-    "fruit_03",
 ]
 
 
