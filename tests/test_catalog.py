@@ -18,9 +18,10 @@ class TestCatalog:
         mesh.export(str(out / "visual.obj"))
         (out / "model.urdf").write_text("<robot/>")
 
-        asset = catalog_asset(out, "red mug", mass_kg=0.25)
+        asset = catalog_asset(out, "red mug")
         assert asset.name == "test_gen"
         assert asset.metadata.description == "Generated from prompt: red mug"
         assert asset.metadata.canonical_frame["up_axis"] == "+Z"
         assert asset.metadata.task_poses == {}
-        assert (out / "metadata.json").exists()
+        assert asset.metadata.source == "generated"
+        assert (out / "asset.json").exists()

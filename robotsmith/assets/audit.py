@@ -1,18 +1,18 @@
-"""Asset admission audit and metadata update.
+"""Asset admission audit and check records.
 
-This is an asset-level gate: it updates persistent metadata before scene build.
+This is an asset-level gate: it records checks before scene build.
 It does not do per-episode grasp candidate feasibility.
 """
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
 import trimesh.transformations as tf
 
+from robotsmith.assets import store
 from robotsmith.assets.schema import Asset
 
 SUPPORT_ASSETS = {"table_simple", "plane"}
@@ -175,7 +175,7 @@ def _grasp_xy(asset: Asset, scale: float, quat: list[float]) -> list[float]:
 
 
 def audit_mesh(asset: Asset, config: AuditConfig | None = None) -> dict[str, Any]:
-    """Return compact mesh audit suitable for ``metadata.mesh``."""
+    """Return compact mesh audit, stored as ``mesh_consistency`` check metrics."""
 
     config = config or AuditConfig()
     primitive = asset.metadata.source == "builtin_primitive"
@@ -265,15 +265,19 @@ def audit_and_update(
     asset: Asset,
     config: AuditConfig | None = None,
 ) -> dict[str, Any]:
-    """Audit one asset and persist ``metadata.mesh`` / ``metric_scale``."""
+    """Audit one asset: append ``mesh_consistency`` / ``gripper_fit`` check records and
+    set the ``metric_scale`` annotation to the gripper-fit recommendation."""
 
     row = audit_asset(asset, config)
-    meta_path = asset.root_dir / "metadata.json"
-    data = json.loads(meta_path.read_text(encoding="utf-8"))
-    data["mesh"] = row["mesh"]
-    rec = float(row["metric_scale"]["rec"])
-    data["metric_scale"] = rec
-    meta_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    asset.metadata.mesh = row["mesh"]
-    asset.metadata.metric_scale = float(data["metric_scale"])
+    mesh = row["mesh"]
+    fit = row["metric_scale"]
+    store.append_check(asset.root_dir, "mesh_consistency", "fail" if mesh["issues"] else "pass", mesh)
+    store.append_check(
+        asset.root_dir, "gripper_fit", "pass" if fit["ok"] else "fail",
+        {"xy": fit["xy"], "rec": fit["rec"]}, embodiment="franka",
+    )
+    rec = float(fit["rec"])
+    store.set_annotation(asset.root_dir, "metric_scale", rec, f"check:gripper_fit@{store.CHECK_VERSION}")
+    asset.metadata.mesh = mesh
+    asset.metadata.metric_scale = rec
     return row

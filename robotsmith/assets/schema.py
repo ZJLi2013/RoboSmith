@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
@@ -21,7 +20,7 @@ class UrdfJoint:
     """One kinematic joint parsed directly from an asset's ``model.urdf``.
 
     The URDF is the single source of truth for joint kinematics; this struct is
-    read at load time and never persisted into ``metadata.json``.
+    read at load time and never persisted into ``asset.json``.
     """
 
     name: str
@@ -146,12 +145,11 @@ def parse_urdf_collision_boxes(urdf_path: Path) -> list[UrdfCollisionBox]:
 
 @dataclass
 class AssetMetadata:
-    """Physics and catalog metadata for a sim-ready asset."""
+    """In-memory view of an asset's ``asset.json`` annotations and current checks
+    (assembled by ``robotsmith.assets.store.load_metadata``). Mass, inertia and joint
+    limits live only in the URDF."""
 
-    mass_kg: float = 0.1
     friction: float = 0.5
-    restitution: float = 0.1
-    density_kg_m3: float = 1000.0
     size_cm: list[float] = field(default_factory=lambda: [5.0, 5.0, 5.0])
     metric_scale: float = 1.0
     """Fixed asset-level scale applied when loading this asset into metric scenes.
@@ -167,10 +165,6 @@ class AssetMetadata:
     grasp-planned). Orthogonal to geometry (mesh vs primitive). Articulated
     assets are fixtures regardless of this field (see ``Asset.is_fixture``)."""
     description: str = ""
-    stable_poses: list[dict] = field(default_factory=list)
-    """Pre-computed stable resting poses on a flat surface.
-    Each entry: {"z": float, "quat": [w, x, y, z]}.
-    Empty list means not yet computed (fallback: upright with z = half-height)."""
     canonical_frame: dict = field(default_factory=dict)
     """How the raw mesh frame maps into RoboSmith's semantic object frame.
 
@@ -185,15 +179,10 @@ class AssetMetadata:
     Scene placement consumes these instead of guessing from mesh identity.
     """
     grasp_policy_bucket: str | list[str] | None = None
-    """Validated Stage 1 bucket(s), or ``no_positive`` after a full failed probe."""
-    grasp_strategy: str | None = None
-    """Optional per-asset override of how a *pickable* grasp pose is acquired:
-    ``"learned"`` (GraspGen) or ``"none"`` (skip grasp-planning this object).
-    ``None`` means use the run-level default (learned). Articulated assets ignore
-    this — they are moved by joint primitives, not grasp-planned. Reserved: leave
-    unset until a scene genuinely needs a non-default strategy for one object."""
+    """Validated Stage 1 bucket(s), or ``no_positive`` after a full failed probe.
+    Read from the grasp sidecar ``assets/grasp_policy_buckets.json``, not ``asset.json``."""
     mesh: dict = field(default_factory=dict)
-    """Compact asset mesh audit cached by ``robotsmith.assets.audit``."""
+    """Metrics of the current ``mesh_consistency`` check record (empty if none)."""
     task_joints: list[str] = field(default_factory=list)
     """Articulated assets only: URDF joint names that are task-relevant (e.g. the
     drawer slide). Empty for rigid assets. Joint kinematics stay in the URDF; this
@@ -232,14 +221,6 @@ class AssetMetadata:
     joint_init: dict = field(default_factory=dict)
     """Articulated assets only: default initial joint state ``{joint: qpos}``
     applied on reset (e.g. ``{"drawer_slide": 0.0}`` = closed). Empty for rigid."""
-
-    def save(self, path: Path) -> None:
-        path.write_text(json.dumps(asdict(self), indent=2, ensure_ascii=False))
-
-    @classmethod
-    def load(cls, path: Path) -> AssetMetadata:
-        data = json.loads(path.read_text())
-        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
 
 @dataclass
@@ -302,4 +283,4 @@ class Asset:
 
     def __repr__(self) -> str:
         kind = "articulated" if self.is_articulated else "rigid"
-        return f"Asset({self.name!r}, {kind}, mass={self.metadata.mass_kg}kg)"
+        return f"Asset({self.name!r}, {kind})"

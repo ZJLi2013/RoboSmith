@@ -1,17 +1,17 @@
+from robotsmith.assets import store
 from robotsmith.grasp.policy_onboarding import (
     eligible_probe_buckets,
-    metadata_path,
+    load_metadata,
     save_policy_bucket,
     select_positive_winners,
 )
-from robotsmith.assets.schema import AssetMetadata
 
 
-def _write_asset(tmp_path, subdir: str, name: str, metadata: AssetMetadata | None = None):
+def _write_asset(tmp_path, subdir: str, name: str):
     asset_dir = tmp_path / "assets" / subdir / name
     asset_dir.mkdir(parents=True)
     (asset_dir / "model.urdf").write_text("<robot name='test'></robot>", encoding="utf-8")
-    (metadata or AssetMetadata()).save(asset_dir / "metadata.json")
+    store.new_asset(asset_dir, "rigid", "generated", {})
     return asset_dir
 
 
@@ -70,16 +70,11 @@ def test_eligible_probe_buckets_empty_without_p0_hard_ok_counts():
     assert eligible_probe_buckets({"episode_diagnostics": []}, ["side_axis_vertical"]) == []
 
 
-def test_metadata_path_finds_generated_asset(tmp_path):
+def test_save_policy_bucket_writes_sidecar_not_asset_json(tmp_path):
     asset_dir = _write_asset(tmp_path, "generated", "battery_1")
-
-    assert metadata_path("battery_1", tmp_path / "assets") == asset_dir / "metadata.json"
-
-
-def test_save_policy_bucket_updates_generated_asset_metadata(tmp_path):
-    asset_dir = _write_asset(tmp_path, "generated", "battery_1")
+    before = (asset_dir / "asset.json").read_text(encoding="utf-8")
 
     save_policy_bucket("battery_1", tmp_path / "assets", ["side_axis_horizontal"])
 
-    meta = AssetMetadata.load(asset_dir / "metadata.json")
-    assert meta.grasp_policy_bucket == ["side_axis_horizontal"]
+    assert load_metadata("battery_1", tmp_path / "assets").grasp_policy_bucket == ["side_axis_horizontal"]
+    assert (asset_dir / "asset.json").read_text(encoding="utf-8") == before

@@ -52,32 +52,40 @@ robotsmith/
 
 ### Asset and affordance
 
-An asset is a directory `assets/objects/<name>/` (`model.urdf`, `metadata.json`, `visual.*`, `collision.obj`,
-`provenance.json`); articulated assets live in `assets/articraft/<name>/`. Assets come from
-`scripts/assets/import_objaverse.py` or the producers in `robotsmith/assets/producers/`: an image-to-3D backend
-(TRELLIS.2 or Hunyuan3D) followed by `mesh_to_urdf`. The backends import their model repositories lazily and run in
-their own image, not in the Genesis one.
+An asset is a directory `assets/objects/<name>/` (`model.urdf`, `visual.*`, `collision.obj`, `provenance.json`,
+`asset.json`, `checks.jsonl`); articulated assets live in `assets/articraft/<name>/`. New assets come from the
+producers in `robotsmith/assets/producers/`: an image-to-3D backend (TRELLIS.2 or Hunyuan3D) followed by
+`mesh_to_urdf`. The backends import their model repositories lazily and run in their own image, not in the Genesis
+one.
 
-What an asset can do follows from its metadata, not from its category:
+`asset.json` holds the `kind` (`rigid`, `articulated`, `fixture`), the source and build file lists with a hash of the
+build files, and annotations; each annotation records who wrote it (`human`, `harness`, `agent:<model>`,
+`check:<name>@<version>`, or `legacy` for values migrated without a known writer). `checks.jsonl` is append-only: one
+record per check run, bound to the asset revision and build hash. A record whose hash no longer matches the files does
+not count. Mass, inertia and joint limits live only in the URDF. Grasp policy buckets are a grasp-module result and
+live in the sidecar `assets/grasp_policy_buckets.json`. The loader assembles all of this into `AssetMetadata`.
+
+What an asset can do follows from its annotations, not from its category:
 
 | Asset kind | Unlocked by | Actions | Success predicates |
 |---|---|---|---|
 | rigid | a graspable mesh with a verified upright pose and a metric scale | `pick`, `place` | `object_in_container`, `object_above`, `stacked`, `objects_aligned` |
 | articulated | `task_joints` + `handles` | `open`, `close` | `joint_opened`, `joint_closed` |
-| supporter / fixture | `role="fixture"` or any movable joint | none (it is a place target or an obstacle) | — |
+| supporter / fixture | `kind: fixture` or any movable joint | none (it is a place target or an obstacle) | — |
 
-Three metadata fields carry most of the physics:
+Three annotations carry most of the physics:
 
 - **`metric_scale`** is the single owner of scale. Point clouds, grasp gates, and support clearances are all computed
   in metres from it; a wrong scale makes all of them wrong without an error.
 - **Frames.** Mesh frame → object frame (canonical, `+Z` up) → scene frame. `canonical_frame` is the import
-  correction; `task_poses.upright` is the pose used at runtime and is written only after human visual QA
-  (`scripts/assets/render_asset_table.py`, `verified=true`); `stable_poses` only says the object rests stably.
-- **Gate.** An asset enters default experiments only with `upright.verified=true` and an empty
-  `metadata.mesh.issues`. The audit includes an 8 cm gripper-width check and recommends a `metric_scale`. Fixtures are
-  exempt: they load with `fixed=True`, are never grasped, and use their bounding box for placement collision.
+  correction; `upright` is the pose used at runtime and counts as verified only with a passing `upright` check record,
+  written after human visual QA (`scripts/assets/render_asset_table.py`).
+- **Gate.** An asset enters default experiments only with a passing `upright` record and a passing
+  `mesh_consistency` record. The audit also writes a `gripper_fit` record (8 cm Franka gripper) and sets
+  `metric_scale` to its recommendation. Fixtures are exempt: they load with `fixed=True`, are never grasped, and use
+  their bounding box for placement collision.
 
-Articulated assets keep their kinematics in the URDF. Metadata only adds task semantics: `task_joints`, `handles`,
+Articulated assets keep their kinematics in the URDF. Annotations only add task semantics: `task_joints`, `handles`,
 `joint_init`, and `place_targets`.
 
 ### Scenario and CAP

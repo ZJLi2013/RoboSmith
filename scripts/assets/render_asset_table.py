@@ -11,7 +11,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict
 import json
 import math
 import os
@@ -32,6 +31,7 @@ CANDIDATE_COLS = 6
 GRID_SPACING_M = 0.14
 TABLE_SURFACE_Z = 0.75 + 0.05 / 2.0
 
+from robotsmith.assets import store
 from robotsmith.assets.library import AssetLibrary
 from robotsmith.assets.audit import SUPPORT_ASSETS
 from robotsmith.scenes.backend import _height_for_quat, _resolve_upright_pose
@@ -163,7 +163,7 @@ def orientation_candidates() -> list[list[float]]:
 
 
 def apply_upright_candidates(library: AssetLibrary, asset_name: str, indices: list[int]) -> None:
-    """Write selected visual QA candidates into metadata.task_poses."""
+    """Write selected visual QA candidates as the upright annotation + a human upright check."""
     asset = library.get(asset_name)
     if asset is None:
         raise ValueError(f"Unknown asset: {asset_name}")
@@ -173,27 +173,12 @@ def apply_upright_candidates(library: AssetLibrary, asset_name: str, indices: li
     for index in indices:
         if index < 0 or index >= len(candidates):
             raise ValueError(f"candidate index must be 0..{len(candidates) - 1}, got {index}")
-    meta = asset.metadata
-    meta.task_poses = dict(meta.task_poses or {})
-    candidate_entries = [
-        {
-            "quat_object": candidates[index],
-            "source": "manual_visual_qa",
-            "candidate_index": index,
-            "verified": True,
-        }
-        for index in indices
-    ]
-    primary = dict(candidate_entries[0])
-    primary["candidate_indices"] = indices
-    primary["description"] = "Primary upright pose; see upright_candidates for all visually valid poses."
-    meta.task_poses["upright"] = primary
-    meta.task_poses["upright_candidates"] = candidate_entries
-    (asset.root_dir / "metadata.json").write_text(
-        json.dumps(asdict(meta), indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-    print(f"updated {asset.root_dir / 'metadata.json'} with upright candidates {indices}")
+    store.set_annotation(asset.root_dir, "upright", candidates[indices[0]], "human",
+                         "Primary upright pose; see upright_candidates for all visually valid poses.")
+    store.set_annotation(asset.root_dir, "upright_candidates", [candidates[i] for i in indices], "human")
+    store.append_check(asset.root_dir, "upright", "pass",
+                       {"method": "manual_visual_qa", "candidate_indices": indices}, by="human")
+    print(f"updated {asset.root_dir / store.ASSET_FILE} with upright candidates {indices}")
 
 
 def main() -> None:
@@ -212,11 +197,11 @@ def main() -> None:
     parser.add_argument("--candidate-poses", action="store_true",
                         help="Render 24 right-angle orientation candidates for --asset")
     parser.add_argument("--upright-candidates", action="store_true",
-                        help="Render metadata.task_poses.upright_candidates for --asset")
+                        help="Render the upright_candidates annotation for --asset")
     parser.add_argument("--apply-upright-index", type=int, default=None,
-                        help="Write one candidate index to metadata.task_poses.upright")
+                        help="Write one candidate index as the upright annotation")
     parser.add_argument("--apply-upright-indices", type=int, nargs="+", default=None,
-                        help="Write multiple valid upright candidate indices to metadata.task_poses")
+                        help="Write multiple valid upright candidate indices as upright annotations")
     parser.add_argument("--sample-upright-candidates", type=int, default=0,
                         help="Render 1..N random valid upright candidates per asset")
     parser.add_argument("--include-franka", action="store_true",
@@ -323,7 +308,7 @@ def main() -> None:
             and (candidate.get("quat_object") or candidate.get("quat") or candidate.get("quaternion")) is not None
         ]
         if not render_items:
-            raise ValueError(f"{args.asset} has no upright candidates in metadata")
+            raise ValueError(f"{args.asset} has no upright candidates in asset.json")
     elif args.sample_upright_candidates:
         render_items = []
         for asset in assets:

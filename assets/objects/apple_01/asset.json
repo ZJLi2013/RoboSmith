@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "id": "apple_01",
+  "revision": 1,
+  "kind": "rigid",
+  "source": {
+    "type": "objaverse",
+    "rebuildable": false,
+    "files": [
+      "provenance.json"
+    ]
+  },
+  "build": {
+    "files": [
+      "apple.png",
+      "collision.obj",
+      "material.mtl",
+      "model.urdf",
+      "visual.glb",
+      "visual.obj"
+    ],
+    "hash": "f392b7c7ed48d3d4e5bb5b52b4afce51daf9fb3e805201aebd9e547672348816"
+  },
+  "annotations": {
+    "description": {
+      "value": "Toy apple (Objaverse) [uid=50ffb91434ea4d978eaefe03220d36fe]",
+      "by": "legacy"
+    },
+    "metric_scale": {
+      "value": 0.84375,
+      "by": "check:gripper_fit@legacy"
+    },
+    "friction": {
+      "value": 0.5,
+      "by": "legacy"
+    },
+    "size_cm": {
+      "value": [
+        8.0,
+        8.0,
+        7.7
+      ],
+      "by": "legacy"
+    },
+    "canonical_frame": {
+      "value": {
+        "up_axis": "+Z",
+        "front_axis": "+X",
+        "origin": "centered_mesh_centroid"
+      },
+      "by": "legacy",
+      "note": "Objaverse import contract: mesh is assumed to be in semantic object frame."
+    },
+    "upright": {
+      "value": [
+        0.0,
+        0.707107,
+        0.707107,
+        -0.0
+      ],
+      "by": "human",
+      "note": "Primary upright pose; see upright_candidates for all visually valid poses."
+    },
+    "upright_candidates": {
+      "value": [
+        [
+          0.0,
+          0.707107,
+          0.707107,
+          -0.0
+        ],
+        [
+          0.5,
+          0.5,
+          0.5,
+          0.5
+        ],
+        [
+          0.5,
+          -0.5,
+          -0.5,
+          0.5
+        ]
+      ],
+      "by": "human"
+    }
+  }
+}

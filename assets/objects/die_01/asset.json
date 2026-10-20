@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "id": "die_01",
+  "revision": 1,
+  "kind": "rigid",
+  "source": {
+    "type": "objaverse",
+    "rebuildable": false,
+    "files": [
+      "provenance.json"
+    ]
+  },
+  "build": {
+    "files": [
+      "6_edges_mtl0.png",
+      "collision.obj",
+      "material.mtl",
+      "model.urdf",
+      "visual.glb",
+      "visual.obj"
+    ],
+    "hash": "672ef8b3315cbfd91f7738a8b553718ee4cff3d8000578f55b8014b51e548831"
+  },
+  "annotations": {
+    "description": {
+      "value": "Game die (Objaverse) [uid=7564358b73614881a1e838a0827f10f8]",
+      "by": "legacy"
+    },
+    "metric_scale": {
+      "value": 1.0,
+      "by": "check:gripper_fit@legacy"
+    },
+    "friction": {
+      "value": 0.5,
+      "by": "legacy"
+    },
+    "size_cm": {
+      "value": [
+        5.0,
+        4.6,
+        5.0
+      ],
+      "by": "legacy"
+    },
+    "canonical_frame": {
+      "value": {
+        "up_axis": "+Z",
+        "front_axis": "+X",
+        "origin": "centered_mesh_centroid"
+      },
+      "by": "legacy",
+      "note": "Objaverse import contract: mesh is assumed to be in semantic object frame."
+    },
+    "upright": {
+      "value": [
+        0.0,
+        0.707107,
+        0.707107,
+        -0.0
+      ],
+      "by": "human",
+      "note": "Primary upright pose; see upright_candidates for all visually valid poses."
+    },
+    "upright_candidates": {
+      "value": [
+        [
+          0.0,
+          0.707107,
+          0.707107,
+          -0.0
+        ],
+        [
+          0.5,
+          0.5,
+          0.5,
+          0.5
+        ],
+        [
+          0.5,
+          -0.5,
+          -0.5,
+          0.5
+        ]
+      ],
+      "by": "human"
+    }
+  }
+}

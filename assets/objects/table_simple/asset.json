@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "id": "table_simple",
+  "revision": 1,
+  "kind": "fixture",
+  "source": {
+    "type": "builtin_primitive",
+    "rebuildable": false,
+    "files": []
+  },
+  "build": {
+    "files": [
+      "model.urdf"
+    ],
+    "hash": "c7964a84533f8af5c039e4a9acf3e1bccd5f53f06fb2d289d813741220775bf3"
+  },
+  "annotations": {
+    "description": {
+      "value": "Simple wooden table (120x80cm, 75cm tall)",
+      "by": "legacy"
+    },
+    "friction": {
+      "value": 0.5,
+      "by": "legacy"
+    },
+    "size_cm": {
+      "value": [
+        120,
+        80,
+        75
+      ],
+      "by": "legacy"
+    }
+  }
+}

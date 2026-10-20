@@ -7,12 +7,25 @@ All notable user-facing changes are documented here. This project follows Semant
 ### Added
 
 - `robotsmith.assets.producers`: asset generation (TRELLIS.2 and Hunyuan3D backends, `generate_asset`) and
-  `mesh_to_urdf`, moved from RocRecon. `scripts/assets/import_objaverse.py` no longer needs RocRecon installed.
+  `mesh_to_urdf`, moved from RocRecon.
 
 ### Changed
 
+- Assets store `asset.json` (kind, source and build files with a build hash, annotations with their writer) and an
+  append-only `checks.jsonl` instead of `metadata.json`. Check records bind to the build hash and stop counting when
+  the files change. The audit writes `mesh_consistency` and `gripper_fit` records; `render_asset_table.py` writes a
+  human `upright` record. Grasp policy buckets moved to `assets/grasp_policy_buckets.json`. Loaded values are
+  unchanged for all assets.
+- `assets/objects/` keeps only the assets the scenarios load: `apple_01`, `die_01`, `lego_02`, `mug_02`, `plane`,
+  `table_simple`.
 - `README.md` is in English, with the Chinese version in `README.zh-CN.md`; the demo videos render as GIFs. The code
   layout and the upstream projects moved to `docs/design.md`.
+
+### Removed
+
+- `mass_kg`, `density_kg_m3`, `restitution`, `stable_poses` and `grasp_strategy` asset fields (mass comes from the
+  URDF; the rest had no readers), `assets/catalog.json` and `AssetLibrary.save_catalog`,
+  `scripts/assets/compute_stable_poses.py`, and `scripts/assets/import_objaverse.py`.
 
 ### Fixed
 

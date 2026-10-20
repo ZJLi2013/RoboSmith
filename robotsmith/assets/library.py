@@ -5,19 +5,18 @@ Assets live under these directories:
   - ``root/generated/`` — pipeline-generated assets (also scanned)
   - ``root/articraft/`` — articulated assets (URDF + joints) from Articraft
 
-A lightweight ``root/catalog.json`` persists the full index so that assets
-generated on remote GPU nodes and synced back are immediately visible.
+Each asset directory holds ``model.urdf``, its meshes, ``asset.json`` and
+``checks.jsonl`` (see ``robotsmith.assets.store``).
 """
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Optional
 
-from robotsmith.assets.schema import Asset, AssetMetadata, parse_urdf_joints
+from robotsmith.assets import store
+from robotsmith.assets.schema import Asset, parse_urdf_joints
 
-_CATALOG_FILE = "catalog.json"
 _SCAN_DIRS = ("objects", "generated", "articraft")
 
 
@@ -30,7 +29,8 @@ class AssetLibrary:
         self._load_catalog()
 
     def _load_catalog(self) -> None:
-        """Scan objects/ and generated/ for assets with model.urdf."""
+        """Scan the asset directories for assets with model.urdf + asset.json."""
+        buckets = store.load_buckets(self.root)
         for subdir_name in _SCAN_DIRS:
             scan_dir = self.root / subdir_name
             if not scan_dir.exists():
@@ -38,24 +38,18 @@ class AssetLibrary:
             for asset_dir in sorted(scan_dir.iterdir()):
                 if not asset_dir.is_dir():
                     continue
-                self._load_asset_dir(asset_dir)
+                self._load_asset_dir(asset_dir, buckets)
 
-    def _load_asset_dir(self, asset_dir: Path) -> Optional[Asset]:
+    def _load_asset_dir(self, asset_dir: Path, buckets: dict) -> Optional[Asset]:
         """Load a single asset directory into the in-memory catalog."""
         urdf_path = asset_dir / "model.urdf"
-        if not urdf_path.exists():
+        if not urdf_path.exists() or not (asset_dir / store.ASSET_FILE).exists():
             return None
-        meta_path = asset_dir / "metadata.json"
-        metadata = (
-            AssetMetadata.load(meta_path)
-            if meta_path.exists()
-            else AssetMetadata()
-        )
         asset = Asset(
             name=asset_dir.name,
             root_dir=asset_dir,
             urdf_path=urdf_path,
-            metadata=metadata,
+            metadata=store.load_metadata(asset_dir, buckets),
             visual_mesh=self._find_mesh(asset_dir, "visual"),
             collision_mesh=self._find_mesh(asset_dir, "collision"),
             joints=parse_urdf_joints(urdf_path),
@@ -71,35 +65,6 @@ class AssetLibrary:
                 return p
         return None
 
-    # ------ persistent catalog.json ------
-
-    def save_catalog(self) -> Path:
-        """Write a lightweight catalog.json listing every known asset.
-
-        Only stores metadata + relative paths (no mesh data).
-        Safe to commit to git as a small JSON index.
-        """
-        entries = []
-        for asset in self._assets.values():
-            try:
-                rel = asset.root_dir.relative_to(self.root)
-            except ValueError:
-                rel = asset.root_dir
-            entries.append({
-                "name": asset.name,
-                "dir": str(rel),
-                "source": asset.metadata.source,
-                "mass_kg": asset.metadata.mass_kg,
-                "size_cm": asset.metadata.size_cm,
-                "metric_scale": asset.metadata.metric_scale,
-                "description": asset.metadata.description,
-            })
-        catalog_path = self.root / _CATALOG_FILE
-        catalog_path.write_text(
-            json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
-        return catalog_path
-
     # ------ access ------
 
     def get(self, name: str) -> Optional[Asset]:
@@ -107,9 +72,8 @@ class AssetLibrary:
         return self._assets.get(name)
 
     def add(self, asset: Asset) -> None:
-        """Register an asset and persist the catalog index."""
+        """Register an asset in memory."""
         self._assets[asset.name] = asset
-        self.save_catalog()
 
     def list_all(self) -> list[Asset]:
         return list(self._assets.values())
