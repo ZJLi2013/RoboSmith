@@ -64,6 +64,7 @@ WORKDIR /workspace/robotsmith
 COPY pyproject.toml ./
 COPY robotsmith ./robotsmith
 COPY scripts ./scripts
+COPY tests ./tests
 
 # Install the package WITHOUT the [genesis] extra so Genesis stays at the
 # gfx942-safe 0.4.5 pinned above (the extra would pull genesis-world>=0.2 ->
