@@ -46,8 +46,11 @@ scenario_scene = scene(
             ),
         ),
     ],
-    camera_position=(2.5, -2.1, 1.8),
-    camera_target=(0.40, 0.0, 0.55),
+    # Camera sits on the drawer's opening side (-X) with a +Y oblique offset so
+    # the drawer FRONT/handle, the die, and the full arm are all in frame. The
+    # old (+X,-Y) pose looked at the cabinet's back and hid the opening.
+    camera_position=(-1.2, 1.9, 1.6),
+    camera_target=(0.50, 0.05, 0.60),
     # Extend the support table in +X/+Y so the anchored cabinet (x=0.80, off the
     # default 1.2x0.8 table edge) and the +Y die both rest on it instead of
     # overhanging. Keep the default 0.75 height so open/close reach is unchanged.

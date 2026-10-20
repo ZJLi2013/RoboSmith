@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-# RoboSmith ROCm runtime — gfx942 (MI300/MI308X, CDNA3) legacy stack.
+# RoboSmith ROCm runtime — gfx942 (MI300, CDNA3) legacy stack.
 #
 # gfx942 hits an LLVM ISel segfault (exit 139) while Genesis 1.0.0 / Quadrants
 # 0.8.0 compile the narrow-phase convex collision kernel during scene.build()
@@ -11,7 +11,7 @@
 #   + HSA_OVERRIDE_GFX_VERSION=9.4.2 (kept set, NOT unset)
 #
 # The current rocm7.2/Genesis-1.0.0 image (robotsmith:rocm-headless-graspgen)
-# stays the gfx950/wbb3 runtime; this image is gfx942-only.
+# stays the gfx950 runtime; this image is gfx942-only.
 #
 # Build from the repository root:
 #   docker build -f docker/Dockerfile.gfx942 \
@@ -64,6 +64,7 @@ WORKDIR /workspace/robotsmith
 COPY pyproject.toml ./
 COPY robotsmith ./robotsmith
 COPY scripts ./scripts
+COPY tests ./tests
 
 # Install the package WITHOUT the [genesis] extra so Genesis stays at the
 # gfx942-safe 0.4.5 pinned above (the extra would pull genesis-world>=0.2 ->

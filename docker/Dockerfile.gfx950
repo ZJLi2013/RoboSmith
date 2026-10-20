@@ -46,6 +46,7 @@ WORKDIR /workspace/robotsmith
 COPY pyproject.toml ./
 COPY robotsmith ./robotsmith
 COPY scripts ./scripts
+COPY tests ./tests
 
 RUN python -m pip install --upgrade pip setuptools wheel \
     && python -m pip install -e ".[genesis,dev]" \

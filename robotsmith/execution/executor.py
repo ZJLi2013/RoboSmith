@@ -168,11 +168,20 @@ class MotionExecutor:
         motion_planner: MotionPlanner,
         home_qpos: np.ndarray,
         params: MotionParams,
+        *,
+        world: list[dict] | None = None,
     ) -> list[np.ndarray]:
-        """home → waypoints → hold (velocity-adaptive step counts)."""
+        """home → waypoints → hold (velocity-adaptive step counts).
+
+        With a ``world`` (collision-aware backend), the free arm segments
+        (home→pre-grasp, lift/retreat) route through collision-free ``plan_motion``
+        so the approach does not sweep static obstacles; the final approach segment
+        stays Cartesian (contact move, world-blind), same split as ``place`` /
+        ``drag_handle``. ``world=None`` (collision-blind) is byte-identical to before.
+        """
         if not plan.waypoints:
             raise ValueError("GraspPlan.pick requires a non-empty waypoint sequence")
-        return self._pick_waypoints(plan, motion_planner, home_qpos, params)
+        return self._pick_waypoints(plan, motion_planner, home_qpos, params, world=world)
 
     def _pick_waypoints(
         self,
@@ -180,6 +189,8 @@ class MotionExecutor:
         motion_planner: MotionPlanner,
         home_qpos: np.ndarray,
         params: MotionParams,
+        *,
+        world: list[dict] | None = None,
     ) -> list[np.ndarray]:
         """Execute an ordered waypoint sequence with velocity-adaptive timing.
 
@@ -227,6 +238,7 @@ class MotionExecutor:
             motion_planner,
             home_qpos,
             params,
+            world=world,
             tail_hold_steps=params.lift_hold_steps,
         )
         self.last_motion_trace = execution_trace("pick", result)
