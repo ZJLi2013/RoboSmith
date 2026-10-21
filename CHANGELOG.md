@@ -11,6 +11,9 @@ All notable user-facing changes are documented here. This project follows Semant
 - `robotsmith.scenario.relations`: a relation solver that places scenario objects per seed from asset geometry
   (`on`, `near: robot`, `clear_of`, `facing: robot`, fixture `anchor_xy`), and the `object_in_box` predicate behind
   `inside` / `on`, which tests an object against a place target's collision box.
+- `scripts/assets/list_assets.py`: the asset catalog for scenario authors. Given only `scenarios/AGENT_PROMPT.md` and
+  this catalog, GPT-6 Astra wrote 8 of 9 one-sentence requests as valid YAML scenarios with the intended success
+  trees and declined a request for an asset the library does not have.
 
 ### Changed
 

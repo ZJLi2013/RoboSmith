@@ -26,8 +26,10 @@ variations:                          # optional: <object id>.<field>: [choices],
 split: {playground: [0, 9], test: [100, 149]}   # optional seed ranges
 ```
 
-`asset` is an asset id from `assets/`. `<id>.<target>` names one of that asset's
-`place_targets` (e.g. `drawer_opening`, `shelf_lower`, `shelf_upper`).
+`asset` is an asset id from `python scripts/assets/list_assets.py`, which also lists
+each asset's place targets and movable joints. `<id>.<target>` names one of that
+asset's place targets (e.g. `drawer_opening`, `shelf_lower`, `shelf_upper`). If the
+request needs an asset that is not listed, say so instead of inventing an id.
 
 ## Relations
 
