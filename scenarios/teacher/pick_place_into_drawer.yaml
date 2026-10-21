@@ -1,0 +1,6 @@
+teacher: pick_place_into_drawer
+steps:
+  - open: drawer
+  - pick: die
+  - place: {target: drawer.drawer_opening}
+  - close: drawer

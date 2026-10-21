@@ -10,7 +10,7 @@ stage: **assets → datagen → setup**.
 
 ## `datagen/` — data generation (SDG)
 
-- `run_generated_scenario.py`: run a CAP scenario module passed via `--scenario`.
+- `run_generated_scenario.py`: run a YAML scenario passed via `--scenario` (`--materialize-only` validates and lowers it).
 - `validate_asset_picks.py`: asset-driven pick rollout + dataset.
 - `run_metadata_guided_rollout.py`: Stage-1/Stage-2 metadata-guided rollout.
 - `snapshot_scenario.py`: render static layout snapshots (overview/topdown PNG).

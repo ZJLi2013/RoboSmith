@@ -28,11 +28,11 @@ dataset with videos. It is data infrastructure, not a policy-training framework.
 
 | Asset kind | Actions | Success predicates |
 |---|---|---|
-| rigid | `pick`, `place` (learned grasp proposals from GraspGen) | `object_in_container`, `object_above`, `stacked`, `objects_aligned` |
+| rigid | `pick`, `place` (learned grasp proposals from GraspGen) | `inside`, `on`, `lifted`, `stacked`, `aligned` |
 | articulated | `open`, `close` (prismatic joints) | `joint_opened`, `joint_closed` |
 
 A task is a short Python file: scene, skill intents, and a success tree. See
-[`scenarios/pick_place_into_drawer.py`](scenarios/pick_place_into_drawer.py).
+[`scenarios/pick_place_into_drawer.yaml`](scenarios/pick_place_into_drawer.yaml).
 
 ## Get started
 

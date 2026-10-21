@@ -10,15 +10,15 @@ import shutil
 
 import numpy as np
 
-from robotsmith.cap.adapters import (
+from robotsmith.scenario.adapters import (
     to_legacy_scene_config,
     to_legacy_skills,
     to_legacy_task_spec,
 )
-from robotsmith.cap.intents import intent_sequence, pick
-from robotsmith.cap.predicates import object_lifted
-from robotsmith.cap.scene_api import layout, obj, region, scene
-from robotsmith.cap.task_api import task
+from robotsmith.scenario.intents import intent_sequence, pick
+from robotsmith.scenario.predicates import object_lifted
+from robotsmith.scenario.scene_api import layout, obj, region, scene
+from robotsmith.scenario.task_api import task
 from robotsmith.sim.franka import HOME_QPOS, to_numpy_f32
 from robotsmith.rollout.episode_layout import (
     build_episode_positions,

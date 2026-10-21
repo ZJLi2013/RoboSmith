@@ -37,6 +37,12 @@ KV = np.array([450, 450, 350, 350, 200, 200, 200, 10, 10], dtype=np.float32)
 FORCE_LOWER = np.array([-87, -87, -87, -87, -12, -12, -12, -100, -100], dtype=np.float32)
 FORCE_UPPER = np.array([87, 87, 87, 87, 12, 12, 12, 100, 100], dtype=np.float32)
 
+# Tabletop pick workspace around the base, for `near: robot` placement: distance
+# from the base axis and bearing from +X. Spans the layouts the scenarios were
+# validated on; wide bearings into y<0 pick far less reliably.
+REACH_M = (0.40, 0.60)
+REACH_HALF_ANGLE_DEG = 35.0
+
 # ---- Observation / Action names ----
 ACTION_NAMES = [
     "delta_x", "delta_y", "delta_z",

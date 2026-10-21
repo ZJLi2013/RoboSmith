@@ -99,7 +99,7 @@ def ground_halfspace(z: float) -> dict:
     }
 
 
-def _rigid_moving_links(asset: Asset, moving_link: str | None) -> set[str]:
+def rigid_moving_links(asset: Asset, moving_link: str | None) -> set[str]:
     """``moving_link`` plus every link rigidly attached to it via fixed joints.
 
     The drawer slide moves its joint child *and* anything bolted to that child
@@ -169,7 +169,7 @@ def build_collision_world(
     exempt_box_names = set(exempt_boxes)
     # moving_link + its fixed-joint descendants ride the joint together, else a
     # separated handle link would be left stranded while the body moves.
-    moving_set = _rigid_moving_links(asset, moving_link)
+    moving_set = rigid_moving_links(asset, moving_link)
     boxes = parse_urdf_collision_boxes(asset.urdf_path)
     world: list[dict] = []
     for box in boxes:

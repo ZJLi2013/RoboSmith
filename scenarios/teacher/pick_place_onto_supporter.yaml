@@ -1,0 +1,4 @@
+teacher: pick_place_onto_supporter
+steps:
+  - pick: die
+  - place: {target: supporter.shelf_lower}

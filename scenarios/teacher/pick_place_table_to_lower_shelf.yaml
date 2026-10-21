@@ -1,0 +1,4 @@
+teacher: pick_place_table_to_lower_shelf
+steps:
+  - pick: die
+  - place: {target: supporter.shelf_lower}

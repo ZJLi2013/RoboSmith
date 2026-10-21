@@ -58,20 +58,20 @@ def _bounds(points: np.ndarray, t: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return world.min(axis=0), world.max(axis=0)
 
 
-def _box_bounds(box: UrdfCollisionBox, link_tf: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def box_bounds(box: UrdfCollisionBox, link_tf: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     half = np.asarray(box.size) / 2.0
     corners = np.array([[x, y, z] for x in (-1, 1) for y in (-1, 1) for z in (-1, 1)]) * half
     return _bounds(corners, link_tf @ _transform(box.origin_xyz, box.origin_rpy))
 
 
-def size_cm(urdf_path: Path) -> list[float]:
-    """Axis-aligned extent of all visual geometry, in cm."""
+def visual_bounds(urdf_path: Path) -> tuple[np.ndarray, np.ndarray]:
+    """Axis-aligned bounds of all visual geometry in the asset frame, in metres."""
     import trimesh
 
     tfs = link_transforms(urdf_path)
     lows, highs = [], []
     for box in parse_urdf_collision_boxes(urdf_path, element="visual"):
-        lo, hi = _box_bounds(box, tfs[box.link])
+        lo, hi = box_bounds(box, tfs[box.link])
         lows.append(lo)
         highs.append(hi)
     root = ET.parse(urdf_path).getroot()
@@ -87,8 +87,13 @@ def size_cm(urdf_path: Path) -> list[float]:
             highs.append(hi)
     if not lows:
         raise ValueError(f"{urdf_path} has no visual geometry")
-    extent = np.max(highs, axis=0) - np.min(lows, axis=0)
-    return [round(float(v) * 100.0, 1) for v in extent]
+    return np.min(lows, axis=0), np.max(highs, axis=0)
+
+
+def size_cm(urdf_path: Path) -> list[float]:
+    """Axis-aligned extent of all visual geometry, in cm."""
+    lo, hi = visual_bounds(urdf_path)
+    return [round(float(v) * 100.0, 1) for v in hi - lo]
 
 
 def _named_boxes(urdf_path: Path) -> dict[str, UrdfCollisionBox]:
@@ -104,7 +109,7 @@ def handles(urdf_path: Path, specs: list[dict]) -> list[dict]:
     for spec in specs:
         name = spec.get("collision")
         box = next(b for b in boxes if b.link == spec["link"] and (name is None or b.name == name))
-        lo, hi = _box_bounds(box, tfs[box.link])
+        lo, hi = box_bounds(box, tfs[box.link])
         out.append({"link": spec["link"], "local_pos": ((lo + hi) / 2.0).tolist()})
     return out
 
@@ -116,6 +121,7 @@ def place_targets(urdf_path: Path, specs: list[dict], joints: list[UrdfJoint]) -
     A box on a link driven by a movable joint is an opening: ``joint`` and
     ``lip_local`` (the box's top edge furthest along the joint axis) are added.
     Otherwise it is a static surface: ``surface_local`` is the top centre.
+    ``box`` is the box's ``[lo, hi]`` at zero joint configuration.
     """
     tfs = link_transforms(urdf_path)
     boxes = _named_boxes(urdf_path)
@@ -123,9 +129,10 @@ def place_targets(urdf_path: Path, specs: list[dict], joints: list[UrdfJoint]) -
     out = []
     for spec in specs:
         box = boxes[spec.get("surface", spec["name"])]
-        lo, hi = _box_bounds(box, tfs[box.link])
+        lo, hi = box_bounds(box, tfs[box.link])
         center, half = (lo + hi) / 2.0, (hi - lo) / 2.0
         target = {k: v for k, v in spec.items() if k != "surface"}
+        target["box"] = [lo.tolist(), hi.tolist()]
         joint = joint_of.get(box.link)
         if joint is not None:
             axis = np.asarray(joint.axis, dtype=np.float64)

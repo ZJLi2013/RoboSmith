@@ -7,11 +7,11 @@ authoring helpers lower into the composable success tree with self-describing re
 
 import pytest
 
-from robotsmith.cap.predicates import all_of, joint_closed, joint_opened
-from robotsmith.cap.scene_api import layout, obj, region, scene
-from robotsmith.cap.task_api import task
-from robotsmith.cap.adapters import to_legacy_task_spec
-from robotsmith.cap.validators import ValidationError, validate_task
+from robotsmith.scenario.predicates import all_of, joint_closed, joint_opened
+from robotsmith.scenario.scene_api import layout, obj, region, scene
+from robotsmith.scenario.task_api import task
+from robotsmith.scenario.adapters import to_legacy_task_spec
+from robotsmith.scenario.validators import ValidationError, validate_task
 from robotsmith.tasks.predicates import evaluate_predicate, evaluate_success
 
 

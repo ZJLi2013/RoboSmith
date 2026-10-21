@@ -62,3 +62,11 @@ class SceneConfig:
 
     camera_position: list[float] = field(default_factory=lambda: [1.5, 0.0, 1.2])
     camera_target: list[float] = field(default_factory=lambda: [0.4, 0.0, 0.75])
+
+
+def table_center_xy(workspace_xy: list[list[float]]) -> tuple[float, float]:
+    """Table centre: halfway between the Franka base (x=0) and the workspace centre."""
+    return (
+        (workspace_xy[0][0] + workspace_xy[1][0]) / 4.0,
+        (workspace_xy[0][1] + workspace_xy[1][1]) / 2.0,
+    )

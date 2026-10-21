@@ -1,6 +1,6 @@
 """Rollout wiring for asset-pick validation.
 
-The CAP -> legacy adapter shapes (position_range, success leaf, skill dict)
+The scenario -> legacy adapter shapes (position_range, success leaf, skill dict)
 are covered in test_cap_authoring. Here we only assert the rollout-specific
 wiring in _make_scene / _make_task: the fixed "object" name and the
 name-derived grasp category.

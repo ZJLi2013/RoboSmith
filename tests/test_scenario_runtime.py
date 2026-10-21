@@ -1,122 +1,12 @@
-from pathlib import Path
-
 import numpy as np
 import pytest
 
-from robotsmith.cap.specs import FrameRef
-from robotsmith.scenario_runtime import load_candidate, materialize_candidate
+from robotsmith.scenario.specs import FrameRef
 from robotsmith.scenario_runtime.runner import run_scenario_episode
-from scripts.datagen.run_generated_scenario import episode_diagnostics
 from robotsmith.tasks.task_spec import SuccessNode, TaskSpec as LegacyTaskSpec
 from robotsmith.grasp.planner import GraspPlan
 from robotsmith.motion.params import MotionParams
 from robotsmith.skills import Skill, run_skills
-
-
-def _write_candidate(path: Path) -> Path:
-    path.write_text(
-        """
-from robotsmith.cap.intents import intent_sequence, pick, place
-from robotsmith.cap.predicates import object_in_container
-from robotsmith.cap.scene_api import layout, obj, region, scene, target_position
-from robotsmith.cap.task_api import task
-
-table_layout = layout(regions=[
-    region("left_reachable", ((0.42, -0.14), (0.50, -0.06))),
-    region("goal_area", ((0.58, -0.14), (0.66, -0.06)), z=0.809),
-])
-
-scenario_scene = scene(
-    "cap_move_die_to_goal",
-    layout=table_layout,
-    objects=[
-        obj("die", asset="die_01", region="left_reachable"),
-        obj("mug", asset="mug_02", fixed_position=(0.58, 0.10, 0.809)),
-    ],
-    target_positions=[target_position("goal", region="goal_area")],
-)
-
-scenario_task = task(
-    "cap_move_die_to_goal",
-    scene=scenario_scene,
-    instruction="Move the die to the goal.",
-    success=object_in_container("die", "goal", xy_threshold=0.04),
-)
-
-scenario_intents = intent_sequence([
-    pick("die", category="die"),
-    place("goal", category="die"),
-])
-
-
-def build():
-    return scenario_scene, scenario_task, scenario_intents
-""",
-        encoding="utf-8",
-    )
-    return path
-
-
-def test_load_candidate_uses_build_entrypoint(tmp_path):
-    candidate_path = _write_candidate(tmp_path / "generated_scenario.py")
-
-    candidate = load_candidate(candidate_path)
-
-    assert candidate.source_path == candidate_path
-    assert candidate.scene.name == "cap_move_die_to_goal"
-    assert candidate.task.name == "cap_move_die_to_goal"
-    assert [intent.name for intent in candidate.intents.intents] == ["pick", "place"]
-
-
-def test_materialize_candidate_reconstructs_legacy_runtime_objects(tmp_path):
-    candidate_path = _write_candidate(tmp_path / "generated_scenario.py")
-
-    package = materialize_candidate(candidate_path)
-
-    assert package.legacy_scene.name == "cap_move_die_to_goal"
-    assert [obj.name_override for obj in package.legacy_scene.objects] == ["die", "mug"]
-    assert package.legacy_task.scene == "cap_move_die_to_goal"
-    assert package.legacy_task.success.op == "leaf"
-    assert package.legacy_task.success.predicate == "object_in_container"
-    assert package.legacy_task.success.params["object"] == "die"
-    assert package.legacy_task.success.params["container"] == "goal"
-    # Full skill-dict lowering shape is covered in test_cap_authoring; here we
-    # only confirm materialize reconstructs the skill sequence + routing.
-    assert [(s.name, s.target) for s in package.legacy_task.skills] == [
-        ("pick", "die"),
-        ("place", "goal"),
-    ]
-
-
-def test_load_candidate_rejects_missing_build(tmp_path):
-    candidate_path = tmp_path / "generated_scenario.py"
-    candidate_path.write_text("x = 1\n", encoding="utf-8")
-
-    with pytest.raises(ValueError, match="build"):
-        load_candidate(candidate_path)
-
-
-def test_smoke_diagnostics_records_object_target_error():
-    task = LegacyTaskSpec(
-        name="cap_move_die_to_goal",
-        scene="cap_move_die_to_goal",
-        instruction="Move the die to the goal.",
-        success=SuccessNode.leaf("object_in_container", {"object": "die", "container": "goal"}),
-        skills=[],
-    )
-
-    diagnostics = episode_diagnostics(
-        task,
-        initial_positions={"die": np.array([0.42, -0.1, 0.82], dtype=np.float32)},
-        final_positions={"die": np.array([0.60, -0.12, 0.82], dtype=np.float32)},
-        target_positions={"goal": np.array([0.62, -0.12, 0.809], dtype=np.float32)},
-        skill_traces=[{"skill": "pick", "target": "die", "score_exec": np.float32(0.5)}],
-    )
-
-    assert diagnostics["final_positions"]["die"] == pytest.approx([0.60, -0.12, 0.82])
-    assert diagnostics["target_positions"]["goal"] == pytest.approx([0.62, -0.12, 0.809])
-    assert diagnostics["success_xy_error"] == pytest.approx(0.02)
-    assert diagnostics["skill_traces"][0]["score_exec"] == pytest.approx(0.5)
 
 
 def test_run_scenario_episode_reanchors_to_live_resolved_positions(monkeypatch):
@@ -186,7 +76,7 @@ def test_run_scenario_episode_reanchors_to_live_resolved_positions(monkeypatch):
         name="cap_move_die_to_goal",
         scene="cap_move_die_to_goal",
         instruction="Move the die to the goal.",
-        success=SuccessNode.leaf("object_in_container", {"object": "die", "container": "goal"}),
+        success=SuccessNode.leaf("object_above", {"object": "die", "reference": "table"}),
         skills=[Skill("pick", "die", "die"), Skill("place", "goal", "die")],
     )
 

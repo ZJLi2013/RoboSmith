@@ -1,8 +1,8 @@
-"""Small authoring helpers for CAP scene specs."""
+"""Small authoring helpers for scenario scene specs."""
 
 from __future__ import annotations
 
-from robotsmith.cap.specs import (
+from robotsmith.scenario.specs import (
     FrameRef,
     LayoutSpec,
     ObjectSpec,
@@ -183,7 +183,7 @@ def scene(
     table_size: tuple[float, float, float] | None = None,
     table_height: float | None = None,
 ) -> SceneSpec:
-    """Create a CAP scene authoring artifact.
+    """Create a scenario scene authoring artifact.
 
     Optional ``camera_position`` / ``camera_target`` override the overview camera
     pose for this scene (e.g. to frame a tall articulated cabinet); when omitted

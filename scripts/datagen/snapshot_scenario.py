@@ -1,4 +1,4 @@
-"""Render static layout snapshots for an authoring-ready CAP scenario.
+"""Render static layout snapshots for an authoring-ready scenario scenario.
 
 Builds the Genesis scene from a generated scenario's lowered SceneConfig
 (table + objects + Franka at home pose), steps physics briefly to settle, then
@@ -111,7 +111,7 @@ def render_scenario(
     from robotsmith.scenes.backend import ProgrammaticSceneBackend
     from robotsmith.scenes.genesis_loader import load_resolved_scene
 
-    package = materialize_candidate(scenario_path)
+    package = materialize_candidate(scenario_path, seed=seed)
     scene_config = package.legacy_scene
     name = package.legacy_task.name
 
@@ -155,7 +155,7 @@ def render_scenario(
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Render layout snapshots for a CAP scenario")
+    ap = argparse.ArgumentParser(description="Render layout snapshots for a scenario scenario")
     ap.add_argument("--scenario", type=Path, required=True,
                     help="Path to an authoring-ready generated_scenario.py")
     ap.add_argument("--assets-root", default=None)

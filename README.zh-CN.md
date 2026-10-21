@@ -27,11 +27,11 @@ RoboSmith 在 Genesis 里搭场景、规划抓取和避障运动、跑 rollout�
 
 | 资产类别 | 动作 | 成功谓词 |
 |---|---|---|
-| 刚体 | `pick`、`place`（GraspGen 给抓取候选） | `object_in_container`、`object_above`、`stacked`、`objects_aligned` |
+| 刚体 | `pick`、`place`（GraspGen 给抓取候选） | `inside`、`on`、`lifted`、`stacked`、`aligned` |
 | 关节 | `open`、`close`（棱柱关节） | `joint_opened`、`joint_closed` |
 
 一个任务就是一个短 Python 文件：场景、技能意图、成功条件树。示例见
-[`scenarios/pick_place_into_drawer.py`](scenarios/pick_place_into_drawer.py)。
+[`scenarios/pick_place_into_drawer.yaml`](scenarios/pick_place_into_drawer.yaml)。
 
 ## 上手
 

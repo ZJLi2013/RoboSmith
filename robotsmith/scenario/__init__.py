@@ -1,6 +1,6 @@
-"""Code-as-Policy authoring API."""
+"""Scenario authoring: YAML scenarios lowered to the scene / task runtime."""
 
-from robotsmith.cap.adapters import (
+from robotsmith.scenario.adapters import (
     derive_contact_objects,
     resolved_target_positions,
     target_frames,
@@ -8,14 +8,14 @@ from robotsmith.cap.adapters import (
     to_legacy_skills,
     to_legacy_task_spec,
 )
-from robotsmith.cap.intents import (
+from robotsmith.scenario.intents import (
     SkillIntentSequenceSpec,
     SkillIntentSpec,
     intent_sequence,
     pick,
     place,
 )
-from robotsmith.cap.specs import (
+from robotsmith.scenario.specs import (
     FrameRef,
     LayoutSpec,
     ObjectSpec,
@@ -25,7 +25,7 @@ from robotsmith.cap.specs import (
     TaskSpec,
     TaskSuccessCfg,
 )
-from robotsmith.cap.validators import (
+from robotsmith.scenario.validators import (
     ValidationError,
     validate_scene,
     validate_skill_intent_sequence,
