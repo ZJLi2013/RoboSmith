@@ -84,18 +84,20 @@ def load_resolved_scene(
         surface=gs.surfaces.Default(color=(0.64, 0.68, 0.72, 1.0)),
     )
 
-    # The table URDF origin is at the bottom-center; the tabletop extends
-    # ±table_size[0]/2 in X, ±table_size[1]/2 in Y.
+    # A solid block sized by the scenario: the tabletop extends ±table_size[0]/2
+    # in X, ±table_size[1]/2 in Y, with its surface at table_height + thickness/2.
     table_center_x, table_center_y = table_center_xy(config.workspace_xy)
+    table_top_z = config.table_height + config.table_size[2] / 2.0
 
     table_entity = None
-    if resolved.table_asset and resolved.table_asset.urdf_path.exists():
+    if resolved.table_asset:
         table_entity = scene.add_entity(
-            gs.morphs.URDF(
-                file=str(resolved.table_asset.urdf_path),
-                pos=(table_center_x, table_center_y, 0.0),
+            gs.morphs.Box(
+                size=(config.table_size[0], config.table_size[1], table_top_z),
+                pos=(table_center_x, table_center_y, table_top_z / 2.0),
                 fixed=True,
             ),
+            surface=gs.surfaces.Default(color=(0.86, 0.83, 0.76, 1.0)),
         )
 
     obj_entities = []
@@ -124,12 +126,11 @@ def load_resolved_scene(
         obj_entities.append(entity)
         obj_names.append(po.name)
 
-    table_surface_z = config.table_height + config.table_size[2] / 2.0
     # Franka base sits on the table surface (not floating)
     franka = scene.add_entity(
         gs.morphs.MJCF(
             file="xml/franka_emika_panda/panda.xml",
-            pos=(0, 0, table_surface_z),
+            pos=(0, 0, table_top_z),
         ),
     )
 
