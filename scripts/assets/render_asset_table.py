@@ -31,7 +31,6 @@ CANDIDATE_COLS = 6
 GRID_SPACING_M = 0.14
 TABLE_SURFACE_Z = 0.75 + 0.05 / 2.0
 
-from robotsmith.assets import store
 from robotsmith.assets.library import AssetLibrary
 from robotsmith.assets.audit import SUPPORT_ASSETS
 from robotsmith.scenes.backend import _height_for_quat
@@ -162,16 +161,6 @@ def orientation_candidates() -> list[list[float]]:
     return candidates
 
 
-def record_upright(library: AssetLibrary, asset_name: str, result: str) -> None:
-    """Record a human upright check of the asset as built (identity rotation)."""
-    asset = library.get(asset_name)
-    if asset is None:
-        raise ValueError(f"Unknown asset: {asset_name}")
-    store.append_check(asset.root_dir, "upright", result,
-                       {"method": "manual_visual_qa"}, by="human")
-    print(f"updated {asset.root_dir / store.ASSET_FILE} with upright {result}")
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="Render all object assets on one table")
     parser.add_argument("--assets-root", default=None)
@@ -187,8 +176,6 @@ def main() -> None:
                         help="Render or annotate one exact asset name")
     parser.add_argument("--candidate-poses", action="store_true",
                         help="Render 24 right-angle orientation candidates for --asset")
-    parser.add_argument("--record-upright", choices=("pass", "fail"), default=None,
-                        help="Record a human upright check of --asset as built")
     parser.add_argument("--include-franka", action="store_true",
                         help="Add a Franka Panda at home pose on the table")
     parser.add_argument("--cpu", action="store_true")
@@ -196,12 +183,6 @@ def main() -> None:
 
     assets_root = Path(args.assets_root) if args.assets_root else REPO_ROOT / "assets"
     library = AssetLibrary(assets_root)
-    if args.record_upright is not None:
-        if not args.asset:
-            raise ValueError("--record-upright requires --asset")
-        record_upright(library, args.asset, args.record_upright)
-        return
-
     ensure_display()
 
     import genesis as gs  # type: ignore[import-not-found]

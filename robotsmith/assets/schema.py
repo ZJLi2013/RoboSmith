@@ -161,7 +161,7 @@ class AssetMetadata:
     assets are fixtures regardless of this field (see ``Asset.is_fixture``)."""
     description: str = ""
     upright_verified: bool = False
-    """True when a current ``upright`` or ``llm_review`` check record passes (the asset stands on +Z)."""
+    """True when a current ``llm_review`` check record passes (the review checks the asset stands on +Z)."""
     grasp_policy_bucket: str | list[str] | None = None
     """Validated Stage 1 bucket(s), or ``no_positive`` after a full failed probe.
     Read from the grasp sidecar ``assets/grasp_policy_buckets.json``, not ``asset.json``."""

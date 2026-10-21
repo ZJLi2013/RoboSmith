@@ -9,7 +9,7 @@ back with evidence from this directory; anything you could not check counts agai
 - `renders/`: views of the visual model (front, side, top, iso).
 - `asset/`: the compiled asset: `model.urdf`, meshes, `asset.json`.
 - `readings.json`: what the asset declares and what the scenario runtime derives from it: joints and
-  limits, link masses, every named collision box with its bounds at rest, handles (grasp points)
+  limits, link masses, every named collision box and collision mesh with its bounds at rest, handles (grasp points)
   and place targets. A place target is the collision box an object is put on (`box`); on a moving
   part it also names the joint it rides on and `lip_local`, the front edge of that box's top face
   along the joint at the closed pose.
@@ -24,7 +24,7 @@ object (about 4 cm) is lowered onto a place target and must come to rest there. 
 the robot lowers it at `lip_local + axis * q / 2` in the asset frame (q = the joint position at
 that moment): the middle of the stretch the joint has pulled out, at the height of the box top.
 Elsewhere it is the centre of the box top. The simulator only
-collides the named collision boxes; the visual meshes never touch anything. A jointed part is
+collides the collision geometry (named boxes or meshes); the visual meshes never touch anything. A jointed part is
 carried on its joint and cannot sag or leave its axis, so runners and rails need not be modelled;
 a sliding part counts as held as long as it still overlaps the part it slides in, along the joint,
 at full travel.
@@ -55,14 +55,14 @@ Joints are passive with damping, as in a scenario: a released joint keeps most o
 ## Check at least
 
 1. The asset matches the request: names, overall size, parts and joints.
-2. The collision boxes follow the visual model; nothing the robot or an object must reach into is
+2. The collision geometry follows the visual model; nothing the robot or an object must reach into is
    filled in, and nothing visible is missing.
 3. Every joint works over its whole declared range: parts that move stay attached to, and
    supported by, the part they slide or turn in, and links do not interpenetrate.
 4. Each handle can be grasped from above and pulled along its joint.
 5. An object put on each place target comes to rest on it, inside any rim.
-6. A rigid object set down upright on the ground (`Probe("asset", fixed=False)`) settles and
-   stays upright.
+6. A rigid object set down upright on the ground settles and stays upright:
+   `Probe("asset", fixed=False, pos=(0, 0, -z_min))`, `z_min` = the lowest collision z at rest.
 
 Items that do not apply (no joints, handles or place targets) pass with that as the evidence.
 
