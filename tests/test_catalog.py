@@ -16,12 +16,15 @@ class TestCatalog:
         out = tmp_path / "test_gen"
         out.mkdir()
         mesh.export(str(out / "visual.obj"))
-        (out / "model.urdf").write_text("<robot/>")
+        (out / "model.urdf").write_text(
+            '<robot name="r"><link name="l"><visual><geometry>'
+            '<mesh filename="visual.obj"/></geometry></visual></link></robot>'
+        )
 
         asset = catalog_asset(out, "red mug")
         assert asset.name == "test_gen"
         assert asset.metadata.description == "Generated from prompt: red mug"
-        assert asset.metadata.canonical_frame["up_axis"] == "+Z"
+        assert asset.metadata.size_cm == [8.0, 8.0, 12.0]
         assert asset.metadata.task_poses == {}
         assert asset.metadata.source == "generated"
         assert (out / "asset.json").exists()

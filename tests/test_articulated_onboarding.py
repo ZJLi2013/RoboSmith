@@ -1,11 +1,13 @@
 """Articulated asset onboarding.
 
-Loader reads URDF joints (type/axis/limits) at load time; AssetMetadata carries
-only thin semantic annotations (task_joints/handles/joint_init). Rigid assets stay
-backward compatible (empty joints, empty annotation fields).
+Loader reads URDF joints (type/axis/limits) at load time; annotations only name
+the handle link and place-target boxes, whose positions are derived from the URDF.
+Rigid assets have empty joints and annotation fields.
 """
 
 from pathlib import Path
+
+import pytest
 
 from robotsmith.assets.library import AssetLibrary
 from robotsmith.assets.schema import parse_urdf_joints
@@ -71,16 +73,18 @@ class TestArticulatedAssetLoad:
         assert drawer.is_articulated
         assert [j.name for j in drawer.movable_joints] == ["drawer_slide"]
         assert drawer.get_joint("drawer_slide").type == "prismatic"
-        # Thin semantic annotations come from metadata, kinematics from the URDF.
-        assert drawer.metadata.task_joints == ["drawer_slide"]
+        # Annotations name the parts; positions are derived from the URDF.
         assert drawer.metadata.handles == [
-            {"name": "handle", "link": "drawer_handle", "local_pos": [0.268, 0.0, 0.2125]}
+            {"link": "drawer_handle", "local_pos": [0.268, 0.0, 0.2125]}
         ]
-        assert drawer.metadata.joint_init == {"drawer_slide": 0.0}
+        [opening] = drawer.metadata.place_targets
+        assert opening["joint"] == "drawer_slide"
+        assert opening["lip_local"] == pytest.approx([0.225, 0.0, 0.142])
+        assert drawer.metadata.size_cm == [57.5, 62.0, 36.5]
 
     def test_rigid_asset_not_articulated(self):
         lib = AssetLibrary(REPO_ROOT / "assets")
         block = lib.get("die_01")
         assert block is not None
         assert not block.is_articulated
-        assert block.metadata.task_joints == []
+        assert block.movable_joints == []

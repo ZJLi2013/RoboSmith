@@ -34,53 +34,12 @@
       "value": 0.55,
       "by": "legacy"
     },
-    "size_cm": {
-      "value": [
-        3.3,
-        6.0,
-        1.9
-      ],
-      "by": "legacy"
-    },
-    "canonical_frame": {
-      "value": {
-        "up_axis": "+Z",
-        "front_axis": "+X",
-        "origin": "centered_mesh_centroid"
-      },
-      "by": "legacy",
-      "note": "Objaverse import contract: mesh is assumed to be in semantic object frame."
-    },
     "upright": {
       "value": [
         0.0,
         0.707107,
         0.707107,
         -0.0
-      ],
-      "by": "human",
-      "note": "Primary upright pose; see upright_candidates for all visually valid poses."
-    },
-    "upright_candidates": {
-      "value": [
-        [
-          0.0,
-          0.707107,
-          0.707107,
-          -0.0
-        ],
-        [
-          0.5,
-          0.5,
-          0.5,
-          0.5
-        ],
-        [
-          0.5,
-          -0.5,
-          -0.5,
-          0.5
-        ]
       ],
       "by": "human"
     }

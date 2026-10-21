@@ -24,23 +24,16 @@ from robotsmith.skills.frames import (
 
 def _drawer_asset():
     meta = SimpleNamespace(
-        handles=[{"name": "handle", "link": "drawer", "local_pos": [0.27, 0.0, 0.33]}],
-        task_joints=["drawer_slide"],
+        handles=[{"link": "drawer", "local_pos": [0.27, 0.0, 0.33]}],
         place_targets=[
-            {
-                "name": "drawer_opening",
-                "joint": "drawer_slide",
-                "lip_local": [0.2, 0.0, 0.1],
-                "tray_floor_z": 0.1,
-                "travel_fraction": 0.5,
-            }
+            {"name": "drawer_opening", "joint": "drawer_slide", "lip_local": [0.2, 0.0, 0.1]}
         ],
-        joint_init={"drawer_slide": 0.0},
     )
     joint = UrdfJoint("drawer_slide", "prismatic", "base", "drawer", (1.0, 0.0, 0.0), 0.0, 0.35)
     return SimpleNamespace(
         name="drawer",
         metadata=meta,
+        movable_joints=[joint],
         get_joint=lambda n: joint if n == "drawer_slide" else None,
     )
 
@@ -119,7 +112,7 @@ class TestResolveFrame:
         )
         at_closed = resolve_frame(frame, self._state(0.0))
         at_open = resolve_frame(frame, self._state(0.3))
-        # lip = parent(0.55) + lip_local.x(0.2) = 0.75; z = tray_floor_z = 0.1.
+        # lip = parent(0.55) + lip_local.x(0.2) = 0.75; z = lip_local.z = 0.1.
         assert np.allclose(at_closed, [0.75, 0.0, 0.1])
         # half-slide: 0.75 + 0.3 * 0.5 = 0.90 (vs full-travel 1.05 for "articulated").
         assert np.allclose(at_open, [0.90, 0.0, 0.1])

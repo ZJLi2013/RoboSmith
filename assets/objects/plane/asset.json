@@ -22,14 +22,6 @@
     "friction": {
       "value": 0.5,
       "by": "legacy"
-    },
-    "size_cm": {
-      "value": [
-        1000,
-        1000,
-        0.1
-      ],
-      "by": "legacy"
     }
   }
 }
