@@ -1,162 +1,80 @@
 # Scenario Authoring Prompt
 
-Use this prompt when asking an agent to generate a RoboSmith scenario.
+Use this prompt when asking an agent to write a RoboSmith scenario.
 
-The agent must generate a Python scenario candidate, not runtime control code.
-A scenario is:
+A scenario is one YAML file: the scene (objects and their relations) and the task
+(instruction + success tree). It contains no positions beyond one optional planar
+anchor per fixture, no robot actions and no code. The full schema is `SCHEMA` in
+[`robotsmith/scenario/load.py`](../robotsmith/scenario/load.py).
 
-```text
-scenario = SceneSpec + TaskSpec + SkillIntentSequenceSpec
+## Shape
+
+```yaml
+scenario: apple_into_drawer          # id
+robot: franka
+scene:
+  support: table_simple
+  objects:
+    - {id: drawer, asset: drawer_cabinet, on: support, anchor_xy: [0.80, 0.0], facing: robot}
+    - {id: apple, asset: apple_01, on: support, near: robot, clear_of: [drawer.swept]}
+task:
+  instruction: Put the apple in the drawer.
+  success:
+    inside: {object: apple, container: drawer.drawer_opening}
+variations:                          # optional: <object id>.<field>: [choices], one per seed
+  apple.asset: [apple_01, die_01]
+split: {playground: [0, 9], test: [100, 149]}   # optional seed ranges
 ```
 
-## Inputs
+`asset` is an asset id from `assets/`. `<id>.<target>` names one of that asset's
+`place_targets` (e.g. `drawer_opening`, `shelf_lower`, `shelf_upper`).
 
-The user provides a natural language task request, for example:
+## Relations
 
-```text
-Move the die to the goal area while leaving the mug and apple as distractors.
+| Field | Meaning |
+|---|---|
+| `on: support` | rests on the tabletop |
+| `on: <id>.<target>` | rests on a static place-target surface of another object, centred |
+| `anchor_xy: [x, y]` | planar position, for fixtures only |
+| `near: robot` | sampled in the robot's workspace (per seed) |
+| `clear_of: [<id> \| <id>.swept]` | no xy overlap with the object, or with the volume its drawer sweeps |
+| `facing: robot` | the asset's front (drawer pull direction, or the open side of a shelf) faces the robot |
+| `yaw_deg` | explicit yaw, only for assets with no front direction |
+| `joint_init` | initial joint values, default 0 |
+
+## Success predicates
+
+Combine with `all_of: [...]`, `any_of: [...]`, `not: {...}`.
+
+| Predicate | True when |
+|---|---|
+| `inside: {object, container: <id>.<target>}` | object rests in that box (follows the drawer joint) |
+| `on: {object, surface: <id>.<target>}` | object rests on that surface |
+| `lifted: {object, height}` | object is `height` m above its start |
+| `joint: {object, joint, at: open \| closed, tol}` | joint within `tol` of its limit |
+| `stacked: {objects}` / `aligned: {objects, axis}` | ordered stack / line |
+
+The success tree is hidden from the executor; write it so that states which do
+not complete the task are false.
+
+## Teacher plan (optional)
+
+Scripted rollouts read `scenarios/teacher/<same name>.yaml`:
+
+```yaml
+teacher: apple_into_drawer
+steps:
+  - open: drawer
+  - pick: apple
+  - place: {target: drawer.drawer_opening}
+  - close: drawer
 ```
 
-The agent may use only the public RoboSmith CAP authoring API listed below.
+## Validate
 
-## Allowed Imports
-
-```python
-from robotsmith.cap.intents import intent_sequence, pick, place
-from robotsmith.cap.predicates import object_in_container, object_lifted, objects_aligned, stacked
-from robotsmith.cap.predicates import all_of, any_of, negate
-from robotsmith.cap.scene_api import layout, obj, region, scene, target_position
-from robotsmith.cap.task_api import task
+```bash
+python scripts/datagen/run_generated_scenario.py --scenario output/<exp>/<name>.yaml --materialize-only
 ```
 
-## Allowed Output Shape
-
-The generated file must define these names:
-
-```python
-scenario_scene = ...
-scenario_task = ...
-scenario_intents = ...
-
-
-def build():
-    return scenario_scene, scenario_task, scenario_intents
-```
-
-## Authoring Rules
-
-- Use logical names such as `"die"`, `"mug"`, `"apple"`, and `"goal"` consistently across scene objects, predicates, and intents.
-- Use `obj(...)` only for physical objects that should appear in the simulator.
-- Use `target_position(...)` for non-physical goals such as `"goal"` or `"drop_zone"`.
-- Use `task(...)` to bind the scene, instruction, and success condition.
-- Success may be a single predicate, or a composite via `all_of(...)`, `any_of(...)`, `negate(...)` (e.g. `all_of(object_in_container("apple", "bowl"), object_in_container("banana", "bowl"))`).
-- Use `intent_sequence([...])` with only `pick(...)` and `place(...)`.
-- Prefer named regions over hard-coded object positions unless the task requires an exact fixture.
-- Keep the scenario robot-agnostic and runtime-agnostic.
-
-## Reference Examples
-
-Pick one object:
-
-```python
-from robotsmith.cap.intents import intent_sequence, pick
-from robotsmith.cap.predicates import object_lifted
-from robotsmith.cap.scene_api import layout, obj, region, scene
-from robotsmith.cap.task_api import task
-
-table_layout = layout(regions=[
-    region("left_reachable", ((0.42, -0.14), (0.50, -0.06))),
-])
-
-scenario_scene = scene(
-    "pick_die",
-    layout=table_layout,
-    objects=[obj("die", asset="die_01", region="left_reachable")],
-)
-
-scenario_task = task(
-    "pick_die",
-    scene=scenario_scene,
-    instruction="Pick up the die.",
-    success=object_lifted("die", z_margin=0.05),
-)
-
-scenario_intents = intent_sequence([
-    pick("die", category="die"),
-])
-
-
-def build():
-    return scenario_scene, scenario_task, scenario_intents
-```
-
-Move one object to a non-physical target:
-
-```python
-from robotsmith.cap.intents import intent_sequence, pick, place
-from robotsmith.cap.predicates import object_in_container
-from robotsmith.cap.scene_api import layout, obj, region, scene, target_position
-from robotsmith.cap.task_api import task
-
-table_layout = layout(regions=[
-    region("left_reachable", ((0.42, -0.14), (0.50, -0.06))),
-    region("goal_area", ((0.58, 0.08), (0.66, 0.16)), z=0.809),
-])
-
-scenario_scene = scene(
-    "place_die_at_goal",
-    layout=table_layout,
-    objects=[obj("die", asset="die_01", region="left_reachable")],
-    target_positions=[target_position("goal", region="goal_area")],
-)
-
-scenario_task = task(
-    "place_die_at_goal",
-    scene=scenario_scene,
-    instruction="Place the die at the goal.",
-    success=object_in_container("die", "goal", xy_threshold=0.04),
-)
-
-scenario_intents = intent_sequence([
-    pick("die", category="die"),
-    place("goal", category="die"),
-])
-
-
-def build():
-    return scenario_scene, scenario_task, scenario_intents
-```
-
-## Forbidden Output
-
-Do not generate:
-
-- Genesis / simulator calls.
-- Waypoints or joint trajectories.
-- Gripper open / close commands.
-- IK calls.
-- Recorder or dataset code.
-- Direct legacy `SceneConfig`, runtime `TaskSpec(success=...)`, or `Skill(...)` construction.
-- Arbitrary success-check Python functions.
-
-## Validation Contract
-
-The generated candidate should be saved under an experiment output directory:
-
-```text
-output/<experiment>/generated_scenario.py
-```
-
-Then validate it by importing `build()` and running the normal adapters:
-
-```python
-from robotsmith.cap.adapters import to_legacy_scene_config, to_legacy_skills, to_legacy_task_spec
-
-scenario_scene, scenario_task, scenario_intents = build()
-legacy_scene = to_legacy_scene_config(scenario_scene)
-legacy_task = to_legacy_task_spec(scenario_task)
-legacy_task.skills = to_legacy_skills(scenario_intents, scenario_task)
-```
-
-Only promote a scenario into `scenarios/` after it validates, lowers, and passes
-the intended smoke test.
+This validates the schema, solves the relations for `--seed` and lowers the
+scenario. Promote it into `scenarios/` only after it validates and passes a smoke run.

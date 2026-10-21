@@ -10,8 +10,8 @@ consumes the dataset RoboSmith writes.
 ## Data flow
 
 ```text
-asset library ──► scenario (CAP: scene + task + skill intents + success)
-                      │  cap/adapters.py lowers it to the runtime
+asset library ──► scenario YAML (scene relations + task + success) + teacher plan
+                      │  scenario/load.py solves relations; scenario/adapters.py lowers to the runtime
                       ▼
                   SimEnv (Genesis + Franka) ── reset, settle
                       │
@@ -26,7 +26,7 @@ Each arrow is one typed contract, and each layer has one owner in the code:
 | Contract | Type / module |
 |---|---|
 | Asset → scene | `AssetMetadata` (`robotsmith/assets/`) |
-| Scenario → runtime | `robotsmith/cap/adapters.py` |
+| Scenario → runtime | `robotsmith/scenario/load.py`, `robotsmith/scenario/adapters.py` |
 | Grasp → execution | `GraspPlan`, including its waypoints |
 | Execution → motion backend | the `MotionPlanner` protocol (`robotsmith/motion/`) |
 | Simulator / recorder | `robotsmith/sim/sim_env.py`, `robotsmith/sim/recorder.py` (the only adapters) |
@@ -36,7 +36,7 @@ Each arrow is one typed contract, and each layer has one owner in the code:
 ```text
 robotsmith/
 ├── assets/            # Asset / AssetMetadata / AssetLibrary; producers/ generates assets
-├── cap/               # declarative task layer: scene, task, success, skill intents
+├── scenario/          # YAML scenarios: schema, relation solver, success, lowering
 ├── scenes/            # SceneConfig / ObjectPlacement, upright pose, Genesis loader
 ├── tasks/             # TaskSpec, predicates, task presets
 ├── scenario_runtime/  # scenario load, materialize, segment-level runner
@@ -69,7 +69,7 @@ What an asset can do follows from its annotations, not from its category:
 
 | Asset kind | Unlocked by | Actions | Success predicates |
 |---|---|---|---|
-| rigid | a graspable mesh with a passing `upright` check | `pick`, `place` | `object_in_container`, `object_above`, `stacked`, `objects_aligned` |
+| rigid | a graspable mesh with a passing `upright` check | `pick`, `place` | `inside` / `on` (`object_in_box`), `lifted`, `stacked`, `aligned` |
 | articulated | a movable URDF joint + `handles` | `open`, `close` | `joint_opened`, `joint_closed` |
 | supporter / fixture | `kind: fixture` or any movable joint | none (it is a place target or an obstacle) | — |
 
@@ -86,21 +86,23 @@ visual-geometry extent, the task joint is the movable joint, and a handle or pla
 collision box whose position the loader reads at zero joint configuration. Annotations keep only the semantic
 choices: which link is the `handle`, which boxes are `place_targets` (with an optional insert `approach`).
 
-### Scenario and CAP
+### Scenario
 
-A scenario is `scene + task + skill intents + success`, written in Python with the CAP API
-(`robotsmith/cap/`: `SceneSpec`, `RegionSpec`, `ObjectSpec`, `TargetPositionSpec`, `TaskSpec`; helpers in
-`cap/scene_api.py` and `cap/task_api.py`). Examples live in [`scenarios/`](../scenarios/); the authoring contract for
-agents is [`scenarios/AGENT_PROMPT.md`](../scenarios/AGENT_PROMPT.md).
+A scenario is a YAML file: the scene as objects with relations (`on`, `near`, `clear_of`, `facing`, at most one
+`anchor_xy` per fixture) and the task (instruction + success tree). It is data, validated against the JSON Schema in
+`robotsmith/scenario/load.py`; nothing in it executes. Examples live in [`scenarios/`](../scenarios/); the authoring
+contract for agents is [`scenarios/AGENT_PROMPT.md`](../scenarios/AGENT_PROMPT.md).
 
-- **Skill intents** are limited to `pick`, `place`, `open`, `close`. A scenario never writes waypoints, controls the
-  gripper, or calls Genesis.
-- **Success** is a tree of `all_of` / `any_of` / `negate` over predicates. A new predicate is one function in
-  `cap/predicates.py` plus its registration.
-- **Target positions** are named points, not physical objects; place targets on an articulated fixture
-  (`on_articulated_opening(...)`) follow the joint as it opens.
-- `ObjectSpec.joint_init` sets a scene-level initial joint value (default 0).
-- Scenario loading executes Python, so only load trusted scenario files.
+- **Relations are solved per seed** (`robotsmith/scenario/relations.py`) from asset geometry only: visual bounds,
+  collision boxes, place targets and prismatic joints. `near: robot` samples the Franka workspace annulus, so one
+  scenario is a distribution of layouts; `variations` swap fields per seed and `split` reserves seed ranges for
+  playground and test.
+- **Success** is a tree of `all_of` / `any_of` / `not` over predicates that read asset geometry, not hand-tuned
+  thresholds: `inside` / `on` test the object against a place target's collision box (riding its joint). The tree is
+  meant to be hidden from the executor.
+- **Teacher plans** (`scenarios/teacher/<name>.yaml`) hold the scripted `pick` / `place` / `open` / `close` steps
+  for expert rollouts; they never write waypoints, control the gripper, or call Genesis. Place targets on an
+  articulated fixture follow the joint as it opens.
 
 ### Grasp: generate, then only subtract
 

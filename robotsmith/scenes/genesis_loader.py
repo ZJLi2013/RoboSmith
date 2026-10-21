@@ -13,6 +13,8 @@ from typing import Optional
 
 import numpy as np
 
+from robotsmith.scenes.config import table_center_xy
+
 
 @dataclass
 class GenesisSceneHandle:
@@ -82,14 +84,9 @@ def load_resolved_scene(
         surface=gs.surfaces.Default(color=(0.64, 0.68, 0.72, 1.0)),
     )
 
-    # Position table so it covers both the Franka base (at x=0) and the
-    # workspace area.  The table URDF origin is at the bottom-center;
-    # tabletop extends ±table_size[0]/2 in X, ±table_size[1]/2 in Y.
-    ws = config.workspace_xy
-    ws_center_x = (ws[0][0] + ws[1][0]) / 2.0
-    # Center table between Franka base (x=0) and workspace center
-    table_center_x = ws_center_x / 2.0
-    table_center_y = (ws[0][1] + ws[1][1]) / 2.0
+    # The table URDF origin is at the bottom-center; the tabletop extends
+    # ±table_size[0]/2 in X, ±table_size[1]/2 in Y.
+    table_center_x, table_center_y = table_center_xy(config.workspace_xy)
 
     table_entity = None
     if resolved.table_asset and resolved.table_asset.urdf_path.exists():

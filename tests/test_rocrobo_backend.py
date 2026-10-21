@@ -46,7 +46,7 @@ def _drawer_asset() -> Asset:
                 upper=0.245,
             ),
             # Handle on its own fixed-jointed link (mirrors the real URDF); the
-            # world builder must carry it along the slide via _rigid_moving_links.
+            # world builder must carry it along the slide via rigid_moving_links.
             UrdfJoint(
                 name="handle_mount",
                 type="fixed",
@@ -87,7 +87,7 @@ def test_build_collision_world_drawer_slides_along_axis():
         by_link.setdefault(link, []).append(d)
     # The drawer body AND the fixed-jointed handle ride the slide; base stays put.
     # The handle case is the regression guard: a separated handle link must follow
-    # via _rigid_moving_links, not be stranded at the closed pose.
+    # via rigid_moving_links, not be stranded at the closed pose.
     for link in ("drawer", "drawer_handle"):
         assert by_link.get(link), f"expected collision boxes on {link!r}"
         for d in by_link[link]:

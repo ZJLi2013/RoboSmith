@@ -83,42 +83,41 @@ def object_above(env_state: dict, *, object: str, reference: str, z_margin: floa
     return float(pos[2] - initial_z) >= z_margin
 
 
-@register_predicate("object_in_container")
-def object_in_container(
+@register_predicate("object_in_box")
+def object_in_box(
     env_state: dict,
     *,
     object: str,
-    container: str,
-    xy_threshold: float = 0.05,
-    z_margin: float = 0.0,
-    z_tol: float | None = None,
+    parent: str,
+    box: list[list[float]],
+    yaw_deg: float,
+    object_bottom: float,
+    object_height: float,
+    mode: str,
+    tol: float = 0.02,
+    joint: str | None = None,
+    axis: list[float] | None = None,
 ) -> bool:
-    """True if object is inside a physical container or at a target marker.
+    """True if the object's centre is over a box of ``parent`` and its bottom rests on it.
 
-    Physical containers live in ``object_positions`` and keep the single-sided
-    Z check (``z >= bottom + z_margin``: getting in is enough).
-
-    Non-physical target markers live in ``target_positions``. Their Z is the
-    *resolved world height* the object should rest at (e.g. a specific shelf),
-    not a container bottom. When ``z_tol`` is given, the marker Z is enforced as
-    a two-sided band ``abs(obj_z - target_z) <= z_tol`` so XY-coincident but
-    Z-distinct targets (stacked shelves) are distinguishable. ``z_tol=None``
-    keeps the legacy XY-only behaviour for callers that have not opted in.
+    ``box`` is ``[lo, hi]`` in the parent frame at zero joint configuration; when
+    ``joint`` is set the box rides that prismatic joint by its live value.
+    ``mode="on"``: bottom within ``tol`` of the box top. ``mode="inside"``: bottom
+    between box top - ``tol`` and box top + ``object_height``.
     """
-    obj_pos = env_state["object_positions"][object]
-    target_positions = env_state.get("target_positions", {})
-    is_target_marker = container in target_positions
-    cont_pos = (
-        target_positions[container]
-        if is_target_marker
-        else env_state["object_positions"][container]
-    )
-    xy_dist = np.linalg.norm(obj_pos[:2] - cont_pos[:2])
-    if is_target_marker:
-        at_z = True if z_tol is None else abs(float(obj_pos[2] - cont_pos[2])) <= z_tol
-    else:
-        at_z = obj_pos[2] >= cont_pos[2] + z_margin
-    return float(xy_dist) < xy_threshold and at_z
+    lo, hi = np.asarray(box[0], dtype=np.float64), np.asarray(box[1], dtype=np.float64)
+    if joint is not None:
+        shift = np.asarray(axis, dtype=np.float64) * float(env_state["joint_positions"][parent][joint])
+        lo, hi = lo + shift, hi + shift
+    obj = np.asarray(env_state["object_positions"][object], dtype=np.float64)
+    base = np.asarray(env_state["object_positions"][parent], dtype=np.float64)
+    c, s = np.cos(np.radians(yaw_deg)), np.sin(np.radians(yaw_deg))
+    dx, dy = obj[0] - base[0], obj[1] - base[1]
+    lx, ly = c * dx + s * dy, -s * dx + c * dy
+    over = lo[0] <= lx <= hi[0] and lo[1] <= ly <= hi[1]
+    gap = (obj[2] - object_bottom) - (base[2] + hi[2])
+    rests = abs(gap) <= tol if mode == "on" else -tol <= gap <= object_height
+    return bool(over and rests)
 
 
 @register_predicate("joint_opened")

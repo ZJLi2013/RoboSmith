@@ -8,6 +8,9 @@ All notable user-facing changes are documented here. This project follows Semant
 
 - `robotsmith.assets.producers`: asset generation (TRELLIS.2 and Hunyuan3D backends, `generate_asset`) and
   `mesh_to_urdf`, moved from RocRecon.
+- `robotsmith.scenario.relations`: a relation solver that places scenario objects per seed from asset geometry
+  (`on`, `near: robot`, `clear_of`, `facing: robot`, fixture `anchor_xy`), and the `object_in_box` predicate behind
+  `inside` / `on`, which tests an object against a place target's collision box.
 
 ### Changed
 
@@ -25,6 +28,11 @@ All notable user-facing changes are documented here. This project follows Semant
   World-frame geometry is unchanged (within 0.001 mm). Fixture yaw moved from the asset into the scenes (`yaw_deg`).
   `gripper_fit` is a check only and no longer rewrites the scale. `render_asset_table.py --apply-upright-index`
   becomes `--record-upright pass|fail`.
+- Scenarios are YAML data validated by a JSON Schema instead of Python modules with `build()`; the scenario loader no
+  longer executes code. Teacher steps moved to `scenarios/teacher/<name>.yaml`. `robotsmith.cap` is renamed
+  `robotsmith.scenario`. The four scenarios were migrated; three success judgements change on purpose: a die on the
+  drawer cabinet's top is no longer inside the drawer, anywhere on the lower shelf now counts, and `near: robot`
+  samples a wider initial layout than the old hand-written regions.
 - `assets/objects/` keeps only the assets the scenarios load: `apple_01`, `die_01`, `lego_02`, `mug_02`, `plane`,
   `table_simple`.
 - `README.md` is in English, with the Chinese version in `README.zh-CN.md`; the demo videos render as GIFs. The code
@@ -38,6 +46,8 @@ All notable user-facing changes are documented here. This project follows Semant
 - `task_joints`, `joint_init` (default 0; scenes still override), `canonical_frame`, `mounting_holes`,
   `upright_candidates`, and the `tray_floor_z` / `travel_fraction` / `extent_xy` place-target fields, with the
   `render_asset_table.py` modes that read `upright_candidates`.
+- The `object_in_container` predicate (xy threshold around a point) and per-scenario camera poses (the camera now
+  frames the solved scene).
 - The `metric_scale` and `upright` annotations, `AssetMetadata.task_poses`, `scene_state["object_scales"]`, and
   `robotsmith.scenes.pose_utils`.
 

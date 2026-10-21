@@ -1,8 +1,8 @@
-"""Small authoring helper for CAP task specs."""
+"""Small authoring helper for scenario task specs."""
 
 from __future__ import annotations
 
-from robotsmith.cap.specs import SceneSpec, SuccessSpec, TaskSpec
+from robotsmith.scenario.specs import SceneSpec, SuccessSpec, TaskSpec
 
 
 def task(
@@ -12,7 +12,7 @@ def task(
     instruction: str,
     success: SuccessSpec,
 ) -> TaskSpec:
-    """Create a CAP task from scene, instruction, and success config.
+    """Create a scenario task from scene, instruction, and success config.
 
     Example:
         task(

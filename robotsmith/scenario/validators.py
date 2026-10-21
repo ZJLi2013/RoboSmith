@@ -1,17 +1,17 @@
-"""Validation for CAP authoring specs."""
+"""Validation for scenario authoring specs."""
 
 from __future__ import annotations
 
 from robotsmith.assets import AssetLibrary
-from robotsmith.cap.intents import SkillIntentSequenceSpec
-from robotsmith.cap.specs import AllOf, AnyOf, Not, SceneSpec, SuccessSpec, TaskSpec, TaskSuccessCfg
+from robotsmith.scenario.intents import SkillIntentSequenceSpec
+from robotsmith.scenario.specs import AllOf, AnyOf, Not, SceneSpec, SuccessSpec, TaskSpec, TaskSuccessCfg
 from robotsmith.tasks.predicates import PREDICATE_REGISTRY
 
 SUPPORTED_SKILL_INTENTS = {"pick", "place", "open", "close"}
 
 
 class ValidationError(ValueError):
-    """Raised when a CAP authoring spec is invalid."""
+    """Raised when a scenario authoring spec is invalid."""
 
 
 def validate_scene(scene: SceneSpec, *, asset_library: AssetLibrary | None = None) -> None:
@@ -95,7 +95,7 @@ def validate_skill_intent_sequence(
     intents: SkillIntentSequenceSpec,
     task: TaskSpec,
 ) -> None:
-    """Validate task-level skill intents against a CAP task's scene names."""
+    """Validate task-level skill intents against a scenario task's scene names."""
 
     validate_task(task)
     _require(intents.intents, "SkillIntentSequenceSpec.intents must be non-empty")

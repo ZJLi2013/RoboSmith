@@ -18,7 +18,7 @@ set -eu
 # Requires the rocrobo_dev serve sidecar to be running.
 
 NAME="${NAME:-f1_m1}"
-SCENARIO="${SCENARIO:-scenarios/pick_place_into_drawer.py}"
+SCENARIO="${SCENARIO:-scenarios/pick_place_into_drawer.yaml}"
 PLANNER="${PLANNER:-auto}"
 # Default image targets MI300 / gfx942; for MI350 set
 #   IMAGE=robotsmith:rocm-headless-graspgen

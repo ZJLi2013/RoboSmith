@@ -1,0 +1,16 @@
+scenario: pick_place_into_drawer
+robot: franka
+scene:
+  support: table_simple
+  objects:
+    - {id: drawer, asset: drawer_cabinet, on: support, anchor_xy: [0.80, 0.0], facing: robot}
+    - {id: die, asset: die_01, on: support, near: robot, clear_of: [drawer.swept]}
+task:
+  instruction: Open the drawer, put the die inside, then close the drawer.
+  success:
+    all_of:
+      - inside: {object: die, container: drawer.drawer_opening}
+      - joint: {object: drawer, joint: drawer_slide, at: closed, tol: 0.02}
+variations:
+  die.asset: [die_01, lego_02]
+split: {playground: [0, 9], test: [100, 149]}

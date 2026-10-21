@@ -1,4 +1,4 @@
-"""Task-level skill intent helpers for CAP authoring.
+"""Task-level skill intent helpers for scenario authoring.
 
 These intents describe which existing scripted expert primitive to use. They do
 not define waypoints, gripper commands, IK, or rollout execution details.

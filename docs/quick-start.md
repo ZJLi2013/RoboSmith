@@ -114,7 +114,7 @@ To render a layout without rolling out (inside the same image, which provides Ge
 ```bash
 docker run --rm --device=/dev/kfd --device=/dev/dri --group-add video \
   -v $HOME/RoboSmith:/workspace/robotsmith robotsmith:gfx942-rocm6.4.3-genesis0.4.5 \
-  bash -lc 'cd /workspace/robotsmith && python scripts/datagen/snapshot_scenario.py --scenario scenarios/pick_place_into_drawer.py'
+  bash -lc 'cd /workspace/robotsmith && python scripts/datagen/snapshot_scenario.py --scenario scenarios/pick_place_into_drawer.yaml'
 ```
 
 ## 6. Write your own scenario

@@ -1,4 +1,4 @@
-"""Typed CAP authoring specs for scene/task definitions."""
+"""Typed scenario authoring specs for scene/task definitions."""
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ class LayoutSpec:
 
 @dataclass(frozen=True)
 class ObjectSpec:
-    """Physical object in a CAP scene.
+    """Physical object in a scenario scene.
 
     Args:
         name: Logical object name used by instructions, predicates, and later
@@ -140,7 +140,7 @@ class TargetPositionSpec:
 
 @dataclass(frozen=True)
 class SceneSpec:
-    """CAP scene authoring artifact.
+    """scenario scene authoring artifact.
 
     Args:
         name: Scene identifier used by adapters and generated legacy configs.
@@ -211,7 +211,7 @@ SuccessSpec = Union[TaskSuccessCfg, AllOf, AnyOf, Not]
 
 @dataclass(frozen=True)
 class TaskSpec:
-    """CAP task authoring artifact.
+    """scenario task authoring artifact.
 
     Args:
         name: Task identifier.

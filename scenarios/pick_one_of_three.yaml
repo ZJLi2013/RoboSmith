@@ -1,0 +1,13 @@
+scenario: pick_one_of_three
+robot: franka
+scene:
+  support: table_simple
+  objects:
+    - {id: apple, asset: apple_01, on: support, near: robot}
+    - {id: mug, asset: mug_02, on: support, near: robot}
+    - {id: block, asset: lego_02, on: support, near: robot}
+task:
+  instruction: Pick up the apple from the table.
+  success:
+    lifted: {object: apple, height: 0.12}
+split: {playground: [0, 9], test: [100, 149]}

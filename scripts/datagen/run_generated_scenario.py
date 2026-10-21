@@ -15,7 +15,7 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from robotsmith.cap.adapters import resolved_target_positions, target_frames
+from robotsmith.scenario.adapters import resolved_target_positions, target_frames
 from robotsmith.rollout.video_export import copy_episode_videos
 from robotsmith.scenario_runtime import materialize_candidate
 from robotsmith.scenario_runtime.materialize import ScenarioRuntimePackage
@@ -25,8 +25,6 @@ from robotsmith.scenario_runtime.runner import (
     resolve_static_target_positions,
     run_scenario_episode,
 )
-from robotsmith.tasks import find_leaf
-from robotsmith.tasks.task_spec import TaskSpec
 
 
 @dataclass
@@ -129,7 +127,6 @@ def run_scenario_smoke(
             "success": bool(success),
             "frame_count": result.frame_count,
             "diagnostics": episode_diagnostics(
-                package.legacy_task,
                 initial_positions=result.initial_positions,
                 final_positions=final_positions,
                 target_positions=target_positions,
@@ -179,7 +176,6 @@ def run_scenario_smoke(
 
 
 def episode_diagnostics(
-    task_spec: TaskSpec,
     *,
     initial_positions: dict[str, np.ndarray],
     final_positions: dict[str, np.ndarray],
@@ -192,18 +188,6 @@ def episode_diagnostics(
         "target_positions": _positions_to_json(target_positions),
         "skill_traces": _json_safe(skill_traces),
     }
-    in_container = find_leaf(task_spec.success, "object_in_container")
-    if in_container is not None:
-        obj_name = in_container.params.get("object")
-        container_name = in_container.params.get("container")
-        obj_pos = final_positions.get(obj_name)
-        target_pos = final_positions.get(container_name)
-        if target_pos is None:
-            target_pos = target_positions.get(container_name)
-        if obj_pos is not None and target_pos is not None:
-            diagnostics["success_xy_error"] = float(
-                np.linalg.norm(obj_pos[:2] - target_pos[:2])
-            )
     return diagnostics
 
 
@@ -241,7 +225,7 @@ def _json_safe(value):
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
     args = parse_args()
-    package = materialize_candidate(args.scenario)
+    package = materialize_candidate(args.scenario, seed=args.seed)
     if args.materialize_only:
         print(json.dumps(_materialize_summary(package), indent=2))
         return

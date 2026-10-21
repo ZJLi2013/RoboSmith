@@ -1,6 +1,6 @@
 """Authoring-level success predicate helpers.
 
-Leaf predicates: lifted, in-container/at-target, alignment, stacking. These
+Leaf predicates: lifted, joint open / closed, alignment, stacking; YAML\nscenarios lower ``on`` / ``inside`` in ``scenario.load``. These
 compose via all_of / any_of / negate into a success tree. Still not a full
 TerminationCfg system: multiple done terms, timeouts, subtasks, contact /
 gripper-detached / local-frame containment checks are future extensions.
@@ -8,7 +8,7 @@ gripper-detached / local-frame containment checks are future extensions.
 
 from __future__ import annotations
 
-from robotsmith.cap.specs import AllOf, AnyOf, Not, SuccessSpec, TaskSuccessCfg
+from robotsmith.scenario.specs import AllOf, AnyOf, Not, SuccessSpec, TaskSuccessCfg
 
 
 def object_lifted(object: str, *, z_margin: float = 0.05) -> TaskSuccessCfg:
@@ -24,40 +24,6 @@ def object_lifted(object: str, *, z_margin: float = 0.05) -> TaskSuccessCfg:
         predicate="object_above",
         params={"object": object, "reference": "table", "z_margin": z_margin},
         refs=(object, "table"),
-    )
-
-
-def object_in_container(
-    object: str,
-    container: str,
-    *,
-    xy_threshold: float = 0.05,
-    z_margin: float = 0.0,
-    z_tol: float | None = None,
-) -> TaskSuccessCfg:
-    """Define object-in-container or object-at-target success.
-
-    Example:
-        object_in_container("die", "goal", xy_threshold=0.02)
-
-    The container argument may reference a physical object or a
-    TargetPositionSpec name materialized by the legacy adapter.
-
-    For target markers whose Z distinguishes the goal (e.g. stacked shelves
-    sharing XY), pass ``z_tol`` to enforce a two-sided band around the marker's
-    resolved world height. ``z_tol=None`` keeps the legacy XY-only check.
-    """
-
-    return TaskSuccessCfg(
-        predicate="object_in_container",
-        params={
-            "object": object,
-            "container": container,
-            "xy_threshold": xy_threshold,
-            "z_margin": z_margin,
-            "z_tol": z_tol,
-        },
-        refs=(object, container),
     )
 
 
@@ -143,8 +109,8 @@ def all_of(*terms: SuccessSpec) -> AllOf:
 
     Example:
         all_of(
-            object_in_container("apple", "bowl"),
-            object_in_container("banana", "bowl"),
+            object_lifted("apple"),
+            object_lifted("banana"),
         )
     """
 
@@ -156,8 +122,8 @@ def any_of(*terms: SuccessSpec) -> AnyOf:
 
     Example:
         any_of(
-            object_in_container("die", "bowl"),
-            object_in_container("die", "plate"),
+            object_lifted("die"),
+            object_lifted("cube"),
         )
     """
 

@@ -1,0 +1,14 @@
+scenario: pick_place_onto_supporter
+robot: franka
+scene:
+  support: table_simple
+  objects:
+    - {id: supporter, asset: two_layer_supporter, on: support, anchor_xy: [0.56, 0.0], facing: robot}
+    - {id: die, asset: die_01, on: supporter.shelf_upper}
+task:
+  instruction: Pick the die off the upper shelf and place it on the lower shelf.
+  success:
+    on: {object: die, surface: supporter.shelf_lower}
+variations:
+  die.asset: [die_01, lego_02]
+split: {playground: [0, 9], test: [100, 149]}

@@ -1,14 +1,14 @@
-"""Adapters from CAP authoring specs to the current RoboSmith runtime.
+"""Adapters from scenario authoring specs to the current RoboSmith runtime.
 
-These adapters lower CAP authoring objects to the runtime contract:
-SceneConfig and TaskSpec(success: SuccessNode). The CAP success tree
+These adapters lower scenario authoring objects to the runtime contract:
+SceneConfig and TaskSpec(success: SuccessNode). The scenario success tree
 (TaskSuccessCfg / AllOf / AnyOf / Not) lowers to a runtime SuccessNode tree.
 """
 
 from __future__ import annotations
 
-from robotsmith.cap.intents import SkillIntentSequenceSpec
-from robotsmith.cap.specs import (
+from robotsmith.scenario.intents import SkillIntentSequenceSpec
+from robotsmith.scenario.specs import (
     AllOf,
     AnyOf,
     FrameRef,
@@ -19,7 +19,7 @@ from robotsmith.cap.specs import (
     TaskSpec,
     TaskSuccessCfg,
 )
-from robotsmith.cap.validators import (
+from robotsmith.scenario.validators import (
     success_refs,
     validate_scene,
     validate_skill_intent_sequence,
@@ -31,10 +31,10 @@ from robotsmith.tasks.task_spec import SuccessNode, TaskSpec as LegacyTaskSpec
 
 
 def to_legacy_scene_config(scene: SceneSpec) -> SceneConfig:
-    """Lower a CAP SceneSpec to the current simulator-agnostic SceneConfig.
+    """Lower a scenario SceneSpec to the current simulator-agnostic SceneConfig.
 
     Example:
-        CAP input:
+        scenario input:
             cap_scene = SceneSpec(
                 name="cap_pick_die",
                 layout=LayoutSpec(
@@ -68,7 +68,7 @@ def to_legacy_scene_config(scene: SceneSpec) -> SceneConfig:
                 ],
             )
 
-    The CAP scene is the authoring object; SceneConfig/ObjectPlacement is the
+    The scenario scene is the authoring object; SceneConfig/ObjectPlacement is the
     legacy runtime contract consumed by the existing resolver and Genesis path.
     Task semantics are lowered separately with to_legacy_task_spec().
     """
@@ -85,7 +85,7 @@ def to_legacy_scene_config(scene: SceneSpec) -> SceneConfig:
         camera_overrides["table_height"] = scene.table_height
     return SceneConfig(
         name=scene.name,
-        description="Generated from CAP SceneSpec",
+        description="Generated from scenario SceneSpec",
         objects=[
             ObjectPlacement(
                 asset_query=obj.asset,
@@ -107,10 +107,10 @@ def to_legacy_scene_config(scene: SceneSpec) -> SceneConfig:
 
 
 def to_legacy_task_spec(task: TaskSpec) -> LegacyTaskSpec:
-    """Lower a CAP TaskSpec to the current serializable runtime TaskSpec.
+    """Lower a scenario TaskSpec to the current serializable runtime TaskSpec.
 
     Example:
-        CAP input:
+        scenario input:
             TaskSpec(
                 name="cap_pick_die",
                 scene=cap_scene,
@@ -134,7 +134,7 @@ def to_legacy_task_spec(task: TaskSpec) -> LegacyTaskSpec:
                 skills=[],
             )
 
-    skills=[] is intentional: CAP task authoring defines task semantics, not
+    skills=[] is intentional: scenario task authoring defines task semantics, not
     expert action sequences.
     """
 
@@ -150,7 +150,7 @@ def to_legacy_task_spec(task: TaskSpec) -> LegacyTaskSpec:
 
 
 def _lower_success(spec: SuccessSpec) -> SuccessNode:
-    """Lower a CAP success spec tree to a runtime SuccessNode tree."""
+    """Lower a scenario success spec tree to a runtime SuccessNode tree."""
 
     if isinstance(spec, TaskSuccessCfg):
         return SuccessNode(op="leaf", predicate=spec.predicate, params=dict(spec.params))
@@ -167,9 +167,9 @@ def to_legacy_skills(
     intents: SkillIntentSequenceSpec,
     task: TaskSpec,
 ) -> list[Skill]:
-    """Lower CAP task-level skill intents to current runtime Skills.
+    """Lower scenario task-level skill intents to current runtime Skills.
 
-    This is the Feature 2 boundary: CAP intent selects an existing scripted
+    This is the Feature 2 boundary: scenario intent selects an existing scripted
     expert primitive, while planner, IK, MotionExecutor, and recorder stay in
     the runtime.
     """
