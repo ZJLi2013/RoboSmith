@@ -17,7 +17,8 @@ back with evidence from this directory; anything you could not check counts agai
 
 ## How the asset is used
 
-A scenario loads it as a fixed fixture on a table. A robot gripper (fingers open up to 8 cm,
+A rigid object is set down upright on a table or the floor and may be picked up. A fixture is
+loaded fixed in place, on a table or the floor. A robot gripper (fingers open up to 8 cm,
 about 2 cm wide) grasps a handle from above, pulls it along its joint, and lets go. Later a small
 object (about 4 cm) is lowered onto a place target and must come to rest there. On a moving part
 the robot lowers it at `lip_local + axis * q / 2` in the asset frame (q = the joint position at
@@ -60,6 +61,10 @@ Joints are passive with damping, as in a scenario: a released joint keeps most o
    supported by, the part they slide or turn in, and links do not interpenetrate.
 4. Each handle can be grasped from above and pulled along its joint.
 5. An object put on each place target comes to rest on it, inside any rim.
+6. A rigid object set down upright on the ground (`Probe("asset", fixed=False)`) settles and
+   stays upright.
+
+Items that do not apply (no joints, handles or place targets) pass with that as the evidence.
 
 ## Output
 

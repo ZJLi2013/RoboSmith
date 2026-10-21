@@ -77,6 +77,6 @@ def test_review_verdict_gates_library_admission(tmp_path):
 
     claims[0]["verdict"] = "pass"
     dest = admit(pending, {"decision": "accept", "claims": claims}, assets / "generated", by="agent:t")
-    assert AssetLibrary(assets).get("cab") is not None and not pending.exists()
+    assert AssetLibrary(assets).get("cab").metadata.upright_verified and not pending.exists()
     checks = [json.loads(l) for l in (dest / "checks.jsonl").read_text(encoding="utf-8").splitlines()]
     assert [(c["check"], c["result"]) for c in checks] == [("llm_review", "fail"), ("llm_review", "pass")]
