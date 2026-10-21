@@ -6,8 +6,6 @@ from pathlib import Path
 
 import numpy as np
 
-from robotsmith.assets.schema import Asset
-
 
 def rotate_vec_wxyz(quat_wxyz, vec) -> np.ndarray:
     """Rotate a 3-vector by a quaternion in [w,x,y,z] order."""
@@ -32,27 +30,3 @@ def sample_mesh_pointcloud(
     mesh.apply_scale(float(scale))
     points, _ = trimesh.sample.sample_surface(mesh, int(n_points), seed=seed)
     return np.asarray(points, dtype=np.float32)
-
-
-def sample_asset_pointcloud(
-    asset: Asset,
-    n_points: int,
-    *,
-    scale: float | None = None,
-    object_pos: np.ndarray | None = None,
-) -> np.ndarray:
-    """Sample an asset's visual/collision mesh at its metric scene scale."""
-    mesh_path = asset.visual_mesh or asset.collision_mesh
-    if mesh_path is None:
-        raise ValueError(f"Asset {asset.name!r} has no visual or collision mesh")
-
-    metric_scale = float(asset.metadata.metric_scale if scale is None else scale)
-    points = sample_mesh_pointcloud(mesh_path, n_points, scale=metric_scale)
-    if object_pos is not None:
-        from robotsmith.grasp.transforms import pose_matrix, transform_points
-
-        points = transform_points(
-            points,
-            pose_matrix(np.asarray(object_pos, dtype=np.float32)),
-        )
-    return points

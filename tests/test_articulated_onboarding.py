@@ -62,7 +62,7 @@ class TestParseUrdfJoints:
         assert j.name == "drawer_slide"
         assert j.type == "prismatic"
         assert j.axis == (1.0, 0.0, 0.0)
-        assert j.lower == 0.0 and j.upper == 0.35
+        assert j.lower == 0.0 and j.upper == pytest.approx(0.245)
 
 
 class TestArticulatedAssetLoad:
@@ -75,12 +75,12 @@ class TestArticulatedAssetLoad:
         assert drawer.get_joint("drawer_slide").type == "prismatic"
         # Annotations name the parts; positions are derived from the URDF.
         assert drawer.metadata.handles == [
-            {"link": "drawer_handle", "local_pos": [0.268, 0.0, 0.2125]}
+            {"link": "drawer_handle", "local_pos": [0.1876, 0.0, 0.14875]}
         ]
         [opening] = drawer.metadata.place_targets
         assert opening["joint"] == "drawer_slide"
-        assert opening["lip_local"] == pytest.approx([0.225, 0.0, 0.142])
-        assert drawer.metadata.size_cm == [57.5, 62.0, 36.5]
+        assert opening["lip_local"] == pytest.approx([0.1575, 0.0, 0.0994])
+        assert drawer.metadata.size_cm == [40.2, 43.4, 25.6]
 
     def test_rigid_asset_not_articulated(self):
         lib = AssetLibrary(REPO_ROOT / "assets")

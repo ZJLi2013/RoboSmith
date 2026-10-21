@@ -23,9 +23,10 @@ scenario_scene = scene(
     "pick_place_into_drawer",
     layout=scenario_layout,
     objects=[
-        # Anchored low cabinet (same placement as open_drawer); drawer face
-        # toward the arm so the pulled-out tray opens toward -X.
-        obj("drawer", asset="drawer_cabinet", fixed_position=(0.80, 0.0, 0.775)),
+        # Anchored low cabinet (same placement as open_drawer). The drawer pulls
+        # out along local +X; yaw 180 turns it toward the arm so the tray opens
+        # toward world -X.
+        obj("drawer", asset="drawer_cabinet", fixed_position=(0.80, 0.0, 0.775), yaw_deg=180.0),
         # Die well clear of the opened drawer. The pulled-out tray occupies
         # y in [-0.19, 0.19]; placing the die at y=0.32 lets the arm approach
         # top-down from the +Y side without the links clipping the drawer or
@@ -36,13 +37,13 @@ scenario_scene = scene(
     target_positions=[
         # Tray-interior center, anchored to the drawer's live joint so it tracks
         # the actual opening instead of assuming "fully open".
-        # local_offset = tray_floor in the drawer_cabinet frame (0.035,0,0.136);
-        # the runtime applies the asset's metric_scale (0.7), 180 deg yaw and live
-        # slide -> e.g. (0.53,0,0.87) at full slide, retracting as it closes.
+        # local_offset = tray_floor in the drawer_cabinet frame; the runtime
+        # applies the 180 deg yaw and live slide -> e.g. (0.53,0,0.87) at full
+        # slide, retracting as it closes.
         target_position(
             "drawer_open_slot",
             anchor=on_articulated(
-                "drawer", "drawer_slide", local_offset=(0.035, 0.0, 0.136)
+                "drawer", "drawer_slide", local_offset=(0.0245, 0.0, 0.0952)
             ),
         ),
     ],

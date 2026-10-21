@@ -120,8 +120,6 @@ def load_resolved_scene(
         # their root link so they don't drift under gravity / contact.
         if getattr(po.asset, "is_fixture", False):
             urdf_kwargs["fixed"] = True
-        if po.metric_scale != 1.0:
-            urdf_kwargs["scale"] = po.metric_scale
         entity = scene.add_entity(
             morph=gs.morphs.URDF(**urdf_kwargs),
             material=gs.materials.Rigid(friction=friction),

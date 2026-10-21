@@ -5,8 +5,8 @@ stage: **assets → datagen → setup**.
 
 ## `assets/` — asset onboarding
 
-- `render_asset_table.py`: render Genesis table QA views (frame/scale audit); `--apply-upright-index(es)` writes the
-  upright annotation and a human `upright` check record.
+- `render_asset_table.py`: render Genesis table QA views of the assets as built; `--record-upright pass|fail` writes a
+  human `upright` check record.
 
 ## `datagen/` — data generation (SDG)
 

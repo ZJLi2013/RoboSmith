@@ -123,7 +123,6 @@ def build_collision_world(
     asset: Asset,
     asset_pos,
     asset_quat,
-    scale: float,
     *,
     joint_value: float = 0.0,
     moving_link: str | None = None,
@@ -138,14 +137,13 @@ def build_collision_world(
     cupboard, …) is converted to collision boxes here so the planner steers
     clear of it. Each URDF collision box is placed at the asset's live world
     pose with the same convention as ``resolve_frame``
-    (``center = asset_pos + R(asset_quat) @ (scale * origin)``); the moving link
+    (``center = asset_pos + R(asset_quat) @ origin``); the moving link
     is additionally shifted by ``R(asset_quat) @ joint_axis * joint_value``.
 
     Args:
         asset: the articulated asset (URDF collision boxes + joint list).
         asset_pos: asset root position in world frame.
         asset_quat: asset root orientation in world frame (wxyz).
-        scale: metric scale applied to the URDF geometry.
         joint_value: how far the joint is currently open (0 = closed/rest, e.g.
             the drawer's pulled-out distance), used to move ``moving_link`` to
             its live position. Applied as a translation, so prismatic-only — a
@@ -164,7 +162,6 @@ def build_collision_world(
     """
     asset_pos = np.asarray(asset_pos, dtype=np.float64)
     asset_quat = np.asarray(asset_quat, dtype=np.float64)
-    scale = float(scale)
     axis = np.asarray(joint_axis, dtype=np.float64)
     joint_offset_world = rotate_vec_wxyz(asset_quat, axis) * float(joint_value)
 
@@ -180,11 +177,10 @@ def build_collision_world(
             continue
         if box.name and box.name in exempt_box_names:
             continue
-        center_local = scale * np.asarray(box.origin_xyz, dtype=np.float64)
-        center = asset_pos + rotate_vec_wxyz(asset_quat, center_local)
+        center = asset_pos + rotate_vec_wxyz(asset_quat, np.asarray(box.origin_xyz, dtype=np.float64))
         if box.link in moving_set:
             center = center + joint_offset_world
-        size = scale * np.asarray(box.size, dtype=np.float64)
+        size = np.asarray(box.size, dtype=np.float64)
         quat = _quat_mul(asset_quat, _rpy_to_quat(box.origin_rpy))
         world.append(_box_primitive(center, size, quat))
 
@@ -228,7 +224,6 @@ def build_obstacle_world(
     assets = scene_state.get("assets", {})
     positions = scene_state.get("positions", {})
     quats = scene_state.get("object_quats", {})
-    scales = scene_state.get("object_scales", {})
     joint_positions = scene_state.get("joint_positions", {})
 
     world: list[dict] = []
@@ -255,7 +250,6 @@ def build_obstacle_world(
             asset,
             positions[name],
             quats.get(name, (1.0, 0.0, 0.0, 0.0)),
-            scales.get(name, 1.0),
             joint_value=joint_value,
             moving_link=moving_link,
             joint_axis=joint_axis,
@@ -267,7 +261,7 @@ def build_obstacle_world(
     return world
 
 
-def build_payload_spheres(asset, scale: float = 1.0) -> list[dict]:
+def build_payload_spheres(asset) -> list[dict]:
     """Sphere decomposition of a grasped rigid object, in the OBJECT frame.
 
     For the attached-collision-object (ACO) path: the held object must enter the
@@ -290,7 +284,7 @@ def build_payload_spheres(asset, scale: float = 1.0) -> list[dict]:
             ext = [float(v) / 100.0 for v in size_cm] if size_cm else None
     if not ext:
         return []
-    half = 0.5 * np.asarray(ext, dtype=np.float64) * float(scale)
+    half = 0.5 * np.asarray(ext, dtype=np.float64)
     radius = 0.5 * float(np.linalg.norm(half))  # center-to-corner of each sub-box
     spheres: list[dict] = []
     for sx in (-1.0, 1.0):

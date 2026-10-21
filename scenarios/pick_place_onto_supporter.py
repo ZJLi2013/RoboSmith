@@ -23,9 +23,8 @@ Asset geometry (stand local frame, origin = footprint_center_floor):
   - shelf_lower surface: (0, 0, 0.054)
   - shelf_upper surface: (0, 0, 0.304)   -> 0.25 m gap between shelves
   - shelf depth (X, open side): 0.14 m
-The asset is authored at true metric scale (metadata metric_scale 1.0), sized for
-a Franka reach-in over an ~80 mm object, so SCALE below is 1.0 (no extra scaling).
-The upper shelf sits ~0.30 m above the stand base (~1.08 m world on a 0.775 table),
+The asset is authored at true metric scale, sized for a Franka reach-in over an
+~80 mm object. The upper shelf sits ~0.30 m above the stand base (~1.08 m world on a 0.775 table),
 inside the Franka's dexterous reach.
 
 The lower-shelf drop point and its (now top-down) approach come from the
@@ -39,15 +38,12 @@ from robotsmith.cap.predicates import object_in_container
 from robotsmith.cap.scene_api import layout, obj, on_placement, scene, target_position
 from robotsmith.cap.task_api import task
 
-# Must match assets/articraft/two_layer_supporter metadata "metric_scale".
-SCALE = 1.0
-
 STAND_X, STAND_Y, TABLE_TOP = 0.56, 0.0, 0.775
 # Upper-shelf top surface (world) — only used to spawn the die resting on it. The
 # LOWER-shelf drop point is NOT hand-computed here anymore: it comes from the
 # supporter's own ``shelf_lower`` placement affordance via ``on_placement`` below
 # (tracks the stand's pose/yaw; carries the side tuck-under approach).
-SHELF_UPPER_Z = TABLE_TOP + 0.304 * SCALE
+SHELF_UPPER_Z = TABLE_TOP + 0.304
 
 scenario_layout = layout(regions=[])
 
@@ -56,14 +52,10 @@ scenario_scene = scene(
     layout=scenario_layout,
     objects=[
         # The open shelf side must face the arm so the collision-free transit can
-        # route the gripper into the gap. The rendered mesh is effectively flipped vs
-        # model.py's "open=+X local" label, so trust the snapshot, not the label:
-        # snapshot output/supporter_snap (yaw=0) shows the SOLID rear plate pointing at
-        # the +X/+Y overview camera and the OPEN mouth pointing at world -X = toward the
-        # arm (arm sits at the stand's -X); yaw=180 (output/supporter_snap_yaw180) turns
-        # the open mouth to +X, away from the arm. So yaw=0 is correct.
+        # route the gripper into the gap. The open side is local +X (rear plate at
+        # -X); yaw 180 turns it to world -X, toward the arm.
         obj("supporter", asset="two_layer_supporter",
-            fixed_position=(STAND_X, STAND_Y, TABLE_TOP), yaw_deg=0.0),
+            fixed_position=(STAND_X, STAND_Y, TABLE_TOP), yaw_deg=180.0),
         # Die starts resting on the UPPER shelf; physics settles the exact rest
         # height from the small initial clearance. die_01 (~5 cm cube, verified
         # upright + top-down grasp buckets) grasps far more stably than the apple.

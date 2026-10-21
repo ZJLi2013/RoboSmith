@@ -21,7 +21,7 @@ Asset geometry (stand local frame, origin = footprint_center_floor):
   - shelf_lower surface: (0, 0, 0.054)
   - shelf_upper surface: (0, 0, 0.304)   -> 0.25 m gap between shelves
   - shelf depth (X, open side): 0.14 m
-Authored at true metric scale (metadata metric_scale 1.0), so SCALE = 1.0.
+Authored at true metric scale.
 
 The lower-shelf drop point and its side-insert approach come from the
 supporter's ``shelf_lower`` placement affordance (asset metadata), resolved
@@ -32,9 +32,6 @@ from robotsmith.cap.intents import intent_sequence, pick, place
 from robotsmith.cap.predicates import object_in_container
 from robotsmith.cap.scene_api import layout, obj, on_placement, scene, target_position
 from robotsmith.cap.task_api import task
-
-# Must match assets/articraft/two_layer_supporter metadata "metric_scale".
-SCALE = 1.0
 
 STAND_X, STAND_Y, TABLE_TOP = 0.56, 0.0, 0.775
 
@@ -51,10 +48,10 @@ scenario_scene = scene(
     "pick_place_table_to_lower_shelf",
     layout=scenario_layout,
     objects=[
-        # Same stand, same orientation as pick_place_onto_supporter (yaw=0: open
+        # Same stand, same orientation as pick_place_onto_supporter (yaw 180: open
         # mouth toward world -X = toward the arm; solid rear plate toward +X).
         obj("supporter", asset="two_layer_supporter",
-            fixed_position=(STAND_X, STAND_Y, TABLE_TOP), yaw_deg=0.0),
+            fixed_position=(STAND_X, STAND_Y, TABLE_TOP), yaw_deg=180.0),
         # Die starts on the TABLE in front of the open mouth (not on a shelf), so
         # the pick is a plain top-down tabletop grasp with no occlusion / no
         # near-singular reach-in. die_01 (~5 cm cube) grasps stably.

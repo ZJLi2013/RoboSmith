@@ -9,8 +9,7 @@ import pytest
 from robotsmith.assets.library import AssetLibrary
 from robotsmith.assets.schema import Asset, AssetMetadata
 from robotsmith.scenes.config import SceneConfig, ObjectPlacement
-from robotsmith.scenes.backend import ProgrammaticSceneBackend, _resolve_upright_pose
-from robotsmith.scenes.pose_utils import task_pose_quat, task_pose_verified, task_upright_quat
+from robotsmith.scenes.backend import ProgrammaticSceneBackend
 
 tabletop_simple = SceneConfig(
     name="tabletop_simple",
@@ -95,35 +94,15 @@ class TestCollisionAwarePlacement:
         scene = _resolve_single(
             lib, tmp_path, "candidate_mug",
             source="objaverse", size_cm=[8.0, 8.0, 10.0], mesh={"issues": []},
-            task_poses={"upright": {"quat_object": [1.0, 0.0, 0.0, 0.0], "verified": False}},
+            upright_verified=False,
         )
         assert scene.placed_objects == []
 
-
-class TestUprightPoseResolution:
-    def test_task_pose_verified_requires_explicit_true(self):
-        asset = _asset(Path("."), task_poses={
-            "upright": {"quat_object": [1, 0, 0, 0], "verified": False},
-        })
-        assert not task_pose_verified(asset, "upright")
-
-    def test_task_pose_quat_reads_metadata_aliases(self):
-        asset = _asset(Path("."), task_poses={
-            "upright": {"quat": [0.0, 0.0, 1.0, 0.0], "verified": True},
-        })
-        assert task_pose_quat(asset, "upright") == [0.0, 0.0, 1.0, 0.0]
-        assert task_pose_verified(asset, "upright")
-        assert task_upright_quat(asset).tolist() == [0.0, 0.0, 1.0, 0.0]
-
-    def test_resolve_upright_pose_uses_metric_scale(self):
-        asset = _asset(Path("."), size_cm=[8.0, 6.0, 10.0], metric_scale=0.8)
-        z, quat = _resolve_upright_pose(asset, asset.metadata.metric_scale)
-        assert z == pytest.approx(0.04)
-        assert quat == [1.0, 0.0, 0.0, 0.0]
-
-    def test_resolve_upright_pose_uses_task_pose_metadata(self):
-        asset = _asset(Path("."), size_cm=[8.0, 6.0, 10.0],
-                       task_poses={"upright": {"quat_object": [0.0, 1.0, 0.0, 0.0]}})
-        z, quat = _resolve_upright_pose(asset, 1.0)
-        assert z == pytest.approx(0.05)
-        assert quat == [0.0, 1.0, 0.0, 0.0]
+    def test_asset_stands_at_identity_with_scene_yaw(self, lib):
+        cfg = SceneConfig(name="yaw", objects=[
+            ObjectPlacement(asset_query="die_01", count=1, yaw_deg=90.0),
+        ])
+        po = ProgrammaticSceneBackend(seed=0).resolve(cfg, lib).placed_objects[0]
+        table_surface = cfg.table_height + cfg.table_size[2] / 2.0
+        assert po.position[2] == pytest.approx(table_surface + po.asset.metadata.size_cm[2] / 200.0)
+        assert po.quaternion == pytest.approx([math.sqrt(0.5), 0.0, 0.0, math.sqrt(0.5)])

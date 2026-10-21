@@ -212,7 +212,6 @@ def _live_scene_state(
         "object_heights": env.object_heights,
         "assets": env.asset_map,
         "object_quats": env.object_quats,
-        "object_scales": env.object_scales,
         "table_surface_z": env.table_surface_z,
         "joint_positions": (
             env.get_joint_positions() if hasattr(env, "get_joint_positions") else {}

@@ -34,7 +34,7 @@ TABLE_SURFACE_Z = 0.75 + 0.05 / 2.0
 from robotsmith.assets import store
 from robotsmith.assets.library import AssetLibrary
 from robotsmith.assets.audit import SUPPORT_ASSETS
-from robotsmith.scenes.backend import _height_for_quat, _resolve_upright_pose
+from robotsmith.scenes.backend import _height_for_quat
 from robotsmith.scenes.genesis_loader import _quat_wxyz_to_xyzw
 
 
@@ -162,18 +162,14 @@ def orientation_candidates() -> list[list[float]]:
     return candidates
 
 
-def apply_upright(library: AssetLibrary, asset_name: str, index: int) -> None:
-    """Write a visual QA candidate as the upright annotation + a human upright check."""
+def record_upright(library: AssetLibrary, asset_name: str, result: str) -> None:
+    """Record a human upright check of the asset as built (identity rotation)."""
     asset = library.get(asset_name)
     if asset is None:
         raise ValueError(f"Unknown asset: {asset_name}")
-    candidates = orientation_candidates()
-    if index < 0 or index >= len(candidates):
-        raise ValueError(f"candidate index must be 0..{len(candidates) - 1}, got {index}")
-    store.set_annotation(asset.root_dir, "upright", candidates[index], "human")
-    store.append_check(asset.root_dir, "upright", "pass",
-                       {"method": "manual_visual_qa", "candidate_index": index}, by="human")
-    print(f"updated {asset.root_dir / store.ASSET_FILE} with upright candidate {index}")
+    store.append_check(asset.root_dir, "upright", result,
+                       {"method": "manual_visual_qa"}, by="human")
+    print(f"updated {asset.root_dir / store.ASSET_FILE} with upright {result}")
 
 
 def main() -> None:
@@ -191,8 +187,8 @@ def main() -> None:
                         help="Render or annotate one exact asset name")
     parser.add_argument("--candidate-poses", action="store_true",
                         help="Render 24 right-angle orientation candidates for --asset")
-    parser.add_argument("--apply-upright-index", type=int, default=None,
-                        help="Write one candidate index as the upright annotation")
+    parser.add_argument("--record-upright", choices=("pass", "fail"), default=None,
+                        help="Record a human upright check of --asset as built")
     parser.add_argument("--include-franka", action="store_true",
                         help="Add a Franka Panda at home pose on the table")
     parser.add_argument("--cpu", action="store_true")
@@ -200,10 +196,10 @@ def main() -> None:
 
     assets_root = Path(args.assets_root) if args.assets_root else REPO_ROOT / "assets"
     library = AssetLibrary(assets_root)
-    if args.apply_upright_index is not None:
+    if args.record_upright is not None:
         if not args.asset:
-            raise ValueError("--apply-upright-index requires --asset")
-        apply_upright(library, args.asset, args.apply_upright_index)
+            raise ValueError("--record-upright requires --asset")
+        record_upright(library, args.asset, args.record_upright)
         return
 
     ensure_display()
@@ -277,32 +273,27 @@ def main() -> None:
             GRID_SPACING_M,
         ),
     ):
-        scale = float(asset.metadata.metric_scale)
         if candidate_quat is None:
-            base_z, quat = _resolve_upright_pose(asset, scale)
-            pose_source = "upright"
+            quat = [1.0, 0.0, 0.0, 0.0]
+            pose_source = "as_built"
         else:
             quat = candidate_quat
-            base_z = _height_for_quat(asset, scale, quat) / 2.0
             pose_source = "upright_candidate"
+        base_z = _height_for_quat(asset, quat) / 2.0
         pos = [xy[0], xy[1], TABLE_SURFACE_Z + base_z]
-        urdf_kwargs = {
-            "file": str(asset.urdf_path),
-            "pos": tuple(pos),
-            "quat": _quat_wxyz_to_xyzw(quat),
-            "default_armature": 0.0,
-        }
-        if scale != 1.0:
-            urdf_kwargs["scale"] = scale
         scene.add_entity(
-            morph=gs.morphs.URDF(**urdf_kwargs),
+            morph=gs.morphs.URDF(
+                file=str(asset.urdf_path),
+                pos=tuple(pos),
+                quat=_quat_wxyz_to_xyzw(quat),
+                default_armature=0.0,
+            ),
             material=gs.materials.Rigid(friction=asset.metadata.friction),
         )
         manifest.append({
             "asset": asset.name,
             "position": [round(v, 5) for v in pos],
             "quat_wxyz": [round(float(v), 6) for v in quat],
-            "metric_scale": scale,
             "pose_source": pose_source,
         })
         if candidate_index is not None:

@@ -37,7 +37,7 @@ def _policy_buckets(value) -> list[str] | None:
     return None
 
 
-def _pick_trace_entry(skill: Skill, category: str, object_scale: float, plan) -> dict:
+def _pick_trace_entry(skill: Skill, category: str, plan) -> dict:
     """Flatten the selected grasp plan into a pick ``skill_trace`` record."""
     md = plan.metadata
     grasp_pos = plan.grasp_pos
@@ -49,7 +49,6 @@ def _pick_trace_entry(skill: Skill, category: str, object_scale: float, plan) ->
         "skill": skill.name,
         "target": skill.target,
         "category": category,
-        "object_scale": float(object_scale),
         "selected_candidate_index": md.get("candidate_index"),
         "selected_policy_bucket": md.get("selected_policy_bucket"),
         "selected_policy_bucket_rank": md.get("selected_policy_bucket_rank"),
@@ -89,7 +88,6 @@ def _select_pick_plan(ctx: SkillContext) -> GraspPlan:
     scene_state = ctx.scene_state
     assets = scene_state.get("assets", {})
     quats = scene_state.get("object_quats", {})
-    scales = scene_state.get("object_scales", {})
     asset = assets.get(skill.target)
     obj_h = (
         skill.params.get("object_height")
@@ -106,7 +104,6 @@ def _select_pick_plan(ctx: SkillContext) -> GraspPlan:
         category=ctx.category,
         asset=asset,
         object_height=obj_h,
-        scale=scales.get(skill.target, 1.0),
     )
     # Grasp geometry's no-entry floor is the target's OWN support surface
     # (object bottom), not the global table — so a shelved / in-fixture object
@@ -132,14 +129,13 @@ def _select_pick_plan(ctx: SkillContext) -> GraspPlan:
             support_z=support_z,
             asset=asset,
             object_quat=quats.get(skill.target),
-            object_scale=scales.get(skill.target, 1.0),
             category=ctx.category,
             bucket_priority=bucket_priority,
         )
     else:
         plan = plans[0]
     ctx.trace(
-        _pick_trace_entry(skill, ctx.category, scales.get(skill.target, 1.0), plan)
+        _pick_trace_entry(skill, ctx.category, plan)
     )
     return plan
 
@@ -206,11 +202,8 @@ def _capture_payload_aco(ctx: SkillContext, plan: GraspPlan) -> None:
     executor (persists across skills); cleared on release in ``place``.
     """
     skill = ctx.skill
-    scales = ctx.scene_state.get("object_scales", {})
     asset = ctx.scene_state.get("assets", {}).get(skill.target)
-    payload_spheres = build_payload_spheres(
-        asset, scale=float(scales.get(skill.target, 1.0))
-    )
+    payload_spheres = build_payload_spheres(asset)
     if not payload_spheres:
         ctx.executor.held_attach = None
         return

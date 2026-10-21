@@ -84,7 +84,6 @@ class SimEnv:
     finger_dof: list[int] = field(default_factory=list)
     asset_map: dict[str, Asset] = field(default_factory=dict)
     object_quats: dict[str, np.ndarray] = field(default_factory=dict)
-    object_scales: dict[str, float] = field(default_factory=dict)
     planner: Optional[GraspPlanner] = None
     table_surface_z: float = 0.0
 
@@ -155,7 +154,6 @@ class SimEnv:
             object_heights[name] = po.object_height_m
             asset_map[name] = po.asset
             object_quats[name] = np.array(po.quaternion, dtype=np.float32)
-        object_scales = {po.name: po.metric_scale for po in handle.placed}
 
         # Overview camera: single source of truth is the scenario's
         # SceneConfig.camera_position / camera_target. No env overrides.
@@ -257,7 +255,6 @@ class SimEnv:
             object_heights=object_heights,
             asset_map=asset_map,
             object_quats=object_quats,
-            object_scales=object_scales,
             cam_up=cam_up,
             cam_wrist=cam_wrist,
             end_effector=end_effector,

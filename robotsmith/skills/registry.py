@@ -130,7 +130,7 @@ def run_skills(
     runtime calls ``plan_segment`` per subtask with a live-refreshed scene_state.
 
     ``scene_state`` must contain ``"home_qpos"`` and ``"positions"``; optional
-    ``"object_heights"``, ``"assets"``, ``"object_quats"``, ``"object_scales"``,
+    ``"object_heights"``, ``"assets"``, ``"object_quats"``,
     ``"table_surface_z"``, ``"joint_positions"``.
     """
     traj: list[np.ndarray] = []
