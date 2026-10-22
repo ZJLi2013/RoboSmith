@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 import trimesh
 
+from robotsmith.assets import store
 from robotsmith.assets.library import AssetLibrary
 from robotsmith.assets.producers.blender_item import compile_item
 from robotsmith.assets.review.package import admit, readings
@@ -75,8 +76,12 @@ def test_review_verdict_gates_library_admission(tmp_path):
     assert admit(pending, {"decision": "reject", "claims": claims}, assets / "generated", by="agent:t") == pending
     assert AssetLibrary(assets).get("cab") is None
 
+    store.append_check(pending, "upright", "pass", {"method": "manual_visual_qa"}, by="human")
+    assert not store.load_metadata(pending).upright_verified, "human_upright_is_not_enough"
+
     claims[0]["verdict"] = "pass"
     dest = admit(pending, {"decision": "accept", "claims": claims}, assets / "generated", by="agent:t")
     assert AssetLibrary(assets).get("cab").metadata.upright_verified and not pending.exists()
     checks = [json.loads(l) for l in (dest / "checks.jsonl").read_text(encoding="utf-8").splitlines()]
-    assert [(c["check"], c["result"]) for c in checks] == [("llm_review", "fail"), ("llm_review", "pass")]
+    assert [(c["check"], c["result"]) for c in checks] == [
+        ("llm_review", "fail"), ("upright", "pass"), ("llm_review", "pass")]

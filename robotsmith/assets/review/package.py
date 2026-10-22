@@ -14,6 +14,9 @@ import shutil
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+import numpy as np
+import trimesh
+
 from robotsmith.assets import derive, store
 from robotsmith.assets.schema import parse_urdf_collision_boxes, parse_urdf_joints
 
@@ -31,10 +34,19 @@ def readings(asset_dir: Path) -> dict:
         lo, hi = derive.box_bounds(b, rest[b.link])
         boxes.append({"name": b.name, "link": b.link, "size": list(b.size),
                       "bounds_at_rest": [lo.round(4).tolist(), hi.round(4).tolist()]})
-    mass = {}
+    mass, meshes = {}, []
     for link in ET.parse(urdf).getroot().iter("link"):
         m = link.find("inertial/mass")
         mass[link.get("name")] = float(m.get("value")) if m is not None else None
+        for col in link.findall("collision"):
+            mesh_el = col.find("geometry/mesh")
+            if mesh_el is None:
+                continue
+            mesh = trimesh.load(str(asset_dir / mesh_el.get("filename")), force="mesh")
+            t = rest[link.get("name")] @ derive._transform(*derive._origin_of(col))
+            lo, hi = derive._bounds(np.asarray(mesh.vertices), t)
+            meshes.append({"file": mesh_el.get("filename"), "link": link.get("name"), "faces": len(mesh.faces),
+                           "bounds_at_rest": [lo.round(4).tolist(), hi.round(4).tolist()]})
     return {
         "id": data["id"],
         "kind": data["kind"],
@@ -44,9 +56,10 @@ def readings(asset_dir: Path) -> dict:
                    for j in parse_urdf_joints(urdf)],
         "link_mass_kg": mass,
         "collision_boxes": boxes,
+        "collision_meshes": meshes,
         "handles": meta.handles,
         "place_targets": meta.place_targets,
-        "frame": "asset frame = world frame in the simulator: metres, +Z up, front faces +X, base on z=0",
+        "frame": "asset frame = world frame in the simulator: metres, +Z up, front faces +X",
     }
 
 

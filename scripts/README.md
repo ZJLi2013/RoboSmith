@@ -6,8 +6,7 @@ stage: **assets → datagen → setup**.
 ## `assets/` — asset onboarding
 
 - `list_assets.py`: print the asset catalog a scenario author picks from (id, kind, size, place targets, movable joints).
-- `render_asset_table.py`: render Genesis table QA views of the assets as built; `--record-upright pass|fail` writes a
-  human `upright` check record.
+- `render_asset_table.py`: render Genesis table QA views of the assets as built.
 
 ## `datagen/` — data generation (SDG)
 

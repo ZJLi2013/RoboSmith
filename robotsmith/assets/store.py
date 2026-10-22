@@ -143,7 +143,7 @@ def load_metadata(asset_dir: Path, buckets: dict | None = None) -> AssetMetadata
         source=data["source"]["type"],
         role="fixture" if data["kind"] == "fixture" else "object",
         description=ann.get("description", ""),
-        upright_verified=any(checks.get(k, {}).get("result") == "pass" for k in ("upright", "llm_review")),
+        upright_verified=checks.get("llm_review", {}).get("result") == "pass",
         grasp_policy_bucket=(buckets or {}).get(data["id"]),
         mesh=dict(mesh_rec["metrics"]) if mesh_rec else {},
         handles=derive.handles(urdf, ann.get("handles", [])),
