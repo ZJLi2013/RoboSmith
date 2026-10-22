@@ -64,6 +64,28 @@ def test_drawer_cabinet_compiles_to_loadable_asset(tmp_path):
     assert opening["lip_local"] == pytest.approx([0.14, 0.0, 0.04])
 
 
+def test_rigid_part_collides_as_its_mesh(tmp_path):
+    item = tmp_path / "item"
+    item.mkdir()
+    ball = trimesh.creation.icosphere(radius=0.035)
+    ball.apply_translation([0, 0, 0.035])
+    ball.apply_transform(Z_UP_TO_Y_UP)
+    scene = trimesh.Scene()
+    scene.add_geometry(ball, node_name="apple_body", geom_name="apple_body")
+    scene.export(str(item / "apple.glb"))
+    (item / "item.json").write_text(json.dumps({
+        "name": "apple", "kind": "rigid",
+        "parts": [{"name": "apple", "mesh": "apple.glb", "mass_kg": 0.15, "collision": "mesh"}],
+    }), encoding="utf-8")
+    asset_dir = tmp_path / "apple"
+    compile_item(item, asset_dir)
+
+    r = readings(asset_dir)
+    assert r["kind"] == "rigid" and r["collision_boxes"] == []
+    assert [m["file"] for m in r["collision_meshes"]] == ["apple.obj"]
+    assert np.allclose(r["collision_meshes"][0]["bounds_at_rest"], [[-0.035, -0.035, 0.0], [0.035, 0.035, 0.07]], atol=1e-3)
+
+
 def test_review_verdict_gates_library_admission(tmp_path):
     assets = tmp_path / "assets"
     pending = assets / "pending" / "cab"

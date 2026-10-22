@@ -19,6 +19,10 @@ axis-aligned object (each panel of a drawer, a handle's neck, its knob) and give
 object a unique, descriptive name (`tray_floor`, `handle_neck`). An open container made of
 one object becomes a solid block.
 
+A rigid part with a rounded surface (a fruit, a bottle) can set `"collision": "mesh"` in its
+`item.json` entry instead: the whole part then collides as its visual mesh, which the
+simulator decomposes into convex pieces.
+
 ## What to write
 
 For each separate item, a folder `out/<item>/` with:

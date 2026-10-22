@@ -43,7 +43,8 @@ def _origin(parent: ET.Element, xyz) -> None:
     ET.SubElement(parent, "origin", xyz=_xyz(xyz), rpy="0 0 0")
 
 
-def _link(robot: ET.Element, name: str, objects: dict[str, trimesh.Trimesh], frame, mass: float, asset_dir: Path) -> None:
+def _link(robot: ET.Element, name: str, objects: dict[str, trimesh.Trimesh], frame, mass: float, asset_dir: Path,
+          mesh_collision: bool = False) -> None:
     visual = trimesh.util.concatenate(list(objects.values()))
     visual.apply_translation(-frame)
     # trimesh names textures material_<i>.png; prefix them so parts do not overwrite each other.
@@ -69,6 +70,11 @@ def _link(robot: ET.Element, name: str, objects: dict[str, trimesh.Trimesh], fra
     vis = ET.SubElement(link, "visual", name=name)
     _origin(vis, (0, 0, 0))
     ET.SubElement(ET.SubElement(vis, "geometry"), "mesh", filename=f"{name}.obj")
+    if mesh_collision:
+        col = ET.SubElement(link, "collision", name=name)
+        _origin(col, (0, 0, 0))
+        ET.SubElement(ET.SubElement(col, "geometry"), "mesh", filename=f"{name}.obj")
+        return
     for obj_name, mesh in objects.items():
         olo, ohi = mesh.bounds - frame
         col = ET.SubElement(link, "collision", name=obj_name)
@@ -103,7 +109,7 @@ def compile_item(item_dir: Path, asset_dir: Path, *, build: Path | None = None,
     asset_dir.mkdir(parents=True)
     robot = ET.Element("robot", name=spec["name"])
     for n, p in parts.items():
-        _link(robot, n, objects[n], frame(n), float(p["mass_kg"]), asset_dir)
+        _link(robot, n, objects[n], frame(n), float(p["mass_kg"]), asset_dir, p.get("collision") == "mesh")
     for n, parent in parent_of.items():
         j = joint_of.get(n)
         joint = ET.SubElement(robot, "joint", name=j["name"] if j else f"{n}_mount", type=j["type"] if j else "fixed")

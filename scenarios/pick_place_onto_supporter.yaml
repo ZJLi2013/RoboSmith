@@ -10,5 +10,5 @@ task:
   success:
     on: {object: die, surface: supporter.shelf_lower}
 variations:
-  die.asset: [die_01, lego_02]
+  die.asset: [die_01, block_01]
 split: {playground: [0, 9], test: [100, 149]}

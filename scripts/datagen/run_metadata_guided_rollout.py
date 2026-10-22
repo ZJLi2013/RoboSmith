@@ -17,9 +17,9 @@ from robotsmith.rollout.rollout_orchestrator import (
 )
 
 DEFAULT_ASSETS = (
-    "apple_01",
+    "apple_02",
     "die_01",
-    "lego_02",
+    "block_01",
     "mug_02",
 )
 

@@ -19,7 +19,7 @@ from robotsmith.rollout.asset_pick_validation import (
 # asset" demo (output/exp_c10_c11_one_success_per_asset_demo). Validates that
 # GraspGen + policy-bucket selection has no regression after refactors.
 DEFAULT_ASSETS = [
-    "apple_01",
+    "apple_02",
     "die_01",
     "mug_02",
 ]
