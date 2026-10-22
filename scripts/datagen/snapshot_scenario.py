@@ -13,6 +13,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -82,6 +83,10 @@ def _postprocess_snapshot(img, style: str):
     return img
 
 
+def _np(t):
+    return np.asarray(t.cpu().numpy() if hasattr(t, "cpu") else t, dtype=float).reshape(-1)
+
+
 def ensure_display():
     if os.environ.get("DISPLAY"):
         return
@@ -106,10 +111,12 @@ def render_scenario(
     settle_steps: int,
     style: str,
     overview_override: dict | None = None,
+    readings_path: Path | None = None,
 ):
     from robotsmith.assets.library import AssetLibrary
     from robotsmith.scenes.backend import ProgrammaticSceneBackend
     from robotsmith.scenes.genesis_loader import load_resolved_scene
+    from robotsmith.sim.franka import FORCE_LOWER, FORCE_UPPER, KP, KV
 
     package = materialize_candidate(scenario_path, seed=seed)
     scene_config = package.legacy_scene
@@ -133,10 +140,24 @@ def render_scenario(
     scene.build()
 
     motors_dof = [franka.get_joint(j).dofs_idx_local[0] for j in JOINT_NAMES]
+    franka.set_dofs_kp(KP, motors_dof)
+    franka.set_dofs_kv(KV, motors_dof)
+    franka.set_dofs_force_range(FORCE_LOWER, FORCE_UPPER, motors_dof)
     franka.set_dofs_position(HOME_QPOS, motors_dof)
+    franka.control_dofs_position(HOME_QPOS, motors_dof)
 
+    start = [_np(o.get_pos()) for o in handle.objects]
     for _ in range(settle_steps):
         scene.step()
+    if readings_path is not None:
+        end = [_np(o.get_pos()) for o in handle.objects]
+        readings = {"settle_steps": settle_steps, **{
+            key: dict(zip(handle.object_names, vals)) for key, vals in (
+                ("start", [p.round(4).tolist() for p in start]),
+                ("end", [p.round(4).tolist() for p in end]),
+                ("displacement_m", [round(float(np.linalg.norm(b - a)), 4) for a, b in zip(start, end)]))}}
+        readings_path.write_text(json.dumps(readings, indent=2))
+        print(f"  saved {readings_path.name}")
 
     from PIL import Image
     for cam_name, cam in [("overview", cam_overview), ("topdown", cam_topdown)]:
@@ -178,6 +199,8 @@ def main():
                     help="Override overview camera look-at target (world).")
     ap.add_argument("--fov", type=float, default=None,
                     help="Override overview camera vertical FOV (deg).")
+    ap.add_argument("--readings", type=Path, default=None,
+                    help="Write each object's settle displacement to this JSON file.")
     args = ap.parse_args()
 
     overview_override = {}
@@ -200,7 +223,7 @@ def main():
 
     render_scenario(
         args.scenario, args.seed, assets_root, out_dir, gs,
-        args.settle_steps, args.style, overview_override,
+        args.settle_steps, args.style, overview_override, args.readings,
     )
 
     pngs = sorted(out_dir.glob("*.png"))

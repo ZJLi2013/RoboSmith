@@ -134,7 +134,6 @@ def load_metadata(asset_dir: Path, buckets: dict | None = None) -> AssetMetadata
     data = read_asset(asset_dir)
     ann = {k: v["value"] for k, v in data["annotations"].items()}
     checks = current_checks(asset_dir, data)
-    upright = checks.get("upright")
     urdf = asset_dir / "model.urdf"
     mesh_rec = checks.get("mesh_consistency")
     defaults = AssetMetadata()
@@ -144,7 +143,7 @@ def load_metadata(asset_dir: Path, buckets: dict | None = None) -> AssetMetadata
         source=data["source"]["type"],
         role="fixture" if data["kind"] == "fixture" else "object",
         description=ann.get("description", ""),
-        upright_verified=bool(upright and upright["result"] == "pass"),
+        upright_verified=any(checks.get(k, {}).get("result") == "pass" for k in ("upright", "llm_review")),
         grasp_policy_bucket=(buckets or {}).get(data["id"]),
         mesh=dict(mesh_rec["metrics"]) if mesh_rec else {},
         handles=derive.handles(urdf, ann.get("handles", [])),

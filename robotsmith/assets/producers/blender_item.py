@@ -77,7 +77,8 @@ def _link(robot: ET.Element, name: str, objects: dict[str, trimesh.Trimesh], fra
 
 
 def compile_item(item_dir: Path, asset_dir: Path, *, build: Path | None = None,
-                 by: str = "agent:blender", description: str | None = None) -> dict:
+                 by: str = "agent:blender", description: str | None = None, source: str = "blender",
+                 provenance: dict | None = None) -> dict:
     spec = json.loads((item_dir / "item.json").read_text(encoding="utf-8"))
     parts = {p["name"]: p for p in spec["parts"]}
     root_name = spec["parts"][0]["name"]
@@ -117,6 +118,8 @@ def compile_item(item_dir: Path, asset_dir: Path, *, build: Path | None = None,
     (asset_dir / "model.urdf").write_text(ET.tostring(robot, encoding="unicode") + "\n", encoding="utf-8", newline="\n")
     if build is not None:
         shutil.copy(build, asset_dir / "model.py")
+    if provenance is not None:
+        (asset_dir / "provenance.json").write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
 
     annotations = {"description": store.annotation(description or spec["name"], by)}
     if spec.get("handles"):
@@ -125,7 +128,7 @@ def compile_item(item_dir: Path, asset_dir: Path, *, build: Path | None = None,
     if spec.get("place_targets"):
         annotations["place_targets"] = store.annotation(
             [{"name": t["name"], "surface": t["surface"]} for t in spec["place_targets"]], by)
-    return store.new_asset(asset_dir, spec["kind"], "blender", annotations)
+    return store.new_asset(asset_dir, spec["kind"], source, annotations)
 
 
 def main() -> None:

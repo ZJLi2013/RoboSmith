@@ -5,6 +5,8 @@ collision boxes, place targets, prismatic joints) plus the robot's workspace:
 
 - ``on: support`` / ``on: <id>.<target>``: bottom of the visual bounds rests on
   the tabletop or on a static place-target surface (centred on it).
+- ``on: floor``: bottom of the visual bounds rests on the ground beside the table
+  (imported scenes); needs ``anchor_xy`` and does not size the table.
 - ``anchor_xy``: explicit planar position (fixtures).
 - ``near: robot``: sampled in the Franka workspace annulus.
 - ``clear_of``: xy footprints do not overlap; ``<id>.swept`` adds the volume the
@@ -29,6 +31,7 @@ from robotsmith.scenes.config import DEFAULT_WORKSPACE_XY, SceneConfig, table_ce
 from robotsmith.sim.franka import REACH_HALF_ANGLE_DEG, REACH_M
 
 SUPPORT = "support"
+FLOOR = "floor"
 ROBOT = "robot"
 SPAWN_CLEARANCE_M = 0.001
 FOOTPRINT_MARGIN_M = 0.02
@@ -102,6 +105,12 @@ def solve(objects: list[dict], library: AssetLibrary, rng: random.Random) -> Sol
         lo_z = float(bounds[oid][0][2])
         clearance = 0.0 if asset.is_fixture else SPAWN_CLEARANCE_M
         parent, target = split_ref(obj["on"])
+        if parent == FLOOR:
+            if "anchor_xy" not in obj:
+                raise SolveError(f"'{oid}' on floor needs anchor_xy")
+            xy = np.asarray(obj["anchor_xy"], dtype=np.float64)
+            placed[oid] = Placement((xy[0], xy[1], -lo_z + clearance), _yaw(obj, asset, xy))
+            continue
         if parent != SUPPORT:
             if target is None or parent not in placed:
                 raise SolveError(f"'{oid}': on '{obj['on']}' must name a placed object's target")
@@ -133,20 +142,24 @@ def solve(objects: list[dict], library: AssetLibrary, rng: random.Random) -> Sol
         else:
             raise SolveError(f"'{oid}': no free spot near the robot after {MAX_SAMPLES} samples")
 
-    prints = [footprint(oid) for oid in placed]
-    cx, cy = table_center_xy(DEFAULT_WORKSPACE_XY)
-    half_x = max([abs(cx) + ROBOT_BASE_HALF_M] + [max(abs(lo[0] - cx), abs(hi[0] - cx)) for lo, hi in prints])
-    half_y = max([ROBOT_BASE_HALF_M] + [max(abs(lo[1] - cy), abs(hi[1] - cy)) for lo, hi in prints])
-    table_size = (
-        max(_DEFAULTS.table_size[0], 2.0 * (half_x + TABLE_MARGIN_M)),
-        max(_DEFAULTS.table_size[1], 2.0 * (half_y + TABLE_MARGIN_M)),
-        _DEFAULTS.table_size[2],
-    )
+    prints = [footprint(o["id"]) for o in objects if split_ref(o["on"])[0] != FLOOR]
     lo = np.min([p[0] for p in prints], axis=0)
     hi = np.max([p[1] for p in prints], axis=0)
     target = (float((lo[0] + hi[0]) / 2), float((lo[1] + hi[1]) / 2), TABLE_TOP_Z)
     camera = tuple(t + d for t, d in zip(target, CAMERA_OFFSET))
-    return SolvedScene(placed, table_size, camera, target)
+    return SolvedScene(placed, table_size(prints), camera, target)
+
+
+def table_size(prints: list[tuple[np.ndarray, np.ndarray]]) -> tuple[float, float, float]:
+    """Table centred on the workspace that holds the robot base and every xy footprint."""
+    cx, cy = table_center_xy(DEFAULT_WORKSPACE_XY)
+    half_x = max([abs(cx) + ROBOT_BASE_HALF_M] + [max(abs(lo[0] - cx), abs(hi[0] - cx)) for lo, hi in prints])
+    half_y = max([ROBOT_BASE_HALF_M] + [max(abs(lo[1] - cy), abs(hi[1] - cy)) for lo, hi in prints])
+    return (
+        max(_DEFAULTS.table_size[0], 2.0 * (half_x + TABLE_MARGIN_M)),
+        max(_DEFAULTS.table_size[1], 2.0 * (half_y + TABLE_MARGIN_M)),
+        _DEFAULTS.table_size[2],
+    )
 
 
 def _asset(library: AssetLibrary, name: str) -> Asset:
