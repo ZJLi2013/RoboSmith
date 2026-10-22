@@ -1,0 +1,10 @@
+{
+  "generator": "AHa-3D (Codex + GPT-6 Astra building the room in Blender from a video and its Pi3X reference)",
+  "repo": "https://github.com/KevinXu02/aha-3d",
+  "commit": "82f4b1110cfe4b55fff19df3b3790852ce07b171",
+  "source_video": "behavior-1k/2025-challenge-demos task 0 episode 10, head RGB frames 0-265",
+  "dataset_revision": "33639692425296185f245aaa648530178c7b3d2b",
+  "license": "MIT (dataset video) + Apache-2.0 (AHa-3D)",
+  "instance_id": "radio",
+  "semantic_class": "prop"
+}

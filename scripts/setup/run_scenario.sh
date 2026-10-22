@@ -55,6 +55,6 @@ docker run -d --name "$NAME" \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v /usr/bin/docker:/usr/bin/docker:ro \
   "$IMAGE" \
-  bash -lc "cd /workspace/robotsmith && python scripts/datagen/run_generated_scenario.py --scenario $SCENARIO --output-dir output/$NAME --n-episodes $EPISODES --seed $SEED --grasp-planner $PLANNER --smoke"
+  bash -lc "cd /workspace/robotsmith && python -m robotsmith.assets.fetch && python scripts/datagen/run_generated_scenario.py --scenario $SCENARIO --output-dir output/$NAME --n-episodes $EPISODES --seed $SEED --grasp-planner $PLANNER --smoke"
 
 echo "STARTED $NAME"

@@ -19,7 +19,7 @@ from pathlib import Path
 from robotsmith.assets import store
 from robotsmith.assets.library import _SCAN_DIRS
 
-DEFAULT_STORE = "hf://ZJLi2013/robosmith-assets"
+DEFAULT_STORE = "hf://lidavidsh/robosmith-assets"
 DEFAULT_ROOT = Path(__file__).resolve().parents[2] / "assets"
 REDISTRIBUTABLE = frozenset({"CC0-1.0", "CC-BY-4.0", "MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause"})
 

@@ -1,7 +1,0 @@
-# https://github.com/mikedh/trimesh
-
-newmtl bright_orange_plastic
-Ka 0.40000000 0.40000000 0.40000000
-Kd 1.00000000 0.12156863 0.01568627
-Ks 0.40000000 0.40000000 0.40000000
-Ns 1.00000000
