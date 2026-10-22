@@ -7,6 +7,7 @@ stage: **assets → datagen → setup**.
 
 - `list_assets.py`: print the asset catalog a scenario author picks from (id, kind, size, place targets, movable joints).
 - `render_asset_table.py`: render Genesis table QA views of the assets as built.
+- `review_calibration.py`: run the asset reviewer on cases with a known verdict; run it after changing the review instructions, package or readings.
 
 ## `datagen/` — data generation (SDG)
 

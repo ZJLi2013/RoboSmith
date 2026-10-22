@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -21,6 +22,7 @@ from robotsmith.assets import derive, store
 from robotsmith.assets.schema import parse_urdf_collision_boxes, parse_urdf_joints
 
 HERE = Path(__file__).parent
+REVIEW_PROMPT = "Review the asset in this directory as REVIEW.md says, and write review.json.\n"
 
 
 def readings(asset_dir: Path) -> dict:
@@ -75,6 +77,21 @@ def build_package(asset_dir: Path, request: str, renders: Path, out: Path) -> Pa
     shutil.copy(HERE / "probe.py", out / "tools" / "probe.py")
     (out / "readings.json").write_text(json.dumps(readings(asset_dir), indent=2), encoding="utf-8")
     return out
+
+
+def review(pkg: Path, reviewer: list[str], sim_runner: Path) -> dict:
+    """Run ``reviewer`` in ``pkg`` (prompt on stdin, ``sim_runner`` as ``run_sim.sh``); return its ``review.json``."""
+    (pkg / "run_sim.sh").write_bytes(sim_runner.read_bytes().replace(b"\r\n", b"\n"))
+    for stale in ("review.json", "probes"):
+        p = pkg / stale
+        shutil.rmtree(p) if p.is_dir() else p.unlink(missing_ok=True)
+    r = subprocess.run(reviewer, cwd=pkg, input=REVIEW_PROMPT, capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
+    (pkg / "reviewer.log").write_text(r.stdout + "\n--- stderr\n" + r.stderr, encoding="utf-8")
+    out = pkg / "review.json"
+    if not out.exists():
+        return {"decision": None, "claims": [], "feedback": f"reviewer exited {r.returncode} without review.json"}
+    return json.loads(out.read_text(encoding="utf-8"))
 
 
 def admit(asset_dir: Path, review: dict, generated_root: Path, by: str) -> Path:

@@ -1,0 +1,9 @@
+[
+  {"id": "drawer_sound", "build": "drawer_sound.py", "request": "drawer_request.md", "expect": "accept"},
+  {"id": "drawer_solid_tray", "build": "drawer_sound.py", "mutate": "solid_tray", "request": "drawer_request.md",
+   "expect": "reject"},
+  {"id": "drawer_short_tray", "build": "drawer_short_tray.py", "request": "drawer_request.md", "expect": "reject",
+   "note": "also below the 0.25 m interior minimum: a size regression, not evidence for the full-travel check"},
+  {"id": "mug_upright", "library": "mug_02", "request": "mug_request.md", "expect": "accept"},
+  {"id": "mug_tipped", "library": "mug_02", "mutate": "tipped", "request": "mug_request.md", "expect": "reject"}
+]
