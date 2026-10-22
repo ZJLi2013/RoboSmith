@@ -8,6 +8,7 @@ import trimesh
 
 from robotsmith.assets.library import AssetLibrary
 from robotsmith.assets.producers.blender_item import compile_item
+from robotsmith.assets.review.package import admit, readings
 
 Z_UP_TO_Y_UP = np.array([[1, 0, 0, 0], [0, 0, 1, 0], [0, -1, 0, 0], [0, 0, 0, 1]], dtype=float)
 
@@ -22,7 +23,7 @@ def _part(path, boxes):
     scene.export(str(path))
 
 
-def test_drawer_cabinet_compiles_to_loadable_asset(tmp_path):
+def _cabinet(tmp_path):
     item = tmp_path / "item"
     item.mkdir()
     _part(item / "carcass.glb", {"bottom": ([-0.15, -0.2, 0.0], [0.15, 0.2, 0.02])})
@@ -46,8 +47,11 @@ def test_drawer_cabinet_compiles_to_loadable_asset(tmp_path):
         "handles": [{"part": "handle", "object": "handle_neck"}],
         "place_targets": [{"name": "drawer_opening", "part": "drawer", "surface": "tray_floor"}],
     }), encoding="utf-8")
+    return item
 
-    compile_item(item, tmp_path / "assets" / "generated" / "cab")
+
+def test_drawer_cabinet_compiles_to_loadable_asset(tmp_path):
+    compile_item(_cabinet(tmp_path), tmp_path / "assets" / "generated" / "cab")
     asset = AssetLibrary(tmp_path / "assets").get("cab")
 
     assert asset.is_fixture and [j.name for j in asset.movable_joints] == ["drawer_slide"]
@@ -57,3 +61,22 @@ def test_drawer_cabinet_compiles_to_loadable_asset(tmp_path):
     assert opening["joint"] == "drawer_slide"
     assert np.allclose(opening["box"], [[-0.12, -0.17, 0.03], [0.14, 0.17, 0.04]])
     assert opening["lip_local"] == pytest.approx([0.14, 0.0, 0.04])
+
+
+def test_review_verdict_gates_library_admission(tmp_path):
+    assets = tmp_path / "assets"
+    pending = assets / "pending" / "cab"
+    compile_item(_cabinet(tmp_path), pending)
+    r = readings(pending)
+    assert {b["name"] for b in r["collision_boxes"]} >= {"tray_floor", "handle_neck"}
+    assert r["joints"][0]["upper"] == 0.2 and r["place_targets"][0]["joint"] == "drawer_slide"
+
+    claims = [{"claim": "drawer stays in the carcass", "verdict": "fail", "evidence": "probes/01.out"}]
+    assert admit(pending, {"decision": "reject", "claims": claims}, assets / "generated", by="agent:t") == pending
+    assert AssetLibrary(assets).get("cab") is None
+
+    claims[0]["verdict"] = "pass"
+    dest = admit(pending, {"decision": "accept", "claims": claims}, assets / "generated", by="agent:t")
+    assert AssetLibrary(assets).get("cab") is not None and not pending.exists()
+    checks = [json.loads(l) for l in (dest / "checks.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert [(c["check"], c["result"]) for c in checks] == [("llm_review", "fail"), ("llm_review", "pass")]
