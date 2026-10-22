@@ -83,7 +83,8 @@ def plan(scene: dict, support: str, base_xy, yaw_deg: float = 0.0) -> dict:
 
 
 def import_snapshot(export_dir: Path, *, support: str, base_xy, prefix: str, assets: Path, scenario: Path,
-                    task: dict, provenance: dict, yaw_deg: float = 0.0) -> dict:
+                    task: dict, provenance: dict, yaw_deg: float = 0.0, license: str = "Apache-2.0",
+                    attribution: str | None = None) -> dict:
     scene = json.loads((export_dir / "scene.json").read_text(encoding="utf-8"))
     mapping = plan(scene, support, base_xy, yaw_deg)
     roots = {r["instance_id"]: r for r in scene["roots"]}
@@ -95,7 +96,8 @@ def import_snapshot(export_dir: Path, *, support: str, base_xy, prefix: str, ass
         d["asset"] = f"{prefix}_{r['item']}"
         compile_item(export_dir / r["item"], assets / "pending" / d["asset"], by="aha3d", source="aha3d",
                      description=f"{iid} from an AHa-3D scene ({r['semantic_class']})",
-                     provenance=provenance | {"instance_id": iid, "semantic_class": r["semantic_class"]})
+                     provenance=provenance | {"instance_id": iid, "semantic_class": r["semantic_class"]},
+                     license=license, attribution=attribution)
         objects.append({"id": r["item"], "asset": d["asset"], "on": d["decision"], "anchor_xy": d["anchor_xy"],
                         "yaw_deg": 0.0 - yaw_deg})
     doc = {"scenario": scenario.stem, "robot": "franka", "scene": {"support": "table_simple", "objects": objects},
@@ -116,11 +118,13 @@ def main() -> None:
     ap.add_argument("--scenario", type=Path, required=True)
     ap.add_argument("--task", type=Path, required=True, help="YAML with the scenario's task section")
     ap.add_argument("--provenance", type=Path, help="JSON merged into every asset's provenance.json")
+    ap.add_argument("--license", default="Apache-2.0", help="SPDX expression of the scene's assets")
+    ap.add_argument("--attribution", help="credit line the license requires, e.g. the source video")
     a = ap.parse_args()
     prov = json.loads(a.provenance.read_text(encoding="utf-8")) if a.provenance else {}
     mapping = import_snapshot(a.export_dir, support=a.support, base_xy=a.base, prefix=a.prefix, assets=a.assets,
                               scenario=a.scenario, task=yaml.safe_load(a.task.read_text(encoding="utf-8")),
-                              provenance=prov, yaw_deg=a.yaw)
+                              provenance=prov, yaw_deg=a.yaw, license=a.license, attribution=a.attribution)
     kept = {i: d for i, d in mapping["roots"].items() if d["decision"] in ("support", "floor")}
     print(json.dumps(kept, indent=1))
 

@@ -5,6 +5,7 @@
   "kind": "fixture",
   "source": {
     "type": "builtin_primitive",
+    "license": "Apache-2.0",
     "rebuildable": false,
     "files": []
   },

@@ -5,6 +5,8 @@
   "kind": "rigid",
   "source": {
     "type": "objaverse",
+    "license": "CC-BY-4.0",
+    "attribution": "\"6 Sided Dice\" by urbanmasque, https://sketchfab.com/3d-models/7564358b73614881a1e838a0827f10f8",
     "rebuildable": false,
     "files": [
       "provenance.json"
