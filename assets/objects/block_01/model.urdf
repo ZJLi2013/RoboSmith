@@ -1,0 +1,69 @@
+<robot name="block">
+  <link name="block">
+    <inertial>
+      <origin xyz="0 0 0.012" rpy="0 0 0" />
+      <mass value="0.03" />
+      <inertia ixx="4e-06" iyy="1.168e-05" izz="1.28e-05" ixy="0" ixz="0" iyz="0" />
+    </inertial>
+    <visual name="block">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="block.obj" />
+      </geometry>
+    </visual>
+    <collision name="stud_2_4">
+      <origin xyz="0.024 0.008 0.0215" rpy="0 0 0" />
+      <geometry>
+        <box size="0.01 0.01 0.005" />
+      </geometry>
+    </collision>
+    <collision name="stud_2_3">
+      <origin xyz="0.008 0.008 0.0215" rpy="0 0 0" />
+      <geometry>
+        <box size="0.01 0.01 0.005" />
+      </geometry>
+    </collision>
+    <collision name="stud_2_2">
+      <origin xyz="-0.008 0.008 0.0215" rpy="0 0 0" />
+      <geometry>
+        <box size="0.01 0.01 0.005" />
+      </geometry>
+    </collision>
+    <collision name="stud_2_1">
+      <origin xyz="-0.024 0.008 0.0215" rpy="0 0 0" />
+      <geometry>
+        <box size="0.01 0.01 0.005" />
+      </geometry>
+    </collision>
+    <collision name="stud_1_4">
+      <origin xyz="0.024 -0.008 0.0215" rpy="0 0 0" />
+      <geometry>
+        <box size="0.01 0.01 0.005" />
+      </geometry>
+    </collision>
+    <collision name="stud_1_3">
+      <origin xyz="0.008 -0.008 0.0215" rpy="0 0 0" />
+      <geometry>
+        <box size="0.01 0.01 0.005" />
+      </geometry>
+    </collision>
+    <collision name="stud_1_2">
+      <origin xyz="-0.008 -0.008 0.0215" rpy="0 0 0" />
+      <geometry>
+        <box size="0.01 0.01 0.005" />
+      </geometry>
+    </collision>
+    <collision name="stud_1_1">
+      <origin xyz="-0.024 -0.008 0.0215" rpy="0 0 0" />
+      <geometry>
+        <box size="0.01 0.01 0.005" />
+      </geometry>
+    </collision>
+    <collision name="block_body">
+      <origin xyz="0 0 0.0095" rpy="0 0 0" />
+      <geometry>
+        <box size="0.064 0.032 0.019" />
+      </geometry>
+    </collision>
+  </link>
+</robot>

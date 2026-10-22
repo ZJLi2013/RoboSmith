@@ -36,8 +36,9 @@ All notable user-facing changes are documented here. This project follows Semant
   `robotsmith.scenario`. The four scenarios were migrated; three success judgements change on purpose: a die on the
   drawer cabinet's top is no longer inside the drawer, anywhere on the lower shelf now counts, and `near: robot`
   samples a wider initial layout than the old hand-written regions.
-- `assets/objects/` keeps only the assets the scenarios load: `apple_01`, `die_01`, `lego_02`, `mug_02`, `plane`,
-  `table_simple`.
+- `assets/objects/` keeps only the assets the scenarios load: `apple_02`, `block_01`, `die_01`, `mug_02`, `plane`,
+  `table_simple`. `apple_02` and `block_01` are built in Blender by GPT-5.6 Sol and admitted on an agent review; they
+  replace the Objaverse `apple_01` (lying on its side) and `lego_02` (a minifigure, not a block).
 - `README.md` is in English, with the Chinese version in `README.zh-CN.md`; the demo videos render as GIFs. The code
   layout and the upstream projects moved to `docs/design.md`.
 

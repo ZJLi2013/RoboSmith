@@ -16,13 +16,13 @@ scene:
   support: table_simple
   objects:
     - {id: drawer, asset: drawer_cabinet, on: support, anchor_xy: [0.80, 0.0], facing: robot}
-    - {id: apple, asset: apple_01, on: support, near: robot, clear_of: [drawer.swept]}
+    - {id: apple, asset: apple_02, on: support, near: robot, clear_of: [drawer.swept]}
 task:
   instruction: Put the apple in the drawer.
   success:
     inside: {object: apple, container: drawer.drawer_opening}
 variations:                          # optional: <object id>.<field>: [choices], one per seed
-  apple.asset: [apple_01, die_01]
+  apple.asset: [apple_02, die_01]
 split: {playground: [0, 9], test: [100, 149]}   # optional seed ranges
 ```
 
