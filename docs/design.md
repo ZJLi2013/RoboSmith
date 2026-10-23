@@ -80,14 +80,24 @@ What an asset can do follows from its annotations, not from its category:
   upright object frame and the scene adds only a position and a yaw. Point clouds, grasp gates, and support
   clearances are all computed from the files as they are; there is no scale or upright annotation to apply.
 - **Gate.** An asset is admitted when its current build has a passing `llm_review` record and its `source.license`
-  may be redistributed (CC0-1.0, CC-BY-4.0, MIT, Apache-2.0, BSD-2/3-Clause); otherwise it is a draft, and
-  `store.draft_reasons` says which condition fails. Scenarios refuse drafts (`AssetNotAdmitted`), the asset package
+  may be redistributed (CC0-1.0, CC-BY-4.0, MIT, Apache-2.0, BSD-2/3-Clause), and it duplicates no admitted asset;
+  otherwise it is a draft, and `store.draft_reasons` says which condition fails. Scenarios refuse drafts (`AssetNotAdmitted`), the asset package
   carries admitted assets only, and `scripts/assets/list_assets.py` shows each asset's status. The table under a
   scenario is a solid block sized by the scenario and the ground is Genesis' plane; neither is an asset.
 - **Review.** `robotsmith/assets/review/` packs what the reviewer sees: the request stating the asset's use, renders
   in the simulator's frame, readings derived from the build files, and the URDF. The reviewer (an LLM) writes its own
   simulator probes, runs them, and returns a verdict; `admit` appends it to `checks.jsonl` as `llm_review`, bound to
   the revision and build hash it judged. Moving files does not admit anything.
+- **Duplicates.** `admit` also runs `robotsmith.assets.dedup.check`, which records once per build, as a
+  `dedup_check`, the admitted assets the new build may duplicate: the same build hash, or the same category, kind,
+  movable joints and place targets with every edge within 20%. The same build hash refuses the asset outright; any
+  other candidate needs a `dedup_review` verdict (`variant` or `duplicate`) from a reviewer who saw both, bound to
+  both sides' revision and build hash. The gate reads only these records, so admission is the same on a fresh clone
+  without build files; a candidate rebuilt or demoted after the check no longer counts. There is no embedding index.
+- **Search.** `AssetLibrary.search_assets(query, category=, size_cm=)` returns admitted assets of a category,
+  nearest size first, or those sharing a query word when no category is given; `list_assets.py --category --size
+  --query` prints the same. An agent maps a request to a category from the catalog and searches before asking a
+  producer for a new asset.
 - **Package.** Build files are not in git; git tracks `asset.json`, `checks.jsonl` and source files. The build files
   of admitted assets live in a Hugging Face dataset (`lidavidsh/robosmith-assets`) at `<id>/<build_hash>/`, so a
   published path never changes and `asset.json` is the lock. `python -m robotsmith.assets.fetch` downloads files that
