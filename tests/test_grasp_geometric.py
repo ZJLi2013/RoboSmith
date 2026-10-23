@@ -52,3 +52,29 @@ def test_geometric_plan_reads_the_urdf_and_the_object_pose(tmp_path):
     narrow = next(p for p in plans if p.metadata["closing_width"] == pytest.approx(0.03))
     assert abs(narrow.metadata["finger_dir"][0]) == pytest.approx(1.0, abs=1e-6)
     assert plans[0].metadata["tip_pos"][2] == pytest.approx(0.85 - 0.015)
+
+
+def _bottle_urdf(tmp_path, inertial_rpy="0 0 0"):
+    urdf = tmp_path / "model.urdf"
+    urdf.write_text(f'<robot name="t"><link name="base"><inertial><origin xyz="0 0 0.1" rpy="{inertial_rpy}"/>'
+                    '<mass value="0.5"/></inertial><visual><origin xyz="0 0 0.1"/>'
+                    '<geometry><box size="0.06 0.03 0.2"/></geometry></visual></link></robot>', encoding="utf-8")
+    return type("A", (), {"urdf_path": urdf})()
+
+
+def test_geometric_plan_places_the_urdf_relative_to_the_inertial_origin_genesis_reports(tmp_path):
+    yaw90 = np.array([np.cos(np.pi / 4), 0, 0, np.sin(np.pi / 4)])
+    plans = GeometricGraspPlanner().plan(np.array([0.5, 0.1, 0.875]), yaw90, asset=_bottle_urdf(tmp_path), scale=0.5)
+    assert sorted({round(p.metadata["closing_width"], 4) for p in plans}) == [0.015, 0.03]
+    top = plans[0].metadata["tip_pos"]
+    assert top[:2] == pytest.approx([0.5, 0.1])
+    assert top[2] == pytest.approx(0.875 + 0.05 - 0.015)
+    side = next(p for p in plans if p.metadata["kind"] == "side")
+    assert side.metadata["tip_pos"][2] == pytest.approx(0.875)
+    narrow = next(p for p in plans if p.metadata["closing_width"] == pytest.approx(0.015))
+    assert abs(narrow.metadata["finger_dir"][0]) == pytest.approx(1.0, abs=1e-6)
+
+
+def test_geometric_plan_refuses_a_rotated_inertial_frame(tmp_path):
+    with pytest.raises(ValueError, match="rotated inertial frame"):
+        GeometricGraspPlanner().plan(np.array([0.5, 0.0, 0.875]), asset=_bottle_urdf(tmp_path, "0 0 0.3"))

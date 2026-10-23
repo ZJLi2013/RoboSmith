@@ -53,6 +53,20 @@ def link_transforms(urdf_path: Path) -> dict[str, np.ndarray]:
     return out
 
 
+def inertial_origin(urdf_path: Path) -> np.ndarray:
+    """Root link's inertial origin in the asset frame; Genesis reports a free object's position here."""
+    root = ET.parse(urdf_path).getroot()
+    children = {j.find("child").get("link") for j in root.findall("joint")}
+    base = next(link for link in root.findall("link") if link.get("name", "") not in children)
+    inertial = base.find("inertial")
+    if inertial is None:
+        return np.zeros(3)
+    xyz, rpy = _origin_of(inertial)
+    if any(rpy):
+        raise ValueError(f"{urdf_path}: rotated inertial frame (rpy={rpy}) is not supported")
+    return np.asarray(xyz, dtype=np.float64)
+
+
 def _bounds(points: np.ndarray, t: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     world = _apply(t, points)
     return world.min(axis=0), world.max(axis=0)
