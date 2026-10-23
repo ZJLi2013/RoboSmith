@@ -2,8 +2,9 @@
 
 A generated asset is compiled into ``assets/<id>/`` as a draft. ``build_package`` lays out what
 a reviewer reads (request, renders, compiled asset, readings, simulator helper); the reviewer
-writes ``review.json``; ``admit`` records the verdict as an ``llm_review`` check, and a pass on
-the current build admits the asset (``store.draft_reasons``).
+writes ``review.json``; ``admit`` records the verdict as an ``llm_review`` check and runs the
+duplicate check, and a pass on the current build that duplicates nothing admits the asset
+(``store.draft_reasons``).
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from pathlib import Path
 import numpy as np
 import trimesh
 
-from robotsmith.assets import derive, store
+from robotsmith.assets import dedup, derive, store
 from robotsmith.assets.schema import parse_urdf_collision_boxes, parse_urdf_joints
 
 HERE = Path(__file__).parent
@@ -95,10 +96,12 @@ def review(pkg: Path, reviewer: list[str], sim_runner: Path) -> dict:
 
 
 def admit(asset_dir: Path, review: dict, by: str) -> list[str]:
-    """Record ``review`` as the asset's ``llm_review``; return why it is still a draft (empty when admitted)."""
+    """Record ``review`` as the asset's ``llm_review`` and check it for duplicates; return why it is
+    still a draft (empty when admitted)."""
     accepted = review["decision"] == "accept"
     store.append_check(asset_dir, "llm_review", "pass" if accepted else "fail",
                        {"claims": review["claims"], "feedback": review.get("feedback", "")}, by=by)
+    dedup.check(asset_dir)
     return store.draft_reasons(asset_dir)
 
 

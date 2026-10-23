@@ -22,7 +22,7 @@ objects:
   anchor_xy: [1.3395, 0.34]
   yaw_deg: 0.0
 - id: guest_chair_1
-  asset: chair_02
+  asset: chair_01
   'on': floor
   anchor_xy: [1.4145, -0.56]
   yaw_deg: 0.0

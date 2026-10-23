@@ -14,8 +14,17 @@ All notable user-facing changes are documented here. This project follows Semant
 - `scripts/assets/list_assets.py`: the asset catalog for scenario authors. Given only `scenarios/AGENT_PROMPT.md` and
   this catalog, GPT-6 Astra wrote 8 of 9 one-sentence requests as valid YAML scenarios with the intended success
   trees and declined a request for an asset the library does not have.
+- `AssetLibrary.search_assets(query, category=, size_cm=)`: admitted assets of a category, nearest size first, or
+  sharing a query word when no category is given. `list_assets.py` shows each asset's category and takes
+  `--category`, `--size` and `--query`.
 
 ### Changed
+
+- Admission refuses duplicates (`robotsmith.assets.dedup`). Each build records once which admitted assets it may
+  duplicate: the same build hash refuses it, and an asset of the same category, kind, joints and place targets with
+  every edge within 20% needs a `dedup_review` verdict from a reviewer who saw both. GPT-6 Astra judged
+  `drawer_cabinet_d1` a duplicate of `drawer_cabinet_a` and `chair_02` of `chair_01`, so both are drafts, and
+  `office48` places `chair_01` twice; 12 assets are admitted.
 
 - An asset is admitted when its current build has an `llm_review` pass and a redistributable `source.license`, and is
   a draft otherwise (`store.draft_reasons`). Scenarios raise `AssetNotAdmitted` for a draft, `fetch` and `publish`

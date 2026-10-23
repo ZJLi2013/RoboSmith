@@ -1,0 +1,1 @@
+{"check": "dedup_check", "version": "1", "asset_revision": 1, "build_hash": "bd5cb678cc6d0e692cf3a4817d87d7131528d8a34b8c91d0499692fee997d064", "embodiment": null, "result": "none", "metrics": {"rule": "category+kind+joints+place_targets, each edge within 20%", "candidates": []}, "by": "check:dedup@1", "at": "2026-10-23T04:24:56+00:00"}
