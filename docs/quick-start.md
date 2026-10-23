@@ -9,6 +9,7 @@ The package and its unit tests run anywhere:
 
 ```shell
 python -m pip install -e ".[dev]"
+python -m robotsmith.assets.fetch   # asset meshes are not in git; this downloads them by build hash
 python -m pytest tests -q
 ```
 

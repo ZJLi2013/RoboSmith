@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "behavior_living_radio",
+  "revision": 1,
+  "kind": "rigid",
+  "source": {
+    "type": "aha3d",
+    "license": "MIT AND Apache-2.0",
+    "attribution": "BEHAVIOR-1K 2025 challenge demos, task 0 episode 10, head RGB frames 0-265; AHa-3D scene reconstruction, https://github.com/KevinXu02/aha-3d",
+    "rebuildable": false,
+    "files": [
+      "provenance.json"
+    ]
+  },
+  "build": {
+    "files": [
+      "body.mtl",
+      "body.obj",
+      "body_material_0.png",
+      "model.urdf"
+    ],
+    "hash": "a302e25716e6519f8bdf9a3facc98735e614091512a2c7a03ae5519413bcc998"
+  },
+  "annotations": {
+    "description": {
+      "value": "radio from an AHa-3D scene (prop)",
+      "by": "aha3d"
+    }
+  }
+}

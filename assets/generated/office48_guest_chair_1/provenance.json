@@ -1,0 +1,10 @@
+{
+  "generator": "AHa-3D (GPT-6 Astra building the scene in Blender from a video)",
+  "repo": "https://github.com/KevinXu02/aha-3d",
+  "commit": "82f4b1110cfe4b55fff19df3b3790852ce07b171",
+  "scene_file": "examples/office48/whitebox.blend",
+  "license": "Apache-2.0",
+  "instance_id": "furniture/guest_chair_1",
+  "semantic_class": "furniture",
+  "rework": "agent:gpt-5.6-sol round 1"
+}

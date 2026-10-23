@@ -1,0 +1,14 @@
+scenario: behavior_living_radio
+robot: franka
+scene:
+  support: table_simple
+  objects:
+  - id: radio
+    asset: behavior_living_radio
+    'on': support
+    anchor_xy: [0.5315, 0.0]
+    yaw_deg: 90.0
+task:
+  instruction: Pick up the radio.
+  success:
+    lifted: {object: radio, height: 0.1}
