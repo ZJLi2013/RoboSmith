@@ -27,13 +27,13 @@ UP = np.array([0.0, 0.0, 1.0])
 class GripperSpec:
     """Franka hand: each finger opens ``finger_open`` from the centre (``SimEnv.solve_ik`` sets both
     finger joints to it); IK targets the ``hand`` link, ``tcp_offset`` behind the fingertip centre.
-    ``usable_width`` is the widest object the closed hand still lifts, measured in simulation."""
+    ``usable_width`` is the widest box the hand lifted top-down in simulation (3–7.5 cm all lift)."""
 
     finger_open: float = 0.04
     finger_closed: float = 0.01
     finger_length: float = 0.04
     tcp_offset: float = 0.1034
-    usable_width: float = 0.07
+    usable_width: float = 0.075
     approach_clearance: float = 0.12
     lift: float = 0.17
 
