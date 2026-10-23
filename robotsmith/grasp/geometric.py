@@ -63,7 +63,8 @@ class GeometricGraspPlanner(GraspPlanner):
     def plan(self, object_pos, object_quat=None, rng=None, *, category="block", asset: Any = None,
              object_height=None, scale=1.0) -> list[GraspPlan]:
         rot = np.eye(3) if object_quat is None else quat_wxyz_to_matrix(np.asarray(object_quat, dtype=np.float64))
-        world = derive.visual_points(asset.urdf_path) * scale @ rot.T + np.asarray(object_pos, dtype=np.float64)
+        local = derive.visual_points(asset.urdf_path) - derive.inertial_origin(asset.urdf_path)
+        world = local * scale @ rot.T + np.asarray(object_pos, dtype=np.float64)
         plans = self.candidates(world, category)
         self.last_filter_counts = {"raw": len(plans), "accepted": len(plans)}
         return plans
