@@ -192,6 +192,38 @@ class TestRegistryDispatch:
         trace = state["skill_traces"][0]
         assert trace["no_candidates"] and trace["filter_counts"]["z_reject"] == 8
 
+    def _trial_run(self, lifted, try_all=False):
+        class ThreePlans(_FakePlanner):
+            def plan(self, *a, **k):
+                plans = [_FakePlan() for _ in range(3)]
+                for i, p in enumerate(plans):
+                    p.metadata = {"candidate_index": i, "kind": "top_down"}
+                return plans
+
+        calls = []
+
+        def trial(traj, target):
+            calls.append(target)
+            return {"lifted": lifted[len(calls) - 1], "lift_m": 0.1, "seconds": 0.5}
+
+        ex, state = _FakeExecutor(), _scene_state()
+        state["grasp_trial"], state["grasp_trial_all"] = trial, try_all
+        traj = run_skills([Skill("pick", "die")], ThreePlans(), ex, lambda *a, **k: np.zeros(9), state, MotionParams())
+        return traj, state["skill_traces"][0], calls
+
+    def test_trial_keeps_the_first_candidate_that_lifts(self):
+        traj, trace, calls = self._trial_run([False, True, True])
+        assert calls == ["die", "die"] and trace["selected_candidate_index"] == 1
+        assert [t["lifted"] for t in trace["trials"]] == [False, True] and trace["trial_seconds"] == 1.0
+        assert np.allclose(traj[-1], 1.0)
+
+    def test_trial_all_tries_every_candidate_and_no_success_holds(self):
+        _, trace, calls = self._trial_run([False, True, True], try_all=True)
+        assert len(calls) == 3 and trace["selected_candidate_index"] == 1
+        traj, trace, _ = self._trial_run([False, False, False])
+        assert trace["no_trial_success"] and trace["selected_candidate_index"] is None
+        assert not np.allclose(traj[-1], 1.0)
+
     def test_unknown_skill_raises(self):
         with pytest.raises(ValueError):
             run_skills([Skill("teleport", "die")], _FakePlanner(), _FakeExecutor(),
