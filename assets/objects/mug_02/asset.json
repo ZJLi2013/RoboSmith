@@ -5,6 +5,8 @@
   "kind": "rigid",
   "source": {
     "type": "objaverse",
+    "license": "CC-BY-4.0",
+    "attribution": "\"Good Morning Coffee-Cup\" by KonstantinAg, https://sketchfab.com/3d-models/4fbb57124fec47d8b216101e19f5d385",
     "rebuildable": false,
     "files": [
       "provenance.json"

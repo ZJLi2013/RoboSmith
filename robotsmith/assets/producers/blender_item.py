@@ -84,7 +84,8 @@ def _link(robot: ET.Element, name: str, objects: dict[str, trimesh.Trimesh], fra
 
 def compile_item(item_dir: Path, asset_dir: Path, *, build: Path | None = None,
                  by: str = "agent:blender", description: str | None = None, source: str = "blender",
-                 provenance: dict | None = None) -> dict:
+                 provenance: dict | None = None, license: str = "Apache-2.0",
+                 attribution: str | None = None) -> dict:
     spec = json.loads((item_dir / "item.json").read_text(encoding="utf-8"))
     parts = {p["name"]: p for p in spec["parts"]}
     root_name = spec["parts"][0]["name"]
@@ -134,7 +135,7 @@ def compile_item(item_dir: Path, asset_dir: Path, *, build: Path | None = None,
     if spec.get("place_targets"):
         annotations["place_targets"] = store.annotation(
             [{"name": t["name"], "surface": t["surface"]} for t in spec["place_targets"]], by)
-    return store.new_asset(asset_dir, spec["kind"], source, annotations)
+    return store.new_asset(asset_dir, spec["kind"], source, annotations, license=license, attribution=attribution)
 
 
 def main() -> None:

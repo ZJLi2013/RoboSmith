@@ -5,6 +5,7 @@
   "kind": "fixture",
   "source": {
     "type": "articraft",
+    "license": "Apache-2.0",
     "rebuildable": true,
     "files": [
       "2-layer-support.png",
