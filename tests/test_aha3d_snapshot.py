@@ -43,3 +43,15 @@ def test_plan_sorts_every_root_and_keeps_room_positions():
 def test_plan_expresses_positions_relative_to_the_robot_base():
     roots = plan(SCENE, "furniture/desk", (0.5, 0.0))["roots"]
     assert roots["decor/cup"]["anchor_xy"] == [0.74, 0.14]
+
+
+def test_plan_follows_the_robot_heading():
+    def turn(r):
+        if "lo" not in r:
+            return r
+        (x0, y0), (x1, y1) = r["lo"][:2], r["hi"][:2]
+        return _root(r["instance_id"], r["semantic_class"], [-y1, x0, r["lo"][2]], [-y0, x1, r["hi"][2]])
+
+    turned = plan({"roots": [turn(r) for r in SCENE["roots"]]}, "furniture/desk", (0.0, 0.0), yaw_deg=90.0)
+    assert turned["roots"] == plan(SCENE, "furniture/desk", (0.0, 0.0))["roots"]
+    assert turned["yaw_deg"] == 90.0

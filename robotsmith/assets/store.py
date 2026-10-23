@@ -41,17 +41,25 @@ def write_asset(asset_dir: Path, data: dict) -> None:
     )
 
 
-def new_asset(asset_dir: Path, kind: str, source_type: str, annotations: dict) -> dict:
-    """Write a revision-1 ``asset.json`` covering every file already in ``asset_dir``."""
+def new_asset(asset_dir: Path, kind: str, source_type: str, annotations: dict,
+              license: str | None = None, attribution: str | None = None) -> dict:
+    """Write a revision-1 ``asset.json`` covering every file already in ``asset_dir``.
+
+    ``license`` is an SPDX expression; without one the asset cannot be published.
+    """
     files = sorted(p.name for p in asset_dir.iterdir() if p.is_file() and p.name not in (ASSET_FILE, CHECKS_FILE))
     build = [f for f in files if f not in SOURCE_FILES]
+    source = {"type": source_type}
+    if license:
+        source["license"] = license
+    if attribution:
+        source["attribution"] = attribution
     data = {
         "schema_version": 1,
         "id": asset_dir.name,
         "revision": 1,
         "kind": kind,
-        "source": {
-            "type": source_type,
+        "source": source | {
             "rebuildable": False,
             "files": [f for f in files if f in SOURCE_FILES],
         },

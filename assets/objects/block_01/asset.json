@@ -5,6 +5,7 @@
   "kind": "rigid",
   "source": {
     "type": "blender",
+    "license": "Apache-2.0",
     "rebuildable": false,
     "files": [
       "model.py"
