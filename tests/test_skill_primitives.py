@@ -178,6 +178,20 @@ class TestRegistryDispatch:
         markers = [t[-1] for t in traj if np.allclose(t, t[-1])]
         assert markers == [1.0, 2.0, 3.0, 3.0]
 
+    def test_pick_with_every_candidate_filtered_out_records_counts_and_holds(self):
+        class EmptyPlanner(_FakePlanner):
+            last_filter_counts = {"raw": 8, "z_reject": 8, "accepted": 0}
+
+            def plan(self, *a, **k):
+                return []
+
+        ex, state = _FakeExecutor(), _scene_state()
+        traj = run_skills([Skill("pick", "die")], EmptyPlanner(), ex, lambda *a, **k: np.zeros(9),
+                          state, MotionParams())
+        assert ex.calls == [] and len(traj) > 0
+        trace = state["skill_traces"][0]
+        assert trace["no_candidates"] and trace["filter_counts"]["z_reject"] == 8
+
     def test_unknown_skill_raises(self):
         with pytest.raises(ValueError):
             run_skills([Skill("teleport", "die")], _FakePlanner(), _FakeExecutor(),

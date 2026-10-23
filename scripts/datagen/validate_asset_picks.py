@@ -45,6 +45,8 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Probe-only bucket override for Stage 1; does not edit metadata.",
     )
+    ap.add_argument("--object-xy", type=float, nargs=2, default=None, metavar=("X", "Y"),
+                    help="Place the object here every episode instead of sampling the workspace.")
     return ap.parse_args()
 
 
@@ -61,6 +63,7 @@ def main() -> None:
             settle_steps=args.settle_steps,
             grasp_planner=args.grasp_planner,
             grasp_policy_bucket_override=args.grasp_policy_bucket_override,
+            object_xy=tuple(args.object_xy) if args.object_xy else None,
         )
     )
     print("======== VALIDATION SUMMARY ========")
