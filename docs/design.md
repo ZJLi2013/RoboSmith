@@ -56,12 +56,13 @@ An asset is a directory `assets/<id>/` (`model.urdf`, `visual.*`, `collision.obj
 `asset.json`, `checks.jsonl`); `asset.json` names its `kind` and `category`, and the id carries no scene name, so one
 asset can appear in any scene. A recorded room is a layout `scenes/<name>.yaml` that lists asset ids and their
 poses; scenarios name it instead of copying it. New assets come from the
-producers in `robotsmith/assets/producers/`: an image-to-3D backend (TRELLIS.2 or Hunyuan3D) followed by
-`mesh_to_urdf`. The backends import their model repositories lazily and run in their own image, not in the Genesis
-one.
+producers in `robotsmith/assets/producers/`: an LLM agent writing a Blender script for one object (`blender_item`,
+the default), a snapshot of a reconstructed room (`aha3d_snapshot`), or an image-to-3D backend (TRELLIS.2 or
+Hunyuan3D) followed by `mesh_to_urdf`. Producers write `assets/<id>/` as a draft; the backends import their model
+repositories lazily and run in their own image, not in the Genesis one.
 
 `asset.json` holds the `kind` (`rigid`, `articulated`, `fixture`), the source and build file lists with a hash of the
-build files, and annotations; each annotation records who wrote it (`human`, `harness`, `agent:<model>`,
+build files, the source's SPDX `license` and `attribution`, and annotations; each annotation records who wrote it (`human`, `harness`, `agent:<model>`,
 `check:<name>@<version>`, or `legacy` for values migrated without a known writer). `checks.jsonl` is append-only: one
 record per check run, bound to the asset revision and build hash. A record whose hash no longer matches the files does
 not count. Mass, inertia and joint limits live only in the URDF. Grasp policy buckets are a grasp-module result and
@@ -78,11 +79,22 @@ What an asset can do follows from its annotations, not from its category:
 - **Build files are the geometry.** The URDF and meshes are in metres with `+Z` up, so the asset frame is the
   upright object frame and the scene adds only a position and a yaw. Point clouds, grasp gates, and support
   clearances are all computed from the files as they are; there is no scale or upright annotation to apply.
-- **Gate.** An asset is admitted when its current build has a passing `llm_review` record (an LLM reviewer's verdict
-  backed by simulator probes, `robotsmith/assets/review/`) and its `source.license` may be redistributed; otherwise it
-  is a draft. Scenarios refuse drafts (`AssetNotAdmitted`), the asset package carries admitted assets only, and
-  `scripts/assets/list_assets.py` shows each asset's status. The table under a scenario is a solid block sized by
-  the scenario, not an asset.
+- **Gate.** An asset is admitted when its current build has a passing `llm_review` record and its `source.license`
+  may be redistributed (CC0-1.0, CC-BY-4.0, MIT, Apache-2.0, BSD-2/3-Clause); otherwise it is a draft, and
+  `store.draft_reasons` says which condition fails. Scenarios refuse drafts (`AssetNotAdmitted`), the asset package
+  carries admitted assets only, and `scripts/assets/list_assets.py` shows each asset's status. The table under a
+  scenario is a solid block sized by the scenario and the ground is Genesis' plane; neither is an asset.
+- **Review.** `robotsmith/assets/review/` packs what the reviewer sees: the request stating the asset's use, renders
+  in the simulator's frame, readings derived from the build files, and the URDF. The reviewer (an LLM) writes its own
+  simulator probes, runs them, and returns a verdict; `admit` appends it to `checks.jsonl` as `llm_review`, bound to
+  the revision and build hash it judged. Moving files does not admit anything.
+- **Package.** Build files are not in git; git tracks `asset.json`, `checks.jsonl` and source files. The build files
+  of admitted assets live in a Hugging Face dataset (`lidavidsh/robosmith-assets`) at `<id>/<build_hash>/`, so a
+  published path never changes and `asset.json` is the lock. `python -m robotsmith.assets.fetch` downloads files that
+  are missing or do not match the hash and refuses a download that does not hash to the recorded value;
+  `python -m robotsmith.assets.package publish` uploads new builds and regenerates the attribution table on the
+  dataset card. Storage is addressed by build hash, not by scene or category, so reorganising the library never
+  moves published files.
 
 Geometry is derived from the URDF and meshes at load (`robotsmith/assets/derive.py`), not stored: `size_cm` is the
 visual-geometry extent, the task joint is the movable joint, and a handle or place target only names a link or
@@ -192,5 +204,7 @@ the initial state, run the skills, then evaluate the success tree. The run write
   and trajectory optimisation.
 - [GraspGen](https://github.com/NVlabs/GraspGen): learned grasp proposals (NVIDIA research / evaluation license).
 - [Objaverse](https://objaverse.allenai.org/) and [Articraft](https://github.com/mattzh72/articraft): asset sources.
+- [Blender](https://www.blender.org/): LLM agents build single-object assets as Blender scripts.
+- [Hugging Face Hub](https://huggingface.co/docs/hub/datasets): the dataset that stores build files by hash.
 - [TRELLIS.2](https://github.com/microsoft/TRELLIS.2) and [Hunyuan3D-2.1](https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1):
   image-to-3D backends for generated assets.
