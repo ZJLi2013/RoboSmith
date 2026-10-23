@@ -105,6 +105,16 @@ def test_plan_height_filter(asset):
     assert all(plan.grasp_pos[2] >= 0.55 for plan in plans)
 
 
+def test_plan_records_how_many_grasps_each_filter_removed(asset):
+    planner = _planner(z_offset=0.1, min_grasp_z_margin=0.02, top_k=3)
+    assert len(planner.plan(object_pos=OBJ_POS, asset=asset)) == 3
+    assert planner.last_filter_counts == {
+        "raw": 10, "clearance_reject": 0, "z_reject": 4, "approach_reject": 0, "top_k_cut": 3, "accepted": 3,
+    }
+    assert planner.plan(object_pos=OBJ_POS, asset=None) == []
+    assert planner.last_filter_counts == {"raw": 0, "accepted": 0}
+
+
 def test_plan_without_asset_returns_empty():
     assert _planner().plan(object_pos=OBJ_POS, asset=None) == []
 

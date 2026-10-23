@@ -93,6 +93,7 @@ class LearnedGraspPlanner(GraspPlanner):
         self._fixed_orientation = fixed_orientation
         self._support_clearance = support_clearance
         self._seed = seed
+        self.last_filter_counts: dict[str, int] = {}
 
     def _clearance_mask(self, poses: np.ndarray, support_z: float) -> np.ndarray | None:
         """Support-plane clearance mask, or None when the screen is off or has no gripper geometry."""
@@ -129,6 +130,7 @@ class LearnedGraspPlanner(GraspPlanner):
         object_height: float | None = None,
         scale: float = 1.0,
     ) -> list[GraspPlan]:
+        self.last_filter_counts = {"raw": 0, "accepted": 0}
         if asset is None:
             logger.warning("LearnedGraspPlanner requires an asset with mesh")
             return []
@@ -201,9 +203,11 @@ class LearnedGraspPlanner(GraspPlanner):
         fixed_quat = rotmat_to_quat_wxyz(fixed_rot)
 
         mode = "fixed_ori" if self._fixed_orientation else "graspgen_ori"
+        examined = 0
         logger.debug("[learned] orientation mode: %s", mode)
 
         for i in range(len(world_poses)):
+            examined = i + 1
             if clear is not None and not clear[i]:
                 continue
             pose = world_poses[i]
@@ -261,6 +265,11 @@ class LearnedGraspPlanner(GraspPlanner):
             if len(plans) >= self._top_k:
                 break
 
+        self.last_filter_counts = {
+            "raw": n_raw, "clearance_reject": 0 if clear is None else int((~clear[:examined]).sum()),
+            "z_reject": n_z_reject,
+            "approach_reject": n_approach_reject, "top_k_cut": n_raw - examined, "accepted": len(plans),
+        }
         logger.debug(
             f"[learned] filter: {n_raw} total → clearance_reject={n_clearance_reject}, "
             f"z_reject={n_z_reject}, approach_reject={n_approach_reject}, accepted={len(plans)} "

@@ -62,6 +62,7 @@ class AssetPickValidationConfig:
     settle_steps: int = 30
     grasp_planner: str = "auto"
     grasp_policy_bucket_override: str | None = None
+    object_xy: tuple[float, float] | None = None
 
 
 @dataclass
@@ -136,6 +137,7 @@ def _prepare_asset_pick_episode(
     executor,
     motion_params,
     settle_steps: int,
+    object_xy: tuple[float, float] | None = None,
 ) -> AssetPickEpisodePlan:
     pick_names, place_names = derive_skill_targets(task_spec)
     positions = build_episode_positions(
@@ -145,6 +147,8 @@ def _prepare_asset_pick_episode(
         place_names,
         task_spec=task_spec,
     )
+    if object_xy is not None:
+        positions["object"][:2] = object_xy
     obj_xy_map = {
         name: (pos[0], pos[1])
         for name, pos in positions.items()
@@ -266,6 +270,7 @@ def run_asset_pick(config: AssetPickValidationConfig, asset_name: str) -> dict:
             executor=executor,
             motion_params=motion_params,
             settle_steps=config.settle_steps,
+            object_xy=config.object_xy,
         )
         pose_label = _object_pose_label(env, "object")
 
@@ -311,6 +316,14 @@ def run_asset_pick(config: AssetPickValidationConfig, asset_name: str) -> dict:
             "no_feasible_grasp": pick_trace.get("no_feasible_grasp"),
             "p0_bucket_hard_ok_counts": pick_trace.get("p0_bucket_hard_ok_counts"),
             "score_exec": pick_trace.get("score_exec"),
+            "no_candidates": bool(pick_trace.get("no_candidates", False)),
+            "filter_counts": pick_trace.get("filter_counts"),
+            "p0_candidate_count": pick_trace.get("p0_candidate_count"),
+            "p0_support_reject_count": pick_trace.get("p0_support_reject_count"),
+            "p0_ik_reject_count": pick_trace.get("p0_ik_reject_count"),
+            "p0_feasible_count": pick_trace.get("p0_feasible_count"),
+            "object_initial_pos": [float(v) for v in episode_plan.initial_positions["object"]],
+            "finger_final_qpos": [float(v) for v in to_numpy(env.franka.get_dofs_position(env.finger_dof))],
         }
         label.update(pose_label)
         ent = env.entity_map.get("object")

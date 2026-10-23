@@ -76,13 +76,18 @@ def _pick_trace_entry(skill: Skill, category: str, plan) -> dict:
         "p0_candidate_count": p0_candidate_count,
         "p0_support_ok_count": md.get("feasibility_support_ok_count"),
         "p0_support_reject_count": md.get("feasibility_support_reject_count"),
+        "p0_ik_reject_count": (
+            md["feasibility_support_ok_count"] - p0_ok_count
+            if p0_ok_count is not None and md.get("feasibility_support_ok_count") is not None
+            else None
+        ),
         "p0_bucket_candidate_counts": md.get("feasibility_bucket_candidate_counts"),
         "p0_bucket_hard_ok_counts": md.get("feasibility_bucket_hard_ok_counts"),
         "score_exec": _float_or_none(md.get("score_exec")),
     }
 
 
-def _select_pick_plan(ctx: SkillContext) -> GraspPlan:
+def _select_pick_plan(ctx: SkillContext) -> GraspPlan | None:
     """Resolve grasp candidates for the target and pick the most executable one."""
     skill = ctx.skill
     scene_state = ctx.scene_state
@@ -105,6 +110,11 @@ def _select_pick_plan(ctx: SkillContext) -> GraspPlan:
         asset=asset,
         object_height=obj_h,
     )
+    filter_counts = dict(getattr(ctx.planner, "last_filter_counts", {}) or {})
+    if not plans:
+        ctx.trace({"skill": skill.name, "target": skill.target, "category": ctx.category,
+                   "filter_counts": filter_counts, "no_candidates": True, "no_feasible_grasp": True})
+        return None
     # Grasp geometry's no-entry floor is the target's OWN support surface
     # (object bottom), not the global table — so a shelved / in-fixture object
     # rejects sub-object grasps correctly. Tabletop objects have
@@ -135,7 +145,7 @@ def _select_pick_plan(ctx: SkillContext) -> GraspPlan:
     else:
         plan = plans[0]
     ctx.trace(
-        _pick_trace_entry(skill, ctx.category, plan)
+        _pick_trace_entry(skill, ctx.category, plan) | {"filter_counts": filter_counts}
     )
     return plan
 
@@ -226,7 +236,7 @@ def _capture_payload_aco(ctx: SkillContext, plan: GraspPlan) -> None:
 @register("pick")
 def run_pick(ctx: SkillContext) -> list[np.ndarray]:
     plan = _select_pick_plan(ctx)
-    if (
+    if plan is None or (
         plan.metadata.get("no_feasible_grasp")
         and os.environ.get("GRASP_EVAL_SKIP_NO_FEASIBLE", "1") == "1"
     ):
