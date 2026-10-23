@@ -42,7 +42,7 @@ def write_asset(asset_dir: Path, data: dict) -> None:
 
 
 def new_asset(asset_dir: Path, kind: str, source_type: str, annotations: dict,
-              license: str | None = None, attribution: str | None = None) -> dict:
+              license: str | None = None, attribution: str | None = None, category: str | None = None) -> dict:
     """Write a revision-1 ``asset.json`` covering every file already in ``asset_dir``.
 
     ``license`` is an SPDX expression; without one the asset cannot be published.
@@ -59,6 +59,7 @@ def new_asset(asset_dir: Path, kind: str, source_type: str, annotations: dict,
         "id": asset_dir.name,
         "revision": 1,
         "kind": kind,
+        **({"category": category} if category else {}),
         "source": source | {
             "rebuildable": False,
             "files": [f for f in files if f in SOURCE_FILES],

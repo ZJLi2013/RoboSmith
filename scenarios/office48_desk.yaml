@@ -1,33 +1,6 @@
 scenario: office48_desk
 robot: franka
-scene:
-  support: table_simple
-  objects:
-  - id: bottle_assembly
-    asset: office48_bottle_assembly
-    'on': support
-    anchor_xy: [0.5, 0.09]
-    yaw_deg: 0.0
-  - id: phone
-    asset: office48_phone
-    'on': support
-    anchor_xy: [0.76, 0.46]
-    yaw_deg: 0.0
-  - id: cabinet_assembly
-    asset: office48_cabinet_assembly
-    'on': floor
-    anchor_xy: [-0.163, 1.02]
-    yaw_deg: 0.0
-  - id: guest_chair_0
-    asset: office48_guest_chair_0
-    'on': floor
-    anchor_xy: [1.3395, 0.34]
-    yaw_deg: 0.0
-  - id: guest_chair_1
-    asset: office48_guest_chair_1
-    'on': floor
-    anchor_xy: [1.4145, -0.56]
-    yaw_deg: 0.0
+scene: office48
 task:
   instruction: Pick up the bottle on the desk.
   success:

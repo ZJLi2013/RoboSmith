@@ -31,6 +31,9 @@ each asset's place targets and movable joints. `<id>.<target>` names one of that
 asset's place targets (e.g. `drawer_opening`, `shelf_lower`, `shelf_upper`). If the
 request needs an asset that is not listed, say so instead of inventing an id.
 
+To work in a recorded room, write `scene: <name>` with a layout from `scenes/` (e.g.
+`scene: office48`) instead of the `scene:` block, and refer to that layout's object ids in the task.
+
 ## Relations
 
 | Field | Meaning |

@@ -52,7 +52,7 @@ def _cabinet(tmp_path):
 
 
 def test_drawer_cabinet_compiles_to_loadable_asset(tmp_path):
-    compile_item(_cabinet(tmp_path), tmp_path / "assets" / "generated" / "cab")
+    compile_item(_cabinet(tmp_path), tmp_path / "assets" / "cab")
     asset = AssetLibrary(tmp_path / "assets").get("cab")
 
     assert asset.is_fixture and [j.name for j in asset.movable_joints] == ["drawer_slide"]
@@ -95,14 +95,14 @@ def test_review_verdict_gates_library_admission(tmp_path):
     assert r["joints"][0]["upper"] == 0.2 and r["place_targets"][0]["joint"] == "drawer_slide"
 
     claims = [{"claim": "drawer stays in the carcass", "verdict": "fail", "evidence": "probes/01.out"}]
-    assert admit(pending, {"decision": "reject", "claims": claims}, assets / "generated", by="agent:t") == pending
+    assert admit(pending, {"decision": "reject", "claims": claims}, assets, by="agent:t") == pending
     assert AssetLibrary(assets).get("cab") is None
 
     store.append_check(pending, "upright", "pass", {"method": "manual_visual_qa"}, by="human")
     assert not store.load_metadata(pending).upright_verified, "human_upright_is_not_enough"
 
     claims[0]["verdict"] = "pass"
-    dest = admit(pending, {"decision": "accept", "claims": claims}, assets / "generated", by="agent:t")
+    dest = admit(pending, {"decision": "accept", "claims": claims}, assets, by="agent:t")
     assert AssetLibrary(assets).get("cab").metadata.upright_verified and not pending.exists()
     checks = [json.loads(l) for l in (dest / "checks.jsonl").read_text(encoding="utf-8").splitlines()]
     assert [(c["check"], c["result"]) for c in checks] == [

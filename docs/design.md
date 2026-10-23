@@ -52,8 +52,10 @@ robotsmith/
 
 ### Asset and affordance
 
-An asset is a directory `assets/objects/<name>/` (`model.urdf`, `visual.*`, `collision.obj`, `provenance.json`,
-`asset.json`, `checks.jsonl`); articulated assets live in `assets/articraft/<name>/`. New assets come from the
+An asset is a directory `assets/<id>/` (`model.urdf`, `visual.*`, `collision.obj`, `provenance.json`,
+`asset.json`, `checks.jsonl`); `asset.json` names its `kind` and `category`, and the id carries no scene name, so one
+asset can appear in any scene. A recorded room is a layout `scenes/<name>.yaml` that lists asset ids and their
+poses; scenarios name it instead of copying it. New assets come from the
 producers in `robotsmith/assets/producers/`: an image-to-3D backend (TRELLIS.2 or Hunyuan3D) followed by
 `mesh_to_urdf`. The backends import their model repositories lazily and run in their own image, not in the Genesis
 one.

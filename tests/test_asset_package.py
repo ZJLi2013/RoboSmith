@@ -6,7 +6,7 @@ from robotsmith.assets import package, store
 
 
 def _asset(assets, license):
-    d = assets / "objects" / "cube"
+    d = assets / "cube"
     d.mkdir(parents=True)
     (d / "model.urdf").write_text('<robot name="cube"><link name="base"/></robot>\n', encoding="utf-8")
     (d / "body.obj").write_bytes(b"v 0 0 0\n")
@@ -57,3 +57,8 @@ def test_every_library_asset_may_be_redistributed():
         assert package.redistributable(source.get("license")), d.name
         if source["license"].startswith("CC-BY"):
             assert source.get("attribution"), d.name
+
+
+def test_every_library_asset_has_a_category():
+    for d in package.asset_dirs(package.DEFAULT_ROOT):
+        assert store.read_asset(d).get("category"), d.name

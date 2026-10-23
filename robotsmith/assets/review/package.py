@@ -3,7 +3,7 @@
 A generated asset is compiled into ``assets/pending/<id>/``. ``build_package`` lays out what
 a reviewer reads (request, renders, compiled asset, readings, simulator helper); the reviewer
 writes ``review.json``; ``admit`` records the verdict as an ``llm_review`` check and, on
-accept, moves the asset into ``assets/generated/`` where ``AssetLibrary`` finds it.
+accept, moves the asset into ``assets/<id>/`` where ``AssetLibrary`` finds it.
 """
 
 from __future__ import annotations
@@ -94,17 +94,17 @@ def review(pkg: Path, reviewer: list[str], sim_runner: Path) -> dict:
     return json.loads(out.read_text(encoding="utf-8"))
 
 
-def admit(asset_dir: Path, review: dict, generated_root: Path, by: str) -> Path:
-    """Record ``review`` on the pending asset; on accept move it under ``generated_root``."""
+def admit(asset_dir: Path, review: dict, library_root: Path, by: str) -> Path:
+    """Record ``review`` on the pending asset; on accept move it under ``library_root``."""
     accepted = review["decision"] == "accept"
     store.append_check(asset_dir, "llm_review", "pass" if accepted else "fail",
                        {"claims": review["claims"], "feedback": review.get("feedback", "")}, by=by)
     if not accepted:
         return asset_dir
-    dest = generated_root / asset_dir.name
+    dest = library_root / asset_dir.name
     if dest.exists():
         shutil.rmtree(dest)
-    generated_root.mkdir(parents=True, exist_ok=True)
+    library_root.mkdir(parents=True, exist_ok=True)
     return Path(shutil.move(str(asset_dir), dest))
 
 
@@ -119,13 +119,13 @@ def main() -> None:
     a = sub.add_parser("admit")
     a.add_argument("asset_dir", type=Path)
     a.add_argument("--review", type=Path, required=True)
-    a.add_argument("--generated", type=Path, required=True)
+    a.add_argument("--library", type=Path, required=True, help="asset library root, e.g. assets")
     a.add_argument("--by", required=True)
     args = ap.parse_args()
     if args.cmd == "package":
         print(build_package(args.asset_dir, args.request.read_text(encoding="utf-8"), args.renders, args.out))
     else:
-        print(admit(args.asset_dir, json.loads(args.review.read_text(encoding="utf-8")), args.generated, args.by))
+        print(admit(args.asset_dir, json.loads(args.review.read_text(encoding="utf-8")), args.library, args.by))
 
 
 if __name__ == "__main__":

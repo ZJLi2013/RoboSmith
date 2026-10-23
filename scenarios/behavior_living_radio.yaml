@@ -4,7 +4,7 @@ scene:
   support: table_simple
   objects:
   - id: radio
-    asset: behavior_living_radio
+    asset: radio_01
     'on': support
     anchor_xy: [0.5315, 0.0]
     yaw_deg: 90.0

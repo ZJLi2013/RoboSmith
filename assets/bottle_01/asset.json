@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "bottle_01",
+  "revision": 1,
+  "kind": "rigid",
+  "category": "bottle",
+  "source": {
+    "type": "aha3d",
+    "license": "Apache-2.0",
+    "attribution": "AHa-3D scene reconstruction, https://github.com/KevinXu02/aha-3d",
+    "rebuildable": false,
+    "files": [
+      "provenance.json"
+    ]
+  },
+  "build": {
+    "files": [
+      "body.mtl",
+      "body.obj",
+      "model.urdf"
+    ],
+    "hash": "6a8a5a3e9fd52f0989bdc9af140fb6f97b1588a56863ae17d551961c7afdaa84"
+  },
+  "annotations": {
+    "description": {
+      "value": "decor/bottle_assembly from an AHa-3D scene (prop)",
+      "by": "aha3d"
+    }
+  }
+}

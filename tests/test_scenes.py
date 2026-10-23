@@ -20,16 +20,14 @@ tabletop_simple = SceneConfig(
     workspace_xy=[[0.35, -0.20], [0.65, 0.20]],
 )
 
-REPO_OBJECTS = Path(__file__).resolve().parents[1] / "assets" / "objects"
+REPO_ASSETS = Path(__file__).resolve().parents[1] / "assets"
 
 
 @pytest.fixture
 def lib(tmp_path: Path) -> AssetLibrary:
     """Writable library seeded with the committed support assets."""
-    objects = tmp_path / "assets" / "objects"
-    objects.mkdir(parents=True)
     for name in ("die_01", "table_simple", "plane"):
-        shutil.copytree(REPO_OBJECTS / name, objects / name)
+        shutil.copytree(REPO_ASSETS / name, tmp_path / "assets" / name)
     return AssetLibrary(tmp_path / "assets")
 
 

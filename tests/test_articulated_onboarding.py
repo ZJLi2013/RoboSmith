@@ -13,7 +13,7 @@ from robotsmith.assets.library import AssetLibrary
 from robotsmith.assets.schema import parse_urdf_joints
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DRAWER_URDF = REPO_ROOT / "assets" / "articraft" / "drawer_cabinet" / "model.urdf"
+DRAWER_URDF = REPO_ROOT / "assets" / "drawer_cabinet" / "model.urdf"
 
 _RIGID_URDF = """<robot name="rigid_box">
   <link name="box">

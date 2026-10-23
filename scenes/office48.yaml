@@ -1,0 +1,28 @@
+scene: office48
+support: table_simple
+objects:
+- id: bottle_assembly
+  asset: bottle_01
+  'on': support
+  anchor_xy: [0.5, 0.09]
+  yaw_deg: 0.0
+- id: phone
+  asset: phone_01
+  'on': support
+  anchor_xy: [0.76, 0.46]
+  yaw_deg: 0.0
+- id: cabinet_assembly
+  asset: cabinet_01
+  'on': floor
+  anchor_xy: [-0.163, 1.02]
+  yaw_deg: 0.0
+- id: guest_chair_0
+  asset: chair_01
+  'on': floor
+  anchor_xy: [1.3395, 0.34]
+  yaw_deg: 0.0
+- id: guest_chair_1
+  asset: chair_02
+  'on': floor
+  anchor_xy: [1.4145, -0.56]
+  yaw_deg: 0.0

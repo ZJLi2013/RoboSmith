@@ -1,12 +1,8 @@
 """AssetLibrary: central catalog for sim-ready assets.
 
-Assets live under these directories:
-  - ``root/objects/``   — curated / built-in assets (always scanned)
-  - ``root/generated/`` — pipeline-generated assets (also scanned)
-  - ``root/articraft/`` — articulated assets (URDF + joints) from Articraft
-
-Each asset directory holds ``model.urdf``, its meshes, ``asset.json`` and
-``checks.jsonl`` (see ``robotsmith.assets.store``).
+Each asset is a directory ``root/<id>/`` holding ``model.urdf``, its meshes,
+``asset.json`` and ``checks.jsonl`` (see ``robotsmith.assets.store``). Assets
+awaiting review sit in ``root/pending/<id>/`` and are not loaded.
 """
 
 from __future__ import annotations
@@ -17,9 +13,6 @@ from typing import Optional
 from robotsmith.assets import store
 from robotsmith.assets.schema import Asset, parse_urdf_joints
 
-_SCAN_DIRS = ("objects", "generated", "articraft")
-
-
 class AssetLibrary:
     """Manages a directory-based catalog of sim-ready assets."""
 
@@ -29,15 +22,12 @@ class AssetLibrary:
         self._load_catalog()
 
     def _load_catalog(self) -> None:
-        """Scan the asset directories for assets with model.urdf + asset.json."""
+        """Scan ``root/<id>/`` for assets with model.urdf + asset.json."""
         buckets = store.load_buckets(self.root)
-        for subdir_name in _SCAN_DIRS:
-            scan_dir = self.root / subdir_name
-            if not scan_dir.exists():
-                continue
-            for asset_dir in sorted(scan_dir.iterdir()):
-                if not asset_dir.is_dir():
-                    continue
+        if not self.root.exists():
+            return
+        for asset_dir in sorted(self.root.iterdir()):
+            if asset_dir.is_dir():
                 self._load_asset_dir(asset_dir, buckets)
 
     def _load_asset_dir(self, asset_dir: Path, buckets: dict) -> Optional[Asset]:

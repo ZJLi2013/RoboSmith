@@ -7,8 +7,8 @@ from robotsmith.grasp.policy_onboarding import (
 )
 
 
-def _write_asset(tmp_path, subdir: str, name: str):
-    asset_dir = tmp_path / "assets" / subdir / name
+def _write_asset(tmp_path, name: str):
+    asset_dir = tmp_path / "assets" / name
     asset_dir.mkdir(parents=True)
     (asset_dir / "model.urdf").write_text(
         "<robot name='test'><link name='l'><visual><geometry><box size='0.05 0.05 0.05'/>"
@@ -75,7 +75,7 @@ def test_eligible_probe_buckets_empty_without_p0_hard_ok_counts():
 
 
 def test_save_policy_bucket_writes_sidecar_not_asset_json(tmp_path):
-    asset_dir = _write_asset(tmp_path, "generated", "battery_1")
+    asset_dir = _write_asset(tmp_path, "battery_1")
     before = (asset_dir / "asset.json").read_text(encoding="utf-8")
 
     save_policy_bucket("battery_1", tmp_path / "assets", ["side_axis_horizontal"])

@@ -49,8 +49,8 @@ scenario, seed count, success rate, and image tag in the pull request.
 ## Assets
 
 Every asset directory needs a `provenance.json` that names its source and license. Only add assets whose license
-allows redistribution. Do not commit GraspGen code or checkpoints (NVIDIA research license), generated assets
-under `assets/generated/`, or rollout output under `output/`.
+allows redistribution. Do not commit GraspGen code or checkpoints (NVIDIA research license), asset build files
+(they come from the package; see `robotsmith/assets/package.py`), or rollout output under `output/`.
 
 ## What never goes into the repository
 
