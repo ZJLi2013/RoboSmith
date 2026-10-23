@@ -39,7 +39,9 @@ def parse_args() -> argparse.Namespace:
         default=30,
         help="Physics settle steps after each reset before planning.",
     )
-    ap.add_argument("--grasp-planner", choices=["auto", "learned"], default="auto")
+    ap.add_argument("--grasp-planner", choices=["auto", "learned", "geometric"], default="auto")
+    ap.add_argument("--grasp-selection", choices=["default", "trial", "trial_all"], default="default",
+                    help="trial: try candidates in simulation and keep the first that lifts; trial_all: try every one.")
     ap.add_argument(
         "--grasp-policy-bucket-override",
         default=None,
@@ -64,6 +66,7 @@ def main() -> None:
             grasp_planner=args.grasp_planner,
             grasp_policy_bucket_override=args.grasp_policy_bucket_override,
             object_xy=tuple(args.object_xy) if args.object_xy else None,
+            grasp_selection=args.grasp_selection,
         )
     )
     print("======== VALIDATION SUMMARY ========")

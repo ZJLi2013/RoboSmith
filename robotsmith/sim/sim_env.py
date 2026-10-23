@@ -204,11 +204,50 @@ class SimEnv:
         logger.debug("[cam] wrist camera attached to franka hand link")
 
         planner: GraspPlanner
-        if grasp_planner not in {"auto", "learned"}:
+        if grasp_planner not in {"auto", "learned", "geometric"}:
             raise ValueError(
-                "grasp_planner must be one of: auto, learned"
+                "grasp_planner must be one of: auto, learned, geometric"
             )
+        if grasp_planner == "geometric":
+            from robotsmith.grasp.geometric import GeometricGraspPlanner
+            planner = GeometricGraspPlanner()
+        else:
+            planner = cls._learned_planner(asset_map, table_z, seed)
 
+        env = cls(
+            scene=handle.scene,
+            franka=franka,
+            scene_config=scene_config,
+            entity_map=entity_map,
+            placed_map=placed_map,
+            object_heights=object_heights,
+            asset_map=asset_map,
+            object_quats=object_quats,
+            cam_up=cam_up,
+            cam_wrist=cam_wrist,
+            end_effector=end_effector,
+            motors_dof=motors_dof,
+            arm_dof=arm_dof,
+            finger_dof=finger_dof,
+            planner=planner,
+            table_surface_z=table_z,
+        )
+
+        # Resolve articulated joint DOFs and initial joint state (passive joints).
+        env._init_articulation()
+
+        # Settle
+        franka.set_dofs_position(HOME_QPOS, motors_dof)
+        franka.control_dofs_position(HOME_QPOS, motors_dof)
+        env._apply_joint_init()
+        for _ in range(settle_steps):
+            handle.scene.step()
+
+        env.sync_object_states()
+        return env
+
+    @staticmethod
+    def _learned_planner(asset_map: dict, table_z: float, seed: int) -> GraspPlanner:
         # Only assets that actually resolve to a learned grasp need a mesh.
         # Articulated assets resolve to "none" (moved by drag_handle, mesh from
         # the URDF). This keeps the planner asset-aware instead of forcing a
@@ -245,38 +284,20 @@ class SimEnv:
                 "LearnedGraspPlanner could not be initialized: "
                 f"{type(exc).__name__}: {exc}"
             ) from exc
+        return planner
 
-        env = cls(
-            scene=handle.scene,
-            franka=franka,
-            scene_config=scene_config,
-            entity_map=entity_map,
-            placed_map=placed_map,
-            object_heights=object_heights,
-            asset_map=asset_map,
-            object_quats=object_quats,
-            cam_up=cam_up,
-            cam_wrist=cam_wrist,
-            end_effector=end_effector,
-            motors_dof=motors_dof,
-            arm_dof=arm_dof,
-            finger_dof=finger_dof,
-            planner=planner,
-            table_surface_z=table_z,
-        )
-
-        # Resolve articulated joint DOFs and initial joint state (passive joints).
-        env._init_articulation()
-
-        # Settle
-        franka.set_dofs_position(HOME_QPOS, motors_dof)
-        franka.control_dofs_position(HOME_QPOS, motors_dof)
-        env._apply_joint_init()
-        for _ in range(settle_steps):
-            handle.scene.step()
-
-        env.sync_object_states()
-        return env
+    def trial_trajectory(self, start: dict, trajectory: list, target: str, *, settle_steps: int = 30,
+                         lift_m: float = 0.02) -> dict:
+        """Reset to ``start`` (as ``reset`` takes it), replay ``trajectory`` without rendering, and
+        report whether ``target`` ended at least ``lift_m`` above where it settled."""
+        self.reset(start, settle_steps=settle_steps)
+        z0 = float(to_numpy(self.entity_map[target].get_pos()).reshape(-1)[2])
+        t0 = time.perf_counter()
+        for q in trajectory:
+            self.franka.control_dofs_position(q, self.motors_dof)
+            self.scene.step()
+        dz = float(to_numpy(self.entity_map[target].get_pos()).reshape(-1)[2]) - z0
+        return {"lifted": dz > lift_m, "lift_m": round(dz, 4), "seconds": round(time.perf_counter() - t0, 3)}
 
     # ---- Workspace ----
 

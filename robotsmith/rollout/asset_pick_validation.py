@@ -63,6 +63,7 @@ class AssetPickValidationConfig:
     grasp_planner: str = "auto"
     grasp_policy_bucket_override: str | None = None
     object_xy: tuple[float, float] | None = None
+    grasp_selection: str = "default"
 
 
 @dataclass
@@ -138,6 +139,7 @@ def _prepare_asset_pick_episode(
     motion_params,
     settle_steps: int,
     object_xy: tuple[float, float] | None = None,
+    grasp_selection: str = "default",
 ) -> AssetPickEpisodePlan:
     pick_names, place_names = derive_skill_targets(task_spec)
     positions = build_episode_positions(
@@ -172,6 +174,10 @@ def _prepare_asset_pick_episode(
         "table_surface_z": env.table_surface_z,
         "skill_traces": [],
     }
+    if grasp_selection in ("trial", "trial_all"):
+        scene_state["grasp_trial"] = lambda traj, target: env.trial_trajectory(
+            obj_xy_map, traj, target, settle_steps=settle_steps)
+        scene_state["grasp_trial_all"] = grasp_selection == "trial_all"
     trajectory = run_skills(
         task_spec.skills,
         env.planner,
@@ -180,6 +186,8 @@ def _prepare_asset_pick_episode(
         scene_state,
         motion_params,
     )
+    if "grasp_trial" in scene_state:
+        env.reset(obj_xy_map, settle_steps=settle_steps)
     return AssetPickEpisodePlan(
         initial_positions=initial_positions,
         scene_state=scene_state,
@@ -271,6 +279,7 @@ def run_asset_pick(config: AssetPickValidationConfig, asset_name: str) -> dict:
             motion_params=motion_params,
             settle_steps=config.settle_steps,
             object_xy=config.object_xy,
+            grasp_selection=config.grasp_selection,
         )
         pose_label = _object_pose_label(env, "object")
 
@@ -317,6 +326,9 @@ def run_asset_pick(config: AssetPickValidationConfig, asset_name: str) -> dict:
             "p0_bucket_hard_ok_counts": pick_trace.get("p0_bucket_hard_ok_counts"),
             "score_exec": pick_trace.get("score_exec"),
             "no_candidates": bool(pick_trace.get("no_candidates", False)),
+            "no_trial_success": pick_trace.get("no_trial_success"),
+            "trials": pick_trace.get("trials"),
+            "trial_seconds": pick_trace.get("trial_seconds"),
             "filter_counts": pick_trace.get("filter_counts"),
             "p0_candidate_count": pick_trace.get("p0_candidate_count"),
             "p0_support_reject_count": pick_trace.get("p0_support_reject_count"),

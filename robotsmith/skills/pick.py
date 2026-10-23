@@ -87,30 +87,36 @@ def _pick_trace_entry(skill: Skill, category: str, plan) -> dict:
     }
 
 
-def _select_pick_plan(ctx: SkillContext) -> GraspPlan | None:
-    """Resolve grasp candidates for the target and pick the most executable one."""
+def _candidates(ctx: SkillContext) -> tuple[list[GraspPlan], dict]:
+    """The planner's grasp candidates for the target, and how many each of its filters removed."""
     skill = ctx.skill
     scene_state = ctx.scene_state
-    assets = scene_state.get("assets", {})
-    quats = scene_state.get("object_quats", {})
-    asset = assets.get(skill.target)
     obj_h = (
         skill.params.get("object_height")
         or scene_state.get("object_heights", {}).get(skill.target)
     )
+    plans = ctx.planner.plan(
+        ctx.obj_pos,
+        object_quat=scene_state.get("object_quats", {}).get(skill.target),
+        category=ctx.category,
+        asset=scene_state.get("assets", {}).get(skill.target),
+        object_height=obj_h,
+    )
+    return plans, dict(getattr(ctx.planner, "last_filter_counts", {}) or {})
+
+
+def _select_pick_plan(ctx: SkillContext) -> GraspPlan | None:
+    """Resolve grasp candidates for the target and pick the most executable one."""
+    skill = ctx.skill
+    scene_state = ctx.scene_state
+    quats = scene_state.get("object_quats", {})
+    asset = scene_state.get("assets", {}).get(skill.target)
     bucket_priority = _policy_buckets(
         getattr(asset.metadata, "grasp_policy_bucket", None)
         if asset is not None
         else None
     )
-    plans = ctx.planner.plan(
-        ctx.obj_pos,
-        object_quat=quats.get(skill.target),
-        category=ctx.category,
-        asset=asset,
-        object_height=obj_h,
-    )
-    filter_counts = dict(getattr(ctx.planner, "last_filter_counts", {}) or {})
+    plans, filter_counts = _candidates(ctx)
     if not plans:
         ctx.trace({"skill": skill.name, "target": skill.target, "category": ctx.category,
                    "filter_counts": filter_counts, "no_candidates": True, "no_feasible_grasp": True})
@@ -233,18 +239,40 @@ def _capture_payload_aco(ctx: SkillContext, plan: GraspPlan) -> None:
     }
 
 
-@register("pick")
-def run_pick(ctx: SkillContext) -> list[np.ndarray]:
-    plan = _select_pick_plan(ctx)
-    if plan is None or (
-        plan.metadata.get("no_feasible_grasp")
-        and os.environ.get("GRASP_EVAL_SKIP_NO_FEASIBLE", "1") == "1"
-    ):
-        logger.debug("[skills] no feasible grasp candidate; skip pick execution")
-        return [
-            ctx.qpos.copy()
-            for _ in range(max(ctx.params.min_steps, ctx.params.finger_steps))
-        ]
+def _select_by_trial(ctx: SkillContext, trial) -> tuple[GraspPlan, list[np.ndarray]] | None:
+    """Try candidates in planner order from the same start state; keep the first that lifts the target.
+
+    ``trial(trajectory, target)`` replays the trajectory in simulation and returns
+    ``{"lifted", "lift_m", "seconds"}``. With ``scene_state["grasp_trial_all"]`` every candidate is
+    tried, for probes that need the executable fraction.
+    """
+    plans, filter_counts = _candidates(ctx)
+    try_all = bool(ctx.scene_state.get("grasp_trial_all"))
+    trials, chosen = [], None
+    for plan in plans:
+        try:
+            traj = _pick_motion(ctx, plan)
+            result = trial(traj, ctx.skill.target)
+        except RuntimeError as exc:
+            traj, result = None, {"lifted": False, "lift_m": None, "seconds": 0.0, "motion_error": str(exc)}
+        md = plan.metadata
+        trials.append({"candidate_index": md.get("candidate_index"), "kind": md.get("kind", md.get("policy_bucket")),
+                       "closing_width": md.get("closing_width"), **result})
+        if result["lifted"] and chosen is None:
+            chosen = (plan, traj)
+            if not try_all:
+                break
+    ctx.trace({
+        "skill": ctx.skill.name, "target": ctx.skill.target, "category": ctx.category,
+        "filter_counts": filter_counts, "no_candidates": not plans, "no_trial_success": chosen is None,
+        "selected_candidate_index": chosen[0].metadata.get("candidate_index") if chosen else None,
+        "trials": trials, "trial_seconds": round(sum(t["seconds"] for t in trials), 3),
+    })
+    return chosen
+
+
+def _pick_motion(ctx: SkillContext, plan: GraspPlan) -> list[np.ndarray]:
+    """Base-aim transit plus the executor's pick segment for ``plan``."""
     seed, transit = _pick_seed_transit(ctx, plan)
     # Collision-aware backend: build the obstacle world from every scene fixture so
     # the free pick segments (home→pre-grasp, lift/retreat) route through
@@ -262,6 +290,28 @@ def run_pick(ctx: SkillContext) -> list[np.ndarray]:
     seg = ctx.executor.pick(
         plan, ctx.motion_planner, seed, _pick_motion_params(ctx), world=world
     )
+    return transit + seg
+
+
+@register("pick")
+def run_pick(ctx: SkillContext) -> list[np.ndarray]:
+    trial = ctx.scene_state.get("grasp_trial")
+    if trial is not None:
+        chosen = _select_by_trial(ctx, trial)
+        plan, traj = chosen if chosen else (None, None)
+    else:
+        plan = _select_pick_plan(ctx)
+        if plan is not None and plan.metadata.get("no_feasible_grasp") and (
+            os.environ.get("GRASP_EVAL_SKIP_NO_FEASIBLE", "1") == "1"
+        ):
+            plan = None
+        traj = _pick_motion(ctx, plan) if plan is not None else None
+    if plan is None:
+        logger.debug("[skills] no executable grasp candidate; skip pick execution")
+        return [
+            ctx.qpos.copy()
+            for _ in range(max(ctx.params.min_steps, ctx.params.finger_steps))
+        ]
     ctx.held_category = ctx.category
     # Grasp-relative offset: EE-flange height above the picked object's *support
     # surface* (object bottom = center − half-height), NOT above the table. A
@@ -273,4 +323,4 @@ def run_pick(ctx: SkillContext) -> list[np.ndarray]:
     support_z = float(ctx.obj_pos[2]) - obj_h / 2.0
     ctx.held_place_z = max(float(plan.grasp_pos[2]) - support_z, 0.0)
     _capture_payload_aco(ctx, plan)
-    return transit + seg
+    return traj

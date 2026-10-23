@@ -54,7 +54,7 @@ def link_transforms(urdf_path: Path) -> dict[str, np.ndarray]:
 
 
 def _bounds(points: np.ndarray, t: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    world = (t @ np.c_[points, np.ones(len(points))].T).T[:, :3]
+    world = _apply(t, points)
     return world.min(axis=0), world.max(axis=0)
 
 
@@ -64,16 +64,16 @@ def box_bounds(box: UrdfCollisionBox, link_tf: np.ndarray) -> tuple[np.ndarray, 
     return _bounds(corners, link_tf @ _transform(box.origin_xyz, box.origin_rpy))
 
 
-def visual_bounds(urdf_path: Path) -> tuple[np.ndarray, np.ndarray]:
-    """Axis-aligned bounds of all visual geometry in the asset frame, in metres."""
+def visual_points(urdf_path: Path) -> np.ndarray:
+    """Box corners and mesh hull vertices of all visual geometry in the asset frame, in metres."""
     import trimesh
 
     tfs = link_transforms(urdf_path)
-    lows, highs = [], []
+    signs = np.array([[x, y, z] for x in (-1, 1) for y in (-1, 1) for z in (-1, 1)])
+    parts = []
     for box in parse_urdf_collision_boxes(urdf_path, element="visual"):
-        lo, hi = box_bounds(box, tfs[box.link])
-        lows.append(lo)
-        highs.append(hi)
+        t = tfs[box.link] @ _transform(box.origin_xyz, box.origin_rpy)
+        parts.append(_apply(t, signs * np.asarray(box.size) / 2.0))
     root = ET.parse(urdf_path).getroot()
     for link in root.findall("link"):
         for vis in link.findall("visual"):
@@ -82,12 +82,20 @@ def visual_bounds(urdf_path: Path) -> tuple[np.ndarray, np.ndarray]:
                 continue
             mesh = trimesh.load(str(urdf_path.parent / mesh_el.get("filename")), force="mesh")
             t = tfs[link.get("name", "")] @ _transform(*_origin_of(vis))
-            lo, hi = _bounds(np.asarray(mesh.bounds), t)
-            lows.append(lo)
-            highs.append(hi)
-    if not lows:
+            parts.append(_apply(t, np.asarray(mesh.convex_hull.vertices)))
+    if not parts:
         raise ValueError(f"{urdf_path} has no visual geometry")
-    return np.min(lows, axis=0), np.max(highs, axis=0)
+    return np.concatenate(parts)
+
+
+def _apply(t: np.ndarray, points: np.ndarray) -> np.ndarray:
+    return (t @ np.c_[points, np.ones(len(points))].T).T[:, :3]
+
+
+def visual_bounds(urdf_path: Path) -> tuple[np.ndarray, np.ndarray]:
+    """Axis-aligned bounds of all visual geometry in the asset frame, in metres."""
+    points = visual_points(urdf_path)
+    return points.min(axis=0), points.max(axis=0)
 
 
 def size_cm(urdf_path: Path) -> list[float]:
