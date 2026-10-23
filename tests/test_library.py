@@ -7,13 +7,13 @@ from robotsmith.assets.library import AssetLibrary
 from robotsmith.assets.schema import Asset, AssetMetadata
 
 REPO_ASSETS = Path(__file__).resolve().parents[1] / "assets"
-SUPPORT_ASSETS = ("die_01", "table_simple", "plane")
-BUILTIN_COUNT = len(SUPPORT_ASSETS)
+SEED_ASSETS = ("die_01", "apple_02")
+BUILTIN_COUNT = len(SEED_ASSETS)
 
 
 def _make_lib(tmp_path: Path) -> AssetLibrary:
-    """Writable library seeded with the committed support assets."""
-    for name in SUPPORT_ASSETS:
+    """Writable library seeded with committed assets."""
+    for name in SEED_ASSETS:
         shutil.copytree(REPO_ASSETS / name, tmp_path / "assets" / name)
     return AssetLibrary(tmp_path / "assets")
 

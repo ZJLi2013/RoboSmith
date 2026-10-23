@@ -17,8 +17,15 @@ All notable user-facing changes are documented here. This project follows Semant
 
 ### Changed
 
-- Assets live in `assets/<id>/` instead of `objects/`, `generated/` and `articraft/` (`assets/pending/` still holds
-  assets awaiting review), and `asset.json` names a `category`. Ids no longer carry a scene name: the `office48_*`
+- An asset is admitted when its current build has an `llm_review` pass and a redistributable `source.license`, and is
+  a draft otherwise (`store.draft_reasons`). Scenarios raise `AssetNotAdmitted` for a draft, `fetch` and `publish`
+  skip drafts and report how many, and `list_assets.py` shows each status. Review no longer moves directories:
+  producers write `assets/<id>/` directly and `assets/pending/` is gone. `drawer_cabinet` and `two_layer_supporter`
+  passed a GPT-6 Astra review with simulator probes; `plane`, `table_simple` and `drawer_cabinet_blender` stay drafts,
+  since nothing loads their geometry. The scenario table is always the solid block sized by `table_size`, built
+  without looking up `table_simple`. `publish` no longer raises `PublishRefused`.
+- Assets live in `assets/<id>/` instead of `objects/`, `generated/` and `articraft/`, and `asset.json` names a
+  `category`. Ids no longer carry a scene name: the `office48_*`
   assets are `bottle_01`, `phone_01`, `chair_01`, `chair_02` and `cabinet_01`, and `behavior_living_radio` is
   `radio_01`; build hashes and check records are unchanged. A scenario's `scene` may name a layout
   `scenes/<name>.yaml` shared by several scenarios: `office48_desk` and the new `office48_phone` use

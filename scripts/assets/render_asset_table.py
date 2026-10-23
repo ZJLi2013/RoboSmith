@@ -219,11 +219,8 @@ def main() -> None:
     )
     scene.add_entity(gs.morphs.Plane())
 
-    table = library.get("table_simple")
-    if table is None:
-        raise RuntimeError("table_simple asset is required for the overview render")
     scene.add_entity(
-        gs.morphs.URDF(file=str(table.urdf_path), pos=(0.0, 0.0, 0.0), fixed=True)
+        gs.morphs.Box(size=(1.2, 0.8, TABLE_SURFACE_Z), pos=(0.0, 0.0, TABLE_SURFACE_Z / 2.0), fixed=True)
     )
     franka = None
     if args.include_franka:

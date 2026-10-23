@@ -1,17 +1,21 @@
 """YAML scenarios load, and their success trees give the approved truth values
 (the task-semantics tables of the scenario contract)."""
 
+import shutil
 from pathlib import Path
 
 import jsonschema
 import numpy as np
 import pytest
 
-from robotsmith.scenario.load import SCHEMA, _read
+from robotsmith.assets import store
+from robotsmith.assets.library import AssetLibrary
+from robotsmith.scenario.load import SCHEMA, _read, load_scenario
 from robotsmith.scenario_runtime import materialize_candidate
 from robotsmith.tasks import evaluate_success
 
 SCENARIOS = Path(__file__).resolve().parents[1] / "scenarios"
+ASSETS = SCENARIOS.parent / "assets"
 TABLE_Z = 0.775
 DIE_HALF = 0.025
 
@@ -104,3 +108,14 @@ def test_on_key_is_not_a_boolean_and_schema_rejects_unknown_relations(tmp_path):
     assert data["scene"]["objects"][0]["on"] == "support"
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.validate(data, SCHEMA)
+
+
+def test_scenario_refuses_a_draft_asset(tmp_path):
+    shutil.copytree(ASSETS / "die_01", tmp_path / "assets" / "die_01")
+    (tmp_path / "assets" / "die_01" / "checks.jsonl").unlink()
+    path = tmp_path / "s.yaml"
+    path.write_text("scenario: s\nrobot: franka\nscene:\n  support: table_simple\n  objects:\n"
+                    "    - {id: die, asset: die_01, on: support, near: robot}\n"
+                    "task: {instruction: x, success: {lifted: {object: die, height: 0.1}}}\n")
+    with pytest.raises(store.AssetNotAdmitted, match="die_01: no llm_review on the current build"):
+        load_scenario(path, seed=0, library=AssetLibrary(tmp_path / "assets"))

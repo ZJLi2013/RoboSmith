@@ -1,8 +1,9 @@
 """Compile a Blender-built item (``item.json`` + one glb per part, see
 ``blender/CONTRACT.md``) into an asset directory: ``model.urdf`` with one named
-collision box per mesh object, one OBJ visual per part, and ``asset.json``.
+collision box per mesh object, one OBJ visual per part, and ``asset.json``. The asset is a
+draft until its review passes.
 
-    python -m robotsmith.assets.producers.blender_item <out/item> <assets/pending/id> \
+    python -m robotsmith.assets.producers.blender_item <out/item> <assets/id> \
         --category mug [--build build.py] [--by agent:<model>] [--description "..."]
 """
 

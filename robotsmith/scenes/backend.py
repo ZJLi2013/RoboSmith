@@ -75,7 +75,6 @@ class ResolvedScene:
 
     config: SceneConfig
     placed_objects: list[PlacedObject] = field(default_factory=list)
-    table_asset: Optional[Asset] = None
 
     def summary(self) -> str:
         lines = [f"Scene: {self.config.name} ({len(self.placed_objects)} objects)"]
@@ -300,9 +299,4 @@ class ProgrammaticSceneBackend:
                         max_retries,
                     )
 
-        table = library.get("table_simple")
-        return ResolvedScene(
-            config=config,
-            placed_objects=placed,
-            table_asset=table,
-        )
+        return ResolvedScene(config=config, placed_objects=placed)

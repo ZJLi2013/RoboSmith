@@ -89,16 +89,14 @@ def load_resolved_scene(
     table_center_x, table_center_y = table_center_xy(config.workspace_xy)
     table_top_z = config.table_height + config.table_size[2] / 2.0
 
-    table_entity = None
-    if resolved.table_asset:
-        table_entity = scene.add_entity(
-            gs.morphs.Box(
-                size=(config.table_size[0], config.table_size[1], table_top_z),
-                pos=(table_center_x, table_center_y, table_top_z / 2.0),
-                fixed=True,
-            ),
-            surface=gs.surfaces.Default(color=(0.86, 0.83, 0.76, 1.0)),
-        )
+    table_entity = scene.add_entity(
+        gs.morphs.Box(
+            size=(config.table_size[0], config.table_size[1], table_top_z),
+            pos=(table_center_x, table_center_y, table_top_z / 2.0),
+            fixed=True,
+        ),
+        surface=gs.surfaces.Default(color=(0.86, 0.83, 0.76, 1.0)),
+    )
 
     obj_entities = []
     obj_names = []
