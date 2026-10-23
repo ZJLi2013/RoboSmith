@@ -1,8 +1,8 @@
 """AssetLibrary: central catalog for sim-ready assets.
 
 Each asset is a directory ``root/<id>/`` holding ``model.urdf``, its meshes,
-``asset.json`` and ``checks.jsonl`` (see ``robotsmith.assets.store``). Assets
-awaiting review sit in ``root/pending/<id>/`` and are not loaded.
+``asset.json`` and ``checks.jsonl`` (see ``robotsmith.assets.store``). Drafts
+load too when their build files are present; scenarios refuse them.
 """
 
 from __future__ import annotations

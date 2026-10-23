@@ -7,7 +7,7 @@ at becomes its table, and the roots it can use become assets at their recorded p
         --base 0.62 -1.30 --scene office48 --scenario scenarios/office48_desk.yaml --task task.yaml
 
 ``<export_dir>`` is the output of ``aha3d/export_roots.py``. Kept roots are compiled into
-``assets/pending/<category>_<NN>/`` for review, the category being the item name without its
+``assets/<category>_<NN>/`` as drafts awaiting review, the category being the item name without its
 trailing index; their placements go to the layout ``scenes/<scene>.yaml`` beside the scenarios
 directory, and the scenario names that layout. ``mapping.json`` beside the export records every
 root's fate.
@@ -104,7 +104,7 @@ def import_snapshot(export_dir: Path, *, support: str, base_xy, scene_name: str,
     scene = json.loads((export_dir / "scene.json").read_text(encoding="utf-8"))
     mapping = plan(scene, support, base_xy, yaw_deg)
     roots = {r["instance_id"]: r for r in scene["roots"]}
-    taken = {p.name for p in [*assets.glob("*"), *assets.glob("pending/*")] if p.is_dir()}
+    taken = {p.name for p in assets.glob("*") if p.is_dir()}
     objects = []
     for iid, d in mapping["roots"].items():
         if d["decision"] not in ("support", "floor"):
@@ -112,7 +112,7 @@ def import_snapshot(export_dir: Path, *, support: str, base_xy, scene_name: str,
         r = roots[iid]
         category = re.sub(r"_\d+$", "", r["item"])
         d["asset"] = _new_id(category, taken)
-        compile_item(export_dir / r["item"], assets / "pending" / d["asset"], by="aha3d", source="aha3d",
+        compile_item(export_dir / r["item"], assets / d["asset"], by="aha3d", source="aha3d",
                      description=f"{iid} from an AHa-3D scene ({r['semantic_class']})",
                      provenance=provenance | {"instance_id": iid, "semantic_class": r["semantic_class"]},
                      license=license, attribution=attribution, category=category)

@@ -85,4 +85,4 @@ def test_import_writes_a_scene_layout_and_scene_free_asset_ids(tmp_path):
     assert layout["scene"] == "study"
     assert {o["id"]: o["asset"] for o in layout["objects"]} == {"cup": "cup_02", "stool": "stool_01"}
     assert yaml.safe_load((tmp_path / "scenarios" / "study_cup.yaml").read_text(encoding="utf-8"))["scene"] == "study"
-    assert store.read_asset(assets / "pending" / "cup_02")["category"] == "cup"
+    assert store.read_asset(assets / "cup_02")["category"] == "cup"

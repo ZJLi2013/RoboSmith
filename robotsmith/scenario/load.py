@@ -16,7 +16,7 @@ from pathlib import Path
 import jsonschema
 import yaml
 
-from robotsmith.assets import derive
+from robotsmith.assets import derive, store
 from robotsmith.assets.library import AssetLibrary
 from robotsmith.scenario import relations
 from robotsmith.scenario.intents import SkillIntentSequenceSpec, SkillIntentSpec
@@ -179,6 +179,11 @@ def load_scenario(
         if obj_id not in by_id or not field:
             raise relations.SolveError(f"variation '{key}' must be <object id>.<field>")
         by_id[obj_id][field] = rng.choice(choices)
+    for name in sorted({o["asset"] for o in objects}):
+        asset = library.get(name)
+        reasons = store.draft_reasons(asset.root_dir) if asset else []
+        if reasons:
+            raise store.AssetNotAdmitted(f"{name}: {'; '.join(reasons)}")
 
     solved = relations.solve(objects, library, rng)
     assets = {o["id"]: library.get(o["asset"]) for o in objects}

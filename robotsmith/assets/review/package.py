@@ -1,9 +1,9 @@
 """Reviewer packages and admission for generated assets.
 
-A generated asset is compiled into ``assets/pending/<id>/``. ``build_package`` lays out what
+A generated asset is compiled into ``assets/<id>/`` as a draft. ``build_package`` lays out what
 a reviewer reads (request, renders, compiled asset, readings, simulator helper); the reviewer
-writes ``review.json``; ``admit`` records the verdict as an ``llm_review`` check and, on
-accept, moves the asset into ``assets/<id>/`` where ``AssetLibrary`` finds it.
+writes ``review.json``; ``admit`` records the verdict as an ``llm_review`` check, and a pass on
+the current build admits the asset (``store.draft_reasons``).
 """
 
 from __future__ import annotations
@@ -94,18 +94,12 @@ def review(pkg: Path, reviewer: list[str], sim_runner: Path) -> dict:
     return json.loads(out.read_text(encoding="utf-8"))
 
 
-def admit(asset_dir: Path, review: dict, library_root: Path, by: str) -> Path:
-    """Record ``review`` on the pending asset; on accept move it under ``library_root``."""
+def admit(asset_dir: Path, review: dict, by: str) -> list[str]:
+    """Record ``review`` as the asset's ``llm_review``; return why it is still a draft (empty when admitted)."""
     accepted = review["decision"] == "accept"
     store.append_check(asset_dir, "llm_review", "pass" if accepted else "fail",
                        {"claims": review["claims"], "feedback": review.get("feedback", "")}, by=by)
-    if not accepted:
-        return asset_dir
-    dest = library_root / asset_dir.name
-    if dest.exists():
-        shutil.rmtree(dest)
-    library_root.mkdir(parents=True, exist_ok=True)
-    return Path(shutil.move(str(asset_dir), dest))
+    return store.draft_reasons(asset_dir)
 
 
 def main() -> None:
@@ -119,13 +113,13 @@ def main() -> None:
     a = sub.add_parser("admit")
     a.add_argument("asset_dir", type=Path)
     a.add_argument("--review", type=Path, required=True)
-    a.add_argument("--library", type=Path, required=True, help="asset library root, e.g. assets")
     a.add_argument("--by", required=True)
     args = ap.parse_args()
     if args.cmd == "package":
         print(build_package(args.asset_dir, args.request.read_text(encoding="utf-8"), args.renders, args.out))
     else:
-        print(admit(args.asset_dir, json.loads(args.review.read_text(encoding="utf-8")), args.library, args.by))
+        reasons = admit(args.asset_dir, json.loads(args.review.read_text(encoding="utf-8")), args.by)
+        print(f"{args.asset_dir.name}: {'draft (' + '; '.join(reasons) + ')' if reasons else 'admitted'}")
 
 
 if __name__ == "__main__":

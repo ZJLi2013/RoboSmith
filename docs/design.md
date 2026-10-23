@@ -71,17 +71,18 @@ What an asset can do follows from its annotations, not from its category:
 
 | Asset kind | Unlocked by | Actions | Success predicates |
 |---|---|---|---|
-| rigid | a graspable mesh with a passing `upright` check | `pick`, `place` | `inside` / `on` (`object_in_box`), `lifted`, `stacked`, `aligned` |
+| rigid | an admitted graspable mesh | `pick`, `place` | `inside` / `on` (`object_in_box`), `lifted`, `stacked`, `aligned` |
 | articulated | a movable URDF joint + `handles` | `open`, `close` | `joint_opened`, `joint_closed` |
 | supporter / fixture | `kind: fixture` or any movable joint | none (it is a place target or an obstacle) | — |
 
 - **Build files are the geometry.** The URDF and meshes are in metres with `+Z` up, so the asset frame is the
   upright object frame and the scene adds only a position and a yaw. Point clouds, grasp gates, and support
   clearances are all computed from the files as they are; there is no scale or upright annotation to apply.
-- **Gate.** An asset enters default experiments only with a passing `upright` record (the as-built orientation stands
-  upright) and a passing `mesh_consistency` record. The audit also writes a `gripper_fit` record (8 cm Franka
-  gripper), which is a check only. Fixtures are exempt: they load with `fixed=True`, are never grasped, and use their
-  bounding box for placement collision.
+- **Gate.** An asset is admitted when its current build has a passing `llm_review` record (an LLM reviewer's verdict
+  backed by simulator probes, `robotsmith/assets/review/`) and its `source.license` may be redistributed; otherwise it
+  is a draft. Scenarios refuse drafts (`AssetNotAdmitted`), the asset package carries admitted assets only, and
+  `scripts/assets/list_assets.py` shows each asset's status. The table under a scenario is a solid block sized by
+  the scenario, not an asset.
 
 Geometry is derived from the URDF and meshes at load (`robotsmith/assets/derive.py`), not stored: `size_cm` is the
 visual-geometry extent, the task joint is the movable joint, and a handle or place target only names a link or

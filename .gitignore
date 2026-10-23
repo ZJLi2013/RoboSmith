@@ -4,8 +4,6 @@ __pycache__
 exp.md
 output/
 workshop/
-assets/pending/
-
 # Asset build files come from the package: python -m robotsmith.assets.fetch
 assets/*/*
 !assets/*/asset.json

@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "id": "drawer_cabinet_b",
+  "revision": 1,
+  "kind": "articulated",
+  "category": "drawer_cabinet",
+  "source": {
+    "type": "blender",
+    "rebuildable": false,
+    "files": [
+      "model.py"
+    ]
+  },
+  "build": {
+    "files": [
+      "carcass.mtl",
+      "carcass.obj",
+      "carcass_material_0.png",
+      "drawer.mtl",
+      "drawer.obj",
+      "handle.mtl",
+      "handle.obj",
+      "model.urdf"
+    ],
+    "hash": "21a7fe7aaa33c710c0c5d030531ca814c16c45fca7a84c742ff22026f9e39010"
+  },
+  "annotations": {
+    "description": {
+      "value": "Single-drawer tabletop cabinet built in Blender by an LLM agent.",
+      "by": "agent:gpt-5.6-sol"
+    },
+    "handles": {
+      "value": [
+        {
+          "link": "handle",
+          "collision": "handle_neck"
+        }
+      ],
+      "by": "agent:gpt-5.6-sol"
+    },
+    "place_targets": {
+      "value": [
+        {
+          "name": "drawer_opening",
+          "surface": "tray_floor"
+        }
+      ],
+      "by": "agent:gpt-5.6-sol"
+    }
+  }
+}

@@ -3,6 +3,10 @@
 Every annotation is ``{value, by, note?}``. Check records bind to the asset
 ``revision`` and the hash of its build files; a record whose hash no longer
 matches the files on disk does not count.
+
+An asset is admitted when its current build has an ``llm_review`` pass and its
+license may be redistributed; otherwise it is a draft. Scenarios load, and the
+package carries, admitted assets only.
 """
 
 from __future__ import annotations
@@ -21,6 +25,11 @@ CHECKS_FILE = "checks.jsonl"
 BUCKETS_FILE = "grasp_policy_buckets.json"
 CHECK_VERSION = "1"
 SOURCE_FILES = frozenset({"provenance.json", "model.py", "generation.json", "reference.png"})
+REDISTRIBUTABLE = frozenset({"CC0-1.0", "CC-BY-4.0", "MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause"})
+
+
+class AssetNotAdmitted(ValueError):
+    pass
 
 
 def build_hash(asset_dir: Path, files: list[str]) -> str:
@@ -109,12 +118,12 @@ def append_check(
     return record
 
 
-def current_checks(asset_dir: Path, data: dict) -> dict[str, dict]:
-    """Latest record per check that is bound to the asset's current revision and build files."""
+def current_checks(asset_dir: Path, data: dict, digest: str | None = None) -> dict[str, dict]:
+    """Latest record per check bound to the asset's current revision and build files (``digest`` if given)."""
     path = asset_dir / CHECKS_FILE
     if not path.exists():
         return {}
-    current_hash = build_hash(asset_dir, data["build"]["files"])
+    current_hash = digest or build_hash(asset_dir, data["build"]["files"])
     latest: dict[str, dict] = {}
     for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
@@ -123,6 +132,27 @@ def current_checks(asset_dir: Path, data: dict) -> dict[str, dict]:
         if rec["asset_revision"] == data["revision"] and rec["build_hash"] == current_hash:
             latest[rec["check"]] = rec
     return latest
+
+
+def redistributable(license: str | None) -> bool:
+    return bool(license) and all(part.strip() in REDISTRIBUTABLE for part in license.split(" AND "))
+
+
+def draft_reasons(asset_dir: Path, data: dict | None = None) -> list[str]:
+    """Why the asset is a draft; empty when it is admitted. Reads the lock, so build files need not be present."""
+    data = data or read_asset(asset_dir)
+    reasons = []
+    license = data["source"].get("license")
+    if not license:
+        reasons.append("source.license missing")
+    elif not redistributable(license):
+        reasons.append(f"license {license} not redistributable")
+    review = current_checks(asset_dir, data, data["build"]["hash"]).get("llm_review")
+    if review is None:
+        reasons.append("no llm_review on the current build")
+    elif review["result"] != "pass":
+        reasons.append("llm_review failed")
+    return reasons
 
 
 def load_buckets(assets_root: Path) -> dict:

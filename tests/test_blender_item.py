@@ -87,23 +87,21 @@ def test_rigid_part_collides_as_its_mesh(tmp_path):
 
 
 def test_review_verdict_gates_library_admission(tmp_path):
-    assets = tmp_path / "assets"
-    pending = assets / "pending" / "cab"
-    compile_item(_cabinet(tmp_path), pending)
-    r = readings(pending)
+    asset_dir = tmp_path / "assets" / "cab"
+    compile_item(_cabinet(tmp_path), asset_dir)
+    r = readings(asset_dir)
     assert {b["name"] for b in r["collision_boxes"]} >= {"tray_floor", "handle_neck"}
     assert r["joints"][0]["upper"] == 0.2 and r["place_targets"][0]["joint"] == "drawer_slide"
 
     claims = [{"claim": "drawer stays in the carcass", "verdict": "fail", "evidence": "probes/01.out"}]
-    assert admit(pending, {"decision": "reject", "claims": claims}, assets, by="agent:t") == pending
-    assert AssetLibrary(assets).get("cab") is None
+    assert admit(asset_dir, {"decision": "reject", "claims": claims}, by="agent:t") == ["llm_review failed"]
 
-    store.append_check(pending, "upright", "pass", {"method": "manual_visual_qa"}, by="human")
-    assert not store.load_metadata(pending).upright_verified, "human_upright_is_not_enough"
+    store.append_check(asset_dir, "upright", "pass", {"method": "manual_visual_qa"}, by="human")
+    assert not store.load_metadata(asset_dir).upright_verified, "human_upright_is_not_enough"
 
     claims[0]["verdict"] = "pass"
-    dest = admit(pending, {"decision": "accept", "claims": claims}, assets, by="agent:t")
-    assert AssetLibrary(assets).get("cab").metadata.upright_verified and not pending.exists()
-    checks = [json.loads(l) for l in (dest / "checks.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert admit(asset_dir, {"decision": "accept", "claims": claims}, by="agent:t") == []
+    assert AssetLibrary(tmp_path / "assets").get("cab").metadata.upright_verified
+    checks = [json.loads(l) for l in (asset_dir / "checks.jsonl").read_text(encoding="utf-8").splitlines()]
     assert [(c["check"], c["result"]) for c in checks] == [
         ("llm_review", "fail"), ("upright", "pass"), ("llm_review", "pass")]

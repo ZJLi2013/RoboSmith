@@ -2,7 +2,8 @@
 
 A store is a local directory or ``hf://<owner>/<dataset>`` (a public Hugging Face
 dataset). Build files live at ``<id>/<build_hash>/<file>``, so paths never change
-and the ``asset.json`` files in git are the lock.
+and the ``asset.json`` files in git are the lock. Only admitted assets are
+published and fetched; drafts stay local.
 
 Usage:
   python -m robotsmith.assets.fetch
@@ -20,20 +21,15 @@ from robotsmith.assets import store
 
 DEFAULT_STORE = "hf://lidavidsh/robosmith-assets"
 DEFAULT_ROOT = Path(__file__).resolve().parents[2] / "assets"
-REDISTRIBUTABLE = frozenset({"CC0-1.0", "CC-BY-4.0", "MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause"})
-
-
-class PublishRefused(ValueError):
-    pass
 
 
 def asset_dirs(assets_root: Path) -> list[Path]:
-    """The assets a package carries: every asset directory the library scans."""
     return sorted(p.parent for p in assets_root.glob(f"*/{store.ASSET_FILE}"))
 
 
-def redistributable(license: str | None) -> bool:
-    return bool(license) and all(part.strip() in REDISTRIBUTABLE for part in license.split(" AND "))
+def admitted_dirs(assets_root: Path) -> list[Path]:
+    """The assets a package carries."""
+    return [d for d in asset_dirs(assets_root) if not store.draft_reasons(d)]
 
 
 def _hf_repo(spec: str) -> str | None:
@@ -51,9 +47,9 @@ def _download(spec: str, rel: str, dst: Path) -> None:
 
 
 def fetch(assets_root: Path = DEFAULT_ROOT, spec: str = DEFAULT_STORE) -> list[str]:
-    """Download the build files of every asset whose local copy is missing or stale; return those ids."""
+    """Download the build files of every admitted asset whose local copy is missing or stale; return those ids."""
     fetched = []
-    for d in asset_dirs(assets_root):
+    for d in admitted_dirs(assets_root):
         data = store.read_asset(d)
         files, digest = data["build"]["files"], data["build"]["hash"]
         if all((d / f).exists() for f in files) and store.build_hash(d, files) == digest:
@@ -78,11 +74,8 @@ def _card(assets: list[dict]) -> str:
 
 
 def publish(assets_root: Path = DEFAULT_ROOT, spec: str = DEFAULT_STORE) -> list[str]:
-    """Upload the build files the store lacks; refuse everything if any asset may not be redistributed."""
-    assets = [(d, store.read_asset(d)) for d in asset_dirs(assets_root)]
-    refused = [a["id"] for _, a in assets if not redistributable(a["source"].get("license"))]
-    if refused:
-        raise PublishRefused(f"license missing or not redistributable: {', '.join(refused)}")
+    """Upload the build files of admitted assets that the store lacks."""
+    assets = [(d, store.read_asset(d)) for d in admitted_dirs(assets_root)]
     stale = [a["id"] for d, a in assets if store.build_hash(d, a["build"]["files"]) != a["build"]["hash"]]
     if stale:
         raise ValueError(f"local build files do not match build hash: {', '.join(stale)}")
@@ -117,13 +110,14 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--store", default=DEFAULT_STORE)
     ap.add_argument("--assets", type=Path, default=DEFAULT_ROOT)
     a = ap.parse_args(argv)
-    n = len(asset_dirs(a.assets))
+    n = len(admitted_dirs(a.assets))
+    drafts = len(asset_dirs(a.assets)) - n
     if a.command == "fetch":
         got = fetch(a.assets, a.store)
-        print(f"fetched {len(got)} of {n} assets; {n}/{n} build hash match")
+        print(f"fetched {len(got)} of {n} assets; {n}/{n} build hash match; skipped {drafts} draft")
     else:
         new = publish(a.assets, a.store)
-        print(f"published {len(new)} new build files for {n} assets to {a.store}")
+        print(f"published {len(new)} new build files for {n} assets to {a.store}; skipped {drafts} draft")
 
 
 if __name__ == "__main__":

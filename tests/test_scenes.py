@@ -26,7 +26,7 @@ REPO_ASSETS = Path(__file__).resolve().parents[1] / "assets"
 @pytest.fixture
 def lib(tmp_path: Path) -> AssetLibrary:
     """Writable library seeded with the committed support assets."""
-    for name in ("die_01", "table_simple", "plane"):
+    for name in ("die_01",):
         shutil.copytree(REPO_ASSETS / name, tmp_path / "assets" / name)
     return AssetLibrary(tmp_path / "assets")
 
@@ -49,7 +49,6 @@ class TestCollisionAwarePlacement:
         scene = ProgrammaticSceneBackend(seed=42).resolve(tabletop_simple, lib)
         objs = scene.placed_objects
         assert len(objs) >= 3
-        assert scene.table_asset is not None
 
         (x_lo, y_lo), (x_hi, y_hi) = tabletop_simple.workspace_xy
         table_surface = tabletop_simple.table_height + tabletop_simple.table_size[2] / 2.0
