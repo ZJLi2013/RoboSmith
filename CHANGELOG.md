@@ -17,6 +17,13 @@ All notable user-facing changes are documented here. This project follows Semant
 
 ### Changed
 
+- Assets live in `assets/<id>/` instead of `objects/`, `generated/` and `articraft/` (`assets/pending/` still holds
+  assets awaiting review), and `asset.json` names a `category`. Ids no longer carry a scene name: the `office48_*`
+  assets are `bottle_01`, `phone_01`, `chair_01`, `chair_02` and `cabinet_01`, and `behavior_living_radio` is
+  `radio_01`; build hashes and check records are unchanged. A scenario's `scene` may name a layout
+  `scenes/<name>.yaml` shared by several scenarios: `office48_desk` and the new `office48_phone` use
+  `scenes/office48.yaml`. The AHa-3D importer takes `--scene` instead of `--prefix` and writes the layout,
+  `review.package admit` takes `--library` instead of `--generated`, and `blender_item` requires `--category`.
 - Assets store `asset.json` (kind, source and build files with a build hash, annotations with their writer) and an
   append-only `checks.jsonl` instead of `metadata.json`. Check records bind to the build hash and stop counting when
   the files change. The audit writes `mesh_consistency` and `gripper_fit` records; `render_asset_table.py` writes a

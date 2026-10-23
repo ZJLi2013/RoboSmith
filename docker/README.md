@@ -15,6 +15,6 @@ Headless rendering policy:
 - Use `Xvfb`/GLX for Genesis camera rendering; the entrypoint starts Xvfb.
 - Do not set `PYOPENGL_PLATFORM=egl`.
 - The gfx942 image keeps `HSA_OVERRIDE_GFX_VERSION=9.4.2` set; the gfx950 image unsets it.
-- Keep large asset meshes outside git; copy or mount them into `assets/objects/...` when running experiments.
+- Asset build files are not in git; run `python -m robotsmith.assets.fetch` before mounting the repository.
 
 For GraspGen on ROCm, install `spconv_rocm` from the ROCm branch and use the repo `torch_scatter` shim rather than PyG ROCm wheels.

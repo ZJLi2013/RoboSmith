@@ -26,7 +26,7 @@ from robotsmith.motion.rocrobo_world import (
 )
 
 _REPO = Path(__file__).resolve().parents[1]
-_DRAWER_URDF = _REPO / "assets" / "articraft" / "drawer_cabinet" / "model.urdf"
+_DRAWER_URDF = _REPO / "assets" / "drawer_cabinet" / "model.urdf"
 
 
 def _drawer_asset() -> Asset:

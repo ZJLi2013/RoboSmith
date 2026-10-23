@@ -2,8 +2,8 @@
 ``blender/CONTRACT.md``) into an asset directory: ``model.urdf`` with one named
 collision box per mesh object, one OBJ visual per part, and ``asset.json``.
 
-    python -m robotsmith.assets.producers.blender_item <out/item> <assets/generated/id> \
-        [--build build.py] [--by agent:<model>] [--description "..."]
+    python -m robotsmith.assets.producers.blender_item <out/item> <assets/pending/id> \
+        --category mug [--build build.py] [--by agent:<model>] [--description "..."]
 """
 
 from __future__ import annotations
@@ -85,7 +85,7 @@ def _link(robot: ET.Element, name: str, objects: dict[str, trimesh.Trimesh], fra
 def compile_item(item_dir: Path, asset_dir: Path, *, build: Path | None = None,
                  by: str = "agent:blender", description: str | None = None, source: str = "blender",
                  provenance: dict | None = None, license: str = "Apache-2.0",
-                 attribution: str | None = None) -> dict:
+                 attribution: str | None = None, category: str | None = None) -> dict:
     spec = json.loads((item_dir / "item.json").read_text(encoding="utf-8"))
     parts = {p["name"]: p for p in spec["parts"]}
     root_name = spec["parts"][0]["name"]
@@ -135,7 +135,8 @@ def compile_item(item_dir: Path, asset_dir: Path, *, build: Path | None = None,
     if spec.get("place_targets"):
         annotations["place_targets"] = store.annotation(
             [{"name": t["name"], "surface": t["surface"]} for t in spec["place_targets"]], by)
-    return store.new_asset(asset_dir, spec["kind"], source, annotations, license=license, attribution=attribution)
+    return store.new_asset(asset_dir, spec["kind"], source, annotations, license=license, attribution=attribution,
+                           category=category)
 
 
 def main() -> None:
@@ -145,8 +146,10 @@ def main() -> None:
     ap.add_argument("--build", type=Path)
     ap.add_argument("--by", default="agent:blender")
     ap.add_argument("--description")
+    ap.add_argument("--category", required=True, help="what the item is, e.g. mug or drawer_cabinet")
     a = ap.parse_args()
-    data = compile_item(a.item_dir, a.asset_dir, build=a.build, by=a.by, description=a.description)
+    data = compile_item(a.item_dir, a.asset_dir, build=a.build, by=a.by, description=a.description,
+                        category=a.category)
     print(f"wrote {a.asset_dir} ({data['kind']}, {len(data['build']['files'])} build files)")
 
 

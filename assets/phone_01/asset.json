@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "phone_01",
+  "revision": 1,
+  "kind": "rigid",
+  "category": "phone",
+  "source": {
+    "type": "aha3d",
+    "license": "Apache-2.0",
+    "attribution": "AHa-3D scene reconstruction, https://github.com/KevinXu02/aha-3d",
+    "rebuildable": false,
+    "files": [
+      "provenance.json"
+    ]
+  },
+  "build": {
+    "files": [
+      "body.mtl",
+      "body.obj",
+      "model.urdf"
+    ],
+    "hash": "e453bd3db473e46a848b1f359a90a6ab4c2ab3ce35fddb818d725a72d457d058"
+  },
+  "annotations": {
+    "description": {
+      "value": "decor/phone from an AHa-3D scene (prop)",
+      "by": "aha3d"
+    }
+  }
+}

@@ -7,10 +7,10 @@ workshop/
 assets/pending/
 
 # Asset build files come from the package: python -m robotsmith.assets.fetch
-assets/*/*/*
-!assets/*/*/asset.json
-!assets/*/*/checks.jsonl
-!assets/*/*/provenance.json
-!assets/*/*/model.py
-!assets/*/*/generation.json
-!assets/*/*/reference.png
+assets/*/*
+!assets/*/asset.json
+!assets/*/checks.jsonl
+!assets/*/provenance.json
+!assets/*/model.py
+!assets/*/generation.json
+!assets/*/reference.png

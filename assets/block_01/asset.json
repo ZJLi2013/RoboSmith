@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "block_01",
+  "revision": 1,
+  "kind": "rigid",
+  "category": "block",
+  "source": {
+    "type": "blender",
+    "license": "Apache-2.0",
+    "rebuildable": false,
+    "files": [
+      "model.py"
+    ]
+  },
+  "build": {
+    "files": [
+      "block.mtl",
+      "block.obj",
+      "model.urdf"
+    ],
+    "hash": "361f47af649317e3aa225179d42dd623cdba8b32970982697b3ed4900974e561"
+  },
+  "annotations": {
+    "description": {
+      "value": "Toy building block (Duplo-style 2 x 4 brick) built in Blender by an LLM agent.",
+      "by": "agent:gpt-5.6-sol"
+    }
+  }
+}

@@ -17,7 +17,6 @@ import urllib.request
 from pathlib import Path
 
 from robotsmith.assets import store
-from robotsmith.assets.library import _SCAN_DIRS
 
 DEFAULT_STORE = "hf://lidavidsh/robosmith-assets"
 DEFAULT_ROOT = Path(__file__).resolve().parents[2] / "assets"
@@ -30,7 +29,7 @@ class PublishRefused(ValueError):
 
 def asset_dirs(assets_root: Path) -> list[Path]:
     """The assets a package carries: every asset directory the library scans."""
-    return sorted(p.parent for sub in _SCAN_DIRS for p in (assets_root / sub).glob(f"*/{store.ASSET_FILE}"))
+    return sorted(p.parent for p in assets_root.glob(f"*/{store.ASSET_FILE}"))
 
 
 def redistributable(license: str | None) -> bool:

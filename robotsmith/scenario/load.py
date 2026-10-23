@@ -1,8 +1,10 @@
 """Load a YAML scenario: validate, apply variations, solve relations, lower to specs.
 
 A scenario file holds the scene (objects and their relations) and the task
-(instruction + success tree, hidden from the executor). The optional teacher
-plan for scripted rollouts lives next to it in ``teacher/<same name>.yaml``.
+(instruction + success tree, hidden from the executor). The scene is written
+inline or names a layout ``scenes/<name>.yaml`` beside the scenarios directory,
+so several tasks can share one layout. The optional teacher plan for scripted
+rollouts lives next to it in ``teacher/<same name>.yaml``.
 """
 
 from __future__ import annotations
@@ -74,6 +76,29 @@ def _leaf(name: str, props: dict, required: list[str]) -> dict:
     }
 
 
+_SCENE_PROPS = {
+    "support": {"enum": ["table_simple"]},
+    "objects": {"type": "array", "minItems": 1, "items": {
+        "type": "object", "additionalProperties": False, "required": ["id", "asset", "on"],
+        "properties": {
+            "id": _ID,
+            "asset": {"type": "string"},
+            "on": _REF,
+            "anchor_xy": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
+            "near": {"enum": ["robot"]},
+            "clear_of": {"type": "array", "items": {"type": "string"}},
+            "facing": {"enum": ["robot"]},
+            "yaw_deg": {"type": "number"},
+            "joint_init": {"type": "object", "additionalProperties": {"type": "number"}},
+        },
+    }},
+}
+
+LAYOUT_SCHEMA = {
+    "type": "object", "additionalProperties": False, "required": ["scene", "support", "objects"],
+    "properties": {"scene": _ID, **_SCENE_PROPS},
+}
+
 SCHEMA = {
     "$defs": {
         "success": {"oneOf": [
@@ -101,26 +126,11 @@ SCHEMA = {
     "properties": {
         "scenario": _ID,
         "robot": {"enum": ["franka"]},
-        "scene": {
-            "type": "object", "additionalProperties": False, "required": ["support", "objects"],
-            "properties": {
-                "support": {"enum": ["table_simple"]},
-                "objects": {"type": "array", "minItems": 1, "items": {
-                    "type": "object", "additionalProperties": False, "required": ["id", "asset", "on"],
-                    "properties": {
-                        "id": _ID,
-                        "asset": {"type": "string"},
-                        "on": _REF,
-                        "anchor_xy": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
-                        "near": {"enum": ["robot"]},
-                        "clear_of": {"type": "array", "items": {"type": "string"}},
-                        "facing": {"enum": ["robot"]},
-                        "yaw_deg": {"type": "number"},
-                        "joint_init": {"type": "object", "additionalProperties": {"type": "number"}},
-                    },
-                }},
-            },
-        },
+        "scene": {"oneOf": [
+            _ID,
+            {"type": "object", "additionalProperties": False, "required": ["support", "objects"],
+             "properties": _SCENE_PROPS},
+        ]},
         "task": {
             "type": "object", "additionalProperties": False, "required": ["instruction", "success"],
             "properties": {"instruction": {"type": "string"}, "success": {"$ref": "#/$defs/success"}},
@@ -158,7 +168,11 @@ def load_scenario(
     library = library or AssetLibrary(DEFAULT_ASSETS)
     rng = random.Random(seed)
 
-    objects = [dict(o) for o in data["scene"]["objects"]]
+    scene_data = data["scene"]
+    if isinstance(scene_data, str):
+        scene_data = _read(path.parent.parent / "scenes" / f"{scene_data}.yaml")
+        jsonschema.validate(scene_data, LAYOUT_SCHEMA)
+    objects = [dict(o) for o in scene_data["objects"]]
     by_id = {o["id"]: o for o in objects}
     for key, choices in data.get("variations", {}).items():
         obj_id, _, field = key.partition(".")

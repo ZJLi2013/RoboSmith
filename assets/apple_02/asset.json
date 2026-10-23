@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "apple_02",
+  "revision": 1,
+  "kind": "rigid",
+  "category": "apple",
+  "source": {
+    "type": "blender",
+    "license": "Apache-2.0",
+    "rebuildable": false,
+    "files": [
+      "model.py"
+    ]
+  },
+  "build": {
+    "files": [
+      "apple.mtl",
+      "apple.obj",
+      "apple_material_0.png",
+      "model.urdf"
+    ],
+    "hash": "28c7102a4ad77de40d0159b750f2f26579bab0a0d86b3ff836fdf40dc2596427"
+  },
+  "annotations": {
+    "description": {
+      "value": "Toy apple built in Blender by an LLM agent.",
+      "by": "agent:gpt-5.6-sol"
+    }
+  }
+}

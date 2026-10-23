@@ -1,6 +1,12 @@
 """AHa-3D snapshot import: which roots become the table, table objects, floor fixtures or are dropped."""
 
-from robotsmith.assets.producers.aha3d_snapshot import plan
+import json
+
+import trimesh
+import yaml
+
+from robotsmith.assets import store
+from robotsmith.assets.producers.aha3d_snapshot import import_snapshot, plan
 
 
 def _root(iid, cls, lo, hi):
@@ -55,3 +61,28 @@ def test_plan_follows_the_robot_heading():
     turned = plan({"roots": [turn(r) for r in SCENE["roots"]]}, "furniture/desk", (0.0, 0.0), yaw_deg=90.0)
     assert turned["roots"] == plan(SCENE, "furniture/desk", (0.0, 0.0))["roots"]
     assert turned["yaw_deg"] == 90.0
+
+
+def test_import_writes_a_scene_layout_and_scene_free_asset_ids(tmp_path):
+    export = tmp_path / "export"
+    roots = [r for r in SCENE["roots"] if r["instance_id"] in ("furniture/desk", "decor/cup", "seating/stool")]
+    for r in roots[1:]:
+        (export / r["item"]).mkdir(parents=True)
+        trimesh.Scene({"body": trimesh.creation.box(extents=(0.05, 0.05, 0.05))}).export(
+            str(export / r["item"] / "body.glb"))
+        (export / r["item"] / "item.json").write_text(json.dumps(
+            {"name": r["item"], "kind": "rigid", "parts": [{"name": "body", "mesh": "body.glb", "mass_kg": 0.1}]}))
+    (export / "scene.json").write_text(json.dumps({"roots": roots}))
+    assets = tmp_path / "assets"
+    (assets / "cup_01").mkdir(parents=True)
+
+    import_snapshot(export, support="furniture/desk", base_xy=(0.0, 0.0), scene_name="study", assets=assets,
+                    scenario=tmp_path / "scenarios" / "study_cup.yaml",
+                    task={"instruction": "Pick up the cup.", "success": {"lifted": {"object": "cup", "height": 0.1}}},
+                    provenance={})
+
+    layout = yaml.safe_load((tmp_path / "scenes" / "study.yaml").read_text(encoding="utf-8"))
+    assert layout["scene"] == "study"
+    assert {o["id"]: o["asset"] for o in layout["objects"]} == {"cup": "cup_02", "stool": "stool_01"}
+    assert yaml.safe_load((tmp_path / "scenarios" / "study_cup.yaml").read_text(encoding="utf-8"))["scene"] == "study"
+    assert store.read_asset(assets / "pending" / "cup_02")["category"] == "cup"

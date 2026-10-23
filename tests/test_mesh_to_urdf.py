@@ -57,7 +57,7 @@ def test_generated_asset_is_loadable(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(produce, "get_backend", lambda name, **_: fake)
 
-    generate_asset("red mug", tmp_path / "assets" / "generated" / "red_mug", backend="fake")
+    generate_asset("red mug", tmp_path / "assets" / "red_mug", backend="fake")
 
     asset = AssetLibrary(tmp_path / "assets").get("red_mug")
     assert asset is not None

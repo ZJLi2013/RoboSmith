@@ -1,0 +1,7 @@
+scenario: office48_phone
+robot: franka
+scene: office48
+task:
+  instruction: Pick up the phone.
+  success:
+    lifted: {object: phone, height: 0.1}

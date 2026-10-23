@@ -137,6 +137,5 @@ Copy a file from [`scenarios/`](../scenarios/), change the scene, skill intents,
   collision checks. Treat it as a failed segment, not a success.
 - **`Genesis already initialized`.** One process can build only one scene; run each asset or scenario in its own
   process.
-- **Missing mesh files.** Some large meshes are not in git; copy them into `assets/objects/<name>/`
-  (`visual.*`, `collision.obj`, `material.mtl`).
+- **Missing mesh files.** Build files are not in git; run `python -m robotsmith.assets.fetch`.
 - **Changed rocRobo code has no effect.** The sidecar bind-mounts `/rocrobo`; restart the run so a new serve starts.

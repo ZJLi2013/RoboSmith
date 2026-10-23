@@ -20,7 +20,7 @@ from robotsmith.assets.producers.blender_item import compile_item
 
 HERE = Path(__file__).parent
 KIT = HERE.parents[1] / "producers" / "blender"
-LIBRARY = HERE.parents[3] / "assets" / "objects"
+LIBRARY = HERE.parents[3] / "assets"
 DRAWER_DESC = "Single-drawer tabletop cabinet built in Blender by an LLM agent."
 # Library glbs are stored +Z up, as the simulator reads them; Blender's glTF import assumes +Y up.
 Z_UP_TO_Y_UP = np.array([[1, 0, 0, 0], [0, 0, 1, 0], [0, -1, 0, 0], [0, 0, 0, 1]], dtype=float)
