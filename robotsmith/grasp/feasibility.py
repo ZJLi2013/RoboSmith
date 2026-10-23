@@ -96,9 +96,9 @@ def _support_band_metrics(plan: GraspPlan, support_z: float) -> dict:
     which does not exist.
     """
     band_m = float(os.environ.get("GRASP_EVAL_SUPPORT_BAND_M", "0.01"))
-    # ``finger_open`` is full jaw opening; each finger pad is half of that
-    # distance from the grasp center along the closing axis.
-    half_span = max(float(plan.finger_open) * 0.5, 0.02)
+    # ``finger_open`` is per finger (``SimEnv.solve_ik`` writes it to both finger
+    # joints), so each pad sits ``finger_open`` from the grasp center.
+    half_span = float(plan.finger_open)
     R = quat_wxyz_to_matrix(plan.grasp_quat).astype(np.float64)
     finger_axis = R[:, 0]
     center = np.asarray(plan.grasp_pos, dtype=np.float64)
