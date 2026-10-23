@@ -250,8 +250,11 @@ def _select_by_trial(ctx: SkillContext, trial) -> tuple[GraspPlan, list[np.ndarr
     try_all = bool(ctx.scene_state.get("grasp_trial_all"))
     trials, chosen = [], None
     for plan in plans:
-        traj = _pick_motion(ctx, plan)
-        result = trial(traj, ctx.skill.target)
+        try:
+            traj = _pick_motion(ctx, plan)
+            result = trial(traj, ctx.skill.target)
+        except RuntimeError as exc:
+            traj, result = None, {"lifted": False, "lift_m": None, "seconds": 0.0, "motion_error": str(exc)}
         md = plan.metadata
         trials.append({"candidate_index": md.get("candidate_index"), "kind": md.get("kind", md.get("policy_bucket")),
                        "closing_width": md.get("closing_width"), **result})

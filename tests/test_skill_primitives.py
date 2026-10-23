@@ -217,6 +217,15 @@ class TestRegistryDispatch:
         assert [t["lifted"] for t in trace["trials"]] == [False, True] and trace["trial_seconds"] == 1.0
         assert np.allclose(traj[-1], 1.0)
 
+    def test_trial_counts_a_candidate_whose_motion_fails_as_not_lifted(self, monkeypatch):
+        def broken(*a, **k):
+            raise RuntimeError("wp1 IK discontinuity")
+
+        monkeypatch.setattr(_FakeExecutor, "pick", broken)
+        _, trace, calls = self._trial_run([True, True, True])
+        assert calls == [] and trace["no_trial_success"]
+        assert [t["motion_error"] for t in trace["trials"]] == ["wp1 IK discontinuity"] * 3
+
     def test_trial_all_tries_every_candidate_and_no_success_holds(self):
         _, trace, calls = self._trial_run([False, True, True], try_all=True)
         assert len(calls) == 3 and trace["selected_candidate_index"] == 1
