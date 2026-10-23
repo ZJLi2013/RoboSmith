@@ -2,7 +2,7 @@
 
 import pytest
 
-from robotsmith.assets import package, store
+from robotsmith.assets import dedup, package, store
 
 
 def _asset(assets, license, name="cube", review="pass"):
@@ -13,6 +13,7 @@ def _asset(assets, license, name="cube", review="pass"):
     store.new_asset(d, "rigid", "blender", {}, license=license)
     if review:
         store.append_check(d, "llm_review", review, {"claims": []}, by="agent:t")
+    store.append_check(d, "dedup_check", "none", {"rule": dedup.RULE, "candidates": []}, by="check:dedup@1")
     return d
 
 
@@ -65,7 +66,7 @@ def test_admission_needs_a_review_pass_on_the_current_build(tmp_path):
 
     data = store.read_asset(d)
     store.write_asset(d, data | {"revision": 2})
-    assert store.draft_reasons(d) == ["no llm_review on the current build"]
+    assert store.draft_reasons(d) == ["no llm_review on the current build", "no dedup_check on the current build"]
 
 
 def test_drafts_are_neither_published_nor_fetched(tmp_path):

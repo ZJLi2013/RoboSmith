@@ -104,4 +104,4 @@ def test_review_verdict_gates_library_admission(tmp_path):
     assert AssetLibrary(tmp_path / "assets").get("cab").metadata.upright_verified
     checks = [json.loads(l) for l in (asset_dir / "checks.jsonl").read_text(encoding="utf-8").splitlines()]
     assert [(c["check"], c["result"]) for c in checks] == [
-        ("llm_review", "fail"), ("upright", "pass"), ("llm_review", "pass")]
+            ("llm_review", "fail"), ("dedup_check", "none"), ("upright", "pass"), ("llm_review", "pass")]

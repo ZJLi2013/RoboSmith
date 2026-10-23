@@ -4,8 +4,9 @@ Every annotation is ``{value, by, note?}``. Check records bind to the asset
 ``revision`` and the hash of its build files; a record whose hash no longer
 matches the files on disk does not count.
 
-An asset is admitted when its current build has an ``llm_review`` pass and its
-license may be redistributed; otherwise it is a draft. Scenarios load, and the
+An asset is admitted when its current build has an ``llm_review`` pass, its
+license may be redistributed, and it is not a duplicate of an admitted asset
+(``robotsmith.assets.dedup``); otherwise it is a draft. Scenarios load, and the
 package carries, admitted assets only.
 """
 
@@ -147,11 +148,40 @@ def draft_reasons(asset_dir: Path, data: dict | None = None) -> list[str]:
         reasons.append("source.license missing")
     elif not redistributable(license):
         reasons.append(f"license {license} not redistributable")
-    review = current_checks(asset_dir, data, data["build"]["hash"]).get("llm_review")
+    checks = current_checks(asset_dir, data, data["build"]["hash"])
+    review = checks.get("llm_review")
     if review is None:
         reasons.append("no llm_review on the current build")
     elif review["result"] != "pass":
         reasons.append("llm_review failed")
+    return reasons + duplicate_reasons(asset_dir, checks)
+
+
+def duplicate_reasons(asset_dir: Path, checks: dict[str, dict]) -> list[str]:
+    """Candidates count while they are unchanged since the check and still admitted; a rebuilt
+    candidate is the later asset, and its own check covers the pair."""
+    dedup = checks.get("dedup_check")
+    if dedup is None:
+        return ["no dedup_check on the current build"]
+    judged = {p["id"]: p for p in checks.get("dedup_review", {}).get("metrics", {}).get("pairs", [])}
+    reasons, unjudged = [], []
+    for c in dedup["metrics"]["candidates"]:
+        other = asset_dir.parent / c["id"]
+        if not (other / ASSET_FILE).exists():
+            continue
+        o = read_asset(other)
+        if (o["revision"], o["build"]["hash"]) != (c["revision"], c["build_hash"]) or draft_reasons(other, o):
+            continue
+        if c["same_build_hash"]:
+            reasons.append(f"same build hash as {c['id']}")
+            continue
+        p = judged.get(c["id"])
+        if p is None or (p["revision"], p["build_hash"], p["rule"]) != (c["revision"], c["build_hash"], dedup["metrics"]["rule"]):
+            unjudged.append(c["id"])
+        elif p["verdict"] == "duplicate":
+            reasons.append(f"duplicate of {c['id']} (dedup_review)")
+    if unjudged:
+        reasons.append(f"near-duplicate candidates without dedup_review: {', '.join(unjudged)}")
     return reasons
 
 
