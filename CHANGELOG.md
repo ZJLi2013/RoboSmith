@@ -85,6 +85,8 @@ All notable user-facing changes are documented here. This project follows Semant
   (`operator torchvision::nms does not exist`).
 - `docs/quick-start.md` clones rocRobo with its `pyroki` submodule and builds the `rocrobo/pyroki` sidecar image,
   which is not published.
+- The grasp support-band check spans each finger pad `finger_open` from the grasp centre. `finger_open` is per
+  finger, and the check used half of it, so grasps whose lower pad enters the support surface passed P0.
 
 ## [0.1.0] - 2026-10-20
 

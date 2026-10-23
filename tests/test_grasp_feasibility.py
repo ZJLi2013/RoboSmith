@@ -102,6 +102,16 @@ def test_support_band_rejects_bottom_crossing_grasp(monkeypatch):
     assert selected.metadata["feasibility_support_reject_count"] == 1
 
 
+def test_support_band_reaches_a_full_finger_opening_below_the_center(monkeypatch):
+    monkeypatch.setenv("GRASP_EVAL_SUPPORT_BAND_M", "0.01")
+    vertical_fingers = make_plan(0.035)
+    vertical_fingers.grasp_quat = np.array([np.sqrt(0.5), 0.0, -np.sqrt(0.5), 0.0])
+
+    evaluation = evaluate_grasp_candidates([vertical_fingers], solve_ik, np.zeros(9), support_z=0.0)
+
+    assert evaluation.n_support_ok == 0
+
+
 def test_bucket_policy_selection_is_explicit():
     top_down = make_plan(quality=0.4, **TOP_DOWN_HORIZONTAL)
     side = make_plan(quality=0.9, **SIDE_VERTICAL)
