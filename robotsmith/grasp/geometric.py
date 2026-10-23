@@ -26,19 +26,16 @@ UP = np.array([0.0, 0.0, 1.0])
 @dataclass(frozen=True)
 class GripperSpec:
     """Franka hand: each finger opens ``finger_open`` from the centre (``SimEnv.solve_ik`` sets both
-    finger joints to it); IK targets the ``hand`` link, ``tcp_offset`` behind the fingertip centre."""
+    finger joints to it); IK targets the ``hand`` link, ``tcp_offset`` behind the fingertip centre.
+    ``usable_width`` is the widest object the closed hand still lifts, measured in simulation."""
 
     finger_open: float = 0.04
     finger_closed: float = 0.01
     finger_length: float = 0.04
     tcp_offset: float = 0.1034
-    width_margin: float = 0.01
+    usable_width: float = 0.07
     approach_clearance: float = 0.12
     lift: float = 0.17
-
-    @property
-    def max_width(self) -> float:
-        return 2 * self.finger_open - self.width_margin
 
 
 def yaw_box(points: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, float, float]:
@@ -69,26 +66,29 @@ class GeometricGraspPlanner(GraspPlanner):
         return plans
 
     def candidates(self, world_points: np.ndarray, category: str = "") -> list[GraspPlan]:
+        """Every candidate in the base wrist orientation, then the same list turned 180° about the
+        approach axis: the hand is symmetric, but the two give IK different joint branches."""
         g = self.gripper
         centre, axes, extents, z_lo, z_hi = yaw_box(world_points)
         half = (z_hi - z_lo) / 2.0
-        closable = sorted((w, i) for i, w in enumerate(extents) if w <= g.max_width)
-        out = []
+        closable = sorted((w, i) for i, w in enumerate(extents) if w <= g.usable_width)
         depths = sorted({round(min(0.015, half), 4), round(min(half, g.finger_length), 4)})
-        for width, i in closable:
-            for d in depths:
-                out.append(self._plan("top_down", np.r_[centre, z_hi - d], DOWN, _canonical(np.r_[axes[i], 0.0]),
-                                      width, category))
-        for width, i in closable:
-            other = np.r_[axes[1 - i], 0.0]
-            for sign in (1.0, -1.0):
-                out.append(self._plan("side", np.r_[centre, z_lo + half], sign * other,
-                                      _canonical(np.r_[axes[i], 0.0]), width, category))
+        out = []
+        for orientation, turn in (("base", 1.0), ("flipped", -1.0)):
+            for width, i in closable:
+                finger = turn * _canonical(np.r_[axes[i], 0.0])
+                for d in depths:
+                    out.append(self._plan("top_down", orientation, np.r_[centre, z_hi - d], DOWN, finger, width, category))
+            for width, i in closable:
+                finger = turn * _canonical(np.r_[axes[i], 0.0])
+                for sign in (1.0, -1.0):
+                    out.append(self._plan("side", orientation, np.r_[centre, z_lo + half], sign * np.r_[axes[1 - i], 0.0],
+                                          finger, width, category))
         for k, p in enumerate(out):
             p.metadata["candidate_index"] = k
         return out
 
-    def _plan(self, kind, tip, approach, finger, width, category) -> GraspPlan:
+    def _plan(self, kind, orientation, tip, approach, finger, width, category) -> GraspPlan:
         g = self.gripper
         rot = np.stack([finger, np.cross(approach, finger), approach], axis=1)
         quat = rotmat_to_quat_wxyz(rot)
@@ -98,7 +98,7 @@ class GeometricGraspPlanner(GraspPlanner):
         return GraspPlan(
             grasp_pos=hand, grasp_quat=quat, pre_grasp_pos=pre, pre_grasp_quat=quat.copy(),
             retreat_pos=lifted, retreat_quat=quat.copy(), finger_open=g.finger_open, finger_closed=g.finger_closed,
-            metadata={"source": "geometric", "kind": kind, "category": category, "closing_width": float(width),
+            metadata={"source": "geometric", "kind": kind, "orientation": orientation, "category": category, "closing_width": float(width),
                       "tip_pos": tip.tolist(), "approach_dir": approach.tolist(), "finger_dir": finger.tolist()},
             waypoints=[
                 Waypoint(pos=pre, quat=quat.copy(), finger_width=g.finger_open),

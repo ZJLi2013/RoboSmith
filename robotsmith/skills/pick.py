@@ -257,7 +257,7 @@ def _select_by_trial(ctx: SkillContext, trial) -> tuple[GraspPlan, list[np.ndarr
             traj, result = None, {"lifted": False, "lift_m": None, "seconds": 0.0, "motion_error": str(exc)}
         md = plan.metadata
         trials.append({"candidate_index": md.get("candidate_index"), "kind": md.get("kind", md.get("policy_bucket")),
-                       "closing_width": md.get("closing_width"), **result})
+                       "orientation": md.get("orientation"), "closing_width": md.get("closing_width"), **result})
         if result["lifted"] and chosen is None:
             chosen = (plan, traj)
             if not try_all:
