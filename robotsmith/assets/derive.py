@@ -78,9 +78,23 @@ def box_bounds(box: UrdfCollisionBox, link_tf: np.ndarray) -> tuple[np.ndarray, 
     return _bounds(corners, link_tf @ _transform(box.origin_xyz, box.origin_rpy))
 
 
-def visual_points(urdf_path: Path, hull: bool = True) -> np.ndarray:
-    """Box corners and mesh hull vertices (all vertices with ``hull=False``) of all visual geometry in the asset
-    frame, in metres."""
+def visual_mesh(urdf_path: Path):
+    """All visual meshes of the asset, in the asset frame, as one ``trimesh.Trimesh``."""
+    import trimesh
+
+    tfs = link_transforms(urdf_path)
+    meshes = []
+    for link in ET.parse(urdf_path).getroot().findall("link"):
+        for vis in link.findall("visual"):
+            mesh_el = vis.find("geometry/mesh")
+            if mesh_el is not None:
+                mesh = trimesh.load(str(urdf_path.parent / mesh_el.get("filename")), force="mesh")
+                meshes.append(mesh.apply_transform(tfs[link.get("name", "")] @ _transform(*_origin_of(vis))))
+    return trimesh.util.concatenate(meshes)
+
+
+def visual_points(urdf_path: Path) -> np.ndarray:
+    """Box corners and mesh hull vertices of all visual geometry in the asset frame, in metres."""
     import trimesh
 
     tfs = link_transforms(urdf_path)
@@ -97,7 +111,7 @@ def visual_points(urdf_path: Path, hull: bool = True) -> np.ndarray:
                 continue
             mesh = trimesh.load(str(urdf_path.parent / mesh_el.get("filename")), force="mesh")
             t = tfs[link.get("name", "")] @ _transform(*_origin_of(vis))
-            parts.append(_apply(t, np.asarray((mesh.convex_hull if hull else mesh).vertices)))
+            parts.append(_apply(t, np.asarray(mesh.convex_hull.vertices)))
     if not parts:
         raise ValueError(f"{urdf_path} has no visual geometry")
     return np.concatenate(parts)

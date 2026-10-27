@@ -52,15 +52,15 @@ def _r(v) -> list[float]:
     return [round(float(x), 4) for x in v]
 
 
-def _sections(world: np.ndarray) -> list[dict]:
-    z_lo, z_hi = float(world[:, 2].min()), float(world[:, 2].max())
-    band = max(0.002, 0.02 * (z_hi - z_lo))
+def _sections(mesh) -> list[dict]:
+    """Horizontal cuts of the world-frame mesh at 10–90 % of its height."""
+    z_lo, z_hi = float(mesh.bounds[0][2]), float(mesh.bounds[1][2])
     out = []
     for f in (0.1, 0.3, 0.5, 0.7, 0.9):
         z = z_lo + f * (z_hi - z_lo)
-        s = world[np.abs(world[:, 2] - z) <= band]
-        if len(s):
-            lo, hi = s[:, :2].min(0), s[:, :2].max(0)
+        s = mesh.section(plane_origin=[0.0, 0.0, z], plane_normal=[0.0, 0.0, 1.0])
+        if s is not None:
+            lo, hi = s.vertices[:, :2].min(0), s.vertices[:, :2].max(0)
             out.append({"z_m": round(z, 4), "x_min_max_m": _r([lo[0], hi[0]]), "y_min_max_m": _r([lo[1], hi[1]]),
                         "center_xy_m": _r((lo + hi) / 2)})
     return out
