@@ -26,12 +26,15 @@ UP = np.array([0.0, 0.0, 1.0])
 @dataclass(frozen=True)
 class GripperSpec:
     """Franka hand: each finger opens ``finger_open`` from the centre (``SimEnv.solve_ik`` sets both
-    finger joints to it); IK targets the ``hand`` link, ``tcp_offset`` behind the fingertip centre."""
+    finger joints to it) along the hand's local Y; IK targets the ``hand`` link, ``tcp_offset`` behind
+    the fingertip centre. The finger pads reach ``pad_below_tcp`` below the TCP."""
 
     finger_open: float = 0.04
     finger_closed: float = 0.01
     finger_length: float = 0.04
     tcp_offset: float = 0.1034
+    pad_below_tcp: float = 0.008
+    support_clearance: float = 0.01
     width_margin: float = 0.01
     approach_clearance: float = 0.12
     lift: float = 0.17
@@ -76,10 +79,11 @@ class GeometricGraspPlanner(GraspPlanner):
         closable = sorted((w, i) for i, w in enumerate(extents) if w <= g.max_width)
         out = []
         depths = sorted({round(min(0.015, half), 4), round(min(half, g.finger_length), 4)})
+        floor = z_lo + g.pad_below_tcp + g.support_clearance
         for width, i in closable:
             for d in depths:
-                out.append(self._plan("top_down", np.r_[centre, z_hi - d], DOWN, _canonical(np.r_[axes[i], 0.0]),
-                                      width, category))
+                out.append(self._plan("top_down", np.r_[centre, max(z_hi - d, floor)], DOWN,
+                                      _canonical(np.r_[axes[i], 0.0]), width, category))
         for width, i in closable:
             other = np.r_[axes[1 - i], 0.0]
             for sign in (1.0, -1.0):
@@ -91,7 +95,7 @@ class GeometricGraspPlanner(GraspPlanner):
 
     def _plan(self, kind, tip, approach, finger, width, category) -> GraspPlan:
         g = self.gripper
-        rot = np.stack([finger, np.cross(approach, finger), approach], axis=1)
+        rot = np.stack([np.cross(finger, approach), finger, approach], axis=1)
         quat = rotmat_to_quat_wxyz(rot)
         hand = tip - approach * g.tcp_offset
         pre = hand - approach * g.approach_clearance

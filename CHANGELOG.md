@@ -87,6 +87,11 @@ All notable user-facing changes are documented here. This project follows Semant
   which is not published.
 - The grasp support-band check spans each finger pad `finger_open` from the grasp centre. `finger_open` is per
   finger, and the check used half of it, so grasps whose lower pad enters the support surface passed P0.
+- Geometric grasp candidates close along the Panda hand's local Y axis, the axis its finger joints move on. They
+  put the closing direction in X, so the fingers closed across the other side of the object.
+- Top-down geometric candidates keep the TCP at least `GripperSpec.pad_below_tcp + support_clearance` (8 + 10 mm)
+  above the object's bottom. The pads reach 8 mm below the TCP, and on low objects they dragged on the table while
+  closing.
 
 ## [0.1.0] - 2026-10-20
 
