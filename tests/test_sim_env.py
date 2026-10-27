@@ -90,6 +90,7 @@ def test_reset_raises_when_the_object_rolls_away():
     env.placed_map = {"object": SimpleNamespace(quaternion=[0.0, 0.707107, 0.707107, 0.0])}
     env.object_heights = {"object": 0.04}
     env.object_quats = {}
+    env.articulated_joint_dofs = {}
     env.table_surface_z = 0.775
     env.scene = _FakeScene()
 
