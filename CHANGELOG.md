@@ -20,6 +20,10 @@ All notable user-facing changes are documented here. This project follows Semant
 
 ### Changed
 
+- `SimEnv.reset` raises `SceneInvalid` when an object moves more than 5 cm, drops more than 5 cm or tips more than
+  30 deg from where it was placed during the settle steps. Single-asset validation then reports the asset as an error
+  without trying grasps, and scenario runs stop with the object and readings, instead of starting from a rolled or
+  fallen object.
 - Admission refuses duplicates (`robotsmith.assets.dedup`). Each build records once which admitted assets it may
   duplicate: the same build hash refuses it, and an asset of the same category, kind, joints and place targets with
   every edge within 20% needs a `dedup_review` verdict from a reviewer who saw both. GPT-6 Astra judged
