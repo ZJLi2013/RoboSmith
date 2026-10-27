@@ -94,5 +94,5 @@ def test_reset_raises_when_the_object_rolls_away():
     env.table_surface_z = 0.775
     env.scene = _FakeScene()
 
-    with pytest.raises(SceneInvalid, match="object: moved 0.6"):
+    with pytest.raises(SceneInvalid, match="object: moved 0.535 m"):
         env.reset({"object": (0.42, -0.27)}, settle_steps=0)
