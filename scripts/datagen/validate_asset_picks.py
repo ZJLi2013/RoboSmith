@@ -49,6 +49,9 @@ def parse_args() -> argparse.Namespace:
     )
     ap.add_argument("--object-xy", type=float, nargs=2, default=None, metavar=("X", "Y"),
                     help="Place the object here every episode instead of sampling the workspace.")
+    ap.add_argument("--diagnose-dir", type=Path, default=None,
+                    help="With --grasp-planner geometric: when every episode fails, write the repair agent's "
+                         "request (robotsmith.grasp.diagnostics) under DIR/<asset>/.")
     return ap.parse_args()
 
 
@@ -67,6 +70,7 @@ def main() -> None:
             grasp_policy_bucket_override=args.grasp_policy_bucket_override,
             object_xy=tuple(args.object_xy) if args.object_xy else None,
             grasp_selection=args.grasp_selection,
+            diagnose_dir=args.diagnose_dir,
         )
     )
     print("======== VALIDATION SUMMARY ========")

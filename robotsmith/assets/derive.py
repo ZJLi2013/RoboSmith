@@ -78,8 +78,9 @@ def box_bounds(box: UrdfCollisionBox, link_tf: np.ndarray) -> tuple[np.ndarray, 
     return _bounds(corners, link_tf @ _transform(box.origin_xyz, box.origin_rpy))
 
 
-def visual_points(urdf_path: Path) -> np.ndarray:
-    """Box corners and mesh hull vertices of all visual geometry in the asset frame, in metres."""
+def visual_points(urdf_path: Path, hull: bool = True) -> np.ndarray:
+    """Box corners and mesh hull vertices (all vertices with ``hull=False``) of all visual geometry in the asset
+    frame, in metres."""
     import trimesh
 
     tfs = link_transforms(urdf_path)
@@ -96,7 +97,7 @@ def visual_points(urdf_path: Path) -> np.ndarray:
                 continue
             mesh = trimesh.load(str(urdf_path.parent / mesh_el.get("filename")), force="mesh")
             t = tfs[link.get("name", "")] @ _transform(*_origin_of(vis))
-            parts.append(_apply(t, np.asarray(mesh.convex_hull.vertices)))
+            parts.append(_apply(t, np.asarray((mesh.convex_hull if hull else mesh).vertices)))
     if not parts:
         raise ValueError(f"{urdf_path} has no visual geometry")
     return np.concatenate(parts)
