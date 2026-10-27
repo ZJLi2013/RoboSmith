@@ -149,6 +149,20 @@ never add candidates back:
 The support surface is the target object's own base, not the table, so objects on shelves or inside drawers reject
 grasps that reach in from below. Grasp pose axes: local X opens the fingers, Y is palm height, Z is the approach.
 
+### Grasp: geometric candidates, chosen by trial (opt-in)
+
+`--grasp-planner geometric` builds candidates from the settled object's oriented box and `GripperSpec` only
+(`grasp/geometric.py`); `--grasp-selection trial` runs them in simulation and keeps the first one that lifts the
+object. Two Panda facts the candidates do not encode yet. Both were measured in simulation on four library assets;
+the fixes have not been checked on an asset they were not tuned on:
+
+- **The fingers close along the hand's local Y axis** (`panda_finger_joint*` `axis="0 1 0"`), but `_plan` puts the
+  closing direction in the X column of the hand rotation. The rotation should be `[finger × approach, finger, approach]`.
+- **The finger pads reach 8 mm below the TCP, and top-down depth ignores this.** On a 2.4 cm tall object the pads end
+  4 mm above the table. With about 3 mm of tracking sag they drag on the table while closing, so a narrow-side grasp
+  of `block_01` never touches the block. Flooring the top-down TCP height at object bottom + 8 mm + 10 mm makes that
+  grasp lift, with no regression in eight trials across the four assets.
+
 ### Motion: segment-level routing
 
 Every skill compiles into a sequence of waypoints executed by `motion/chain.py::execute_motion_chain`. Each segment
