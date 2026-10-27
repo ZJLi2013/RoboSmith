@@ -153,18 +153,17 @@ grasps that reach in from below. Grasp pose axes: local X opens the fingers, Y i
 
 `--grasp-planner geometric` builds candidates from the settled object's oriented box and `GripperSpec` only
 (`grasp/geometric.py`); `--grasp-selection trial` runs them in simulation and keeps the first one that lifts the
-object. Three Panda facts the candidates and the default `GripperSpec` do not encode yet. All were measured in
-simulation; the fixes have not been checked on an asset they were not tuned on:
+object. Two Panda facts shape the candidates:
 
-- **The fingers close along the hand's local Y axis** (`panda_finger_joint*` `axis="0 1 0"`), but `_plan` puts the
-  closing direction in the X column of the hand rotation. The rotation should be `[finger × approach, finger, approach]`.
-- **The finger pads reach 8 mm below the TCP, and top-down depth ignores this.** On a 2.4 cm tall object the pads end
-  4 mm above the table. With about 3 mm of tracking sag they drag on the table while closing, so a narrow-side grasp
-  of `block_01` never touches the block. Flooring the top-down TCP height at object bottom + 8 mm + 10 mm makes that
-  grasp lift, with no regression in eight trials across four library assets.
-- **A closing target of 0.01 m per finger does not hold a 0.22 kg object.** The fingers are position-controlled. On a
-  generated 14 × 4 × 5 cm stapler both pads touch it and it does not lift; it lifts after scaling its mass to 0.03 kg,
-  or at its own mass with `finger_closed=0.0`. Checked on that one asset only.
+- **The fingers close along the hand's local Y axis** (`panda_finger_joint*` `axis="0 1 0"`), so the hand rotation
+  is `[finger × approach, finger, approach]`.
+- **The finger pads reach 8 mm below the TCP** (`GripperSpec.pad_below_tcp`), so top-down TCP height is floored at
+  object bottom + `pad_below_tcp` + `support_clearance` (10 mm). Without the floor, the pads of a 2.4 cm tall object
+  end 4 mm above the table and, with about 3 mm of tracking sag, drag on it while closing.
+
+Holding is still open. The fingers are position-controlled, and a closing target of 0.01 m per finger does not hold
+a generated 0.22 kg stapler although both pads touch it; it lifts with `finger_closed=0.0`. A generated 0.38 kg tape
+dispenser does not lift even at 0.0, with both pads on it.
 
 ### Motion: segment-level routing
 

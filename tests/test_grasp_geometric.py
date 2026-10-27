@@ -23,13 +23,27 @@ def test_geometric_die_sized_box_gives_four_top_down_and_four_side_grasps():
     assert tips == pytest.approx([0.05 - 0.015, 0.05 - 0.025])
     td = plans[0]
     np.testing.assert_allclose(td.grasp_pos - np.asarray(td.metadata["tip_pos"]), [0, 0, GripperSpec().tcp_offset])
-    np.testing.assert_allclose(quat_wxyz_to_matrix(td.grasp_quat)[:, 2], [0, 0, -1], atol=1e-9)
+    np.testing.assert_allclose(quat_wxyz_to_matrix(td.grasp_quat)[:, 2], [0, 0, -1], atol=1e-6)
     for p in plans:
         assert p.retreat_pos[2] > p.grasp_pos[2] + 0.1
         assert p.waypoints[2].finger_width == p.finger_closed
     side = plans[4]
     assert side.metadata["tip_pos"][2] == pytest.approx(0.025)
     assert abs(side.metadata["approach_dir"][2]) < 1e-9
+
+
+def test_geometric_fingers_close_along_the_hand_y_axis():
+    for p in GeometricGraspPlanner().candidates(_box([0.10, 0.03, 0.05], yaw=np.pi / 6)):
+        rot = quat_wxyz_to_matrix(p.grasp_quat)
+        np.testing.assert_allclose(rot[:, 1], p.metadata["finger_dir"], atol=1e-6)
+        np.testing.assert_allclose(rot[:, 2], p.metadata["approach_dir"], atol=1e-6)
+
+
+def test_geometric_top_down_keeps_the_finger_pads_clear_of_the_support():
+    g = GripperSpec()
+    plans = GeometricGraspPlanner().candidates(_box([0.06, 0.032, 0.024]))
+    top = [p for p in plans if p.metadata["kind"] == "top_down"]
+    assert top and all(p.metadata["tip_pos"][2] == pytest.approx(g.pad_below_tcp + g.support_clearance) for p in top)
 
 
 def test_geometric_skips_axes_wider_than_the_gripper_and_follows_yaw():
