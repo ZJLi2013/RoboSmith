@@ -4,10 +4,6 @@ This module defines the shared data contract between grasp planners and motion
 execution: ``GraspPlan`` plus the ``GraspPlanner`` backend ABC. The ``Waypoint``
 primitive is owned by the motion layer (``robotsmith.motion.types``) and
 re-exported here for the planners that build waypoint sequences.
-
-It also owns the per-asset dispatch ``resolve_grasp_strategy`` — the decision of
-whether an asset is grasp-planned (``"learned"``) or skipped (``"none"``) — since
-that is a planning-contract concern, not a property of any one planner.
 """
 
 from __future__ import annotations
@@ -140,29 +136,3 @@ class GraspPlanner(ABC):
             quality=1.0,
             metadata={"source": "place", "category": category, "approach_dir": a.tolist()},
         )
-
-
-# -- per-asset grasp strategy dispatch --------------------------------------
-#
-# Decouples *whether/how a grasp pose is acquired* from the experiment-level
-# default, so scenes can mix object kinds without an all-or-nothing switch:
-#
-# - Articulated assets (a drawer, etc.) are manipulated by joint primitives
-#   (``drag_handle``) and are **never** grasp-planned -> ``"none"``.
-# - General pickable assets are grasp-planned by the learned planner (GraspGen)
-#   -> ``"learned"``.
-#
-# ``--grasp-planner`` is the run-level *default* for general assets.
-
-GRASP_STRATEGIES = {"learned", "none"}
-
-
-def resolve_grasp_strategy(asset, *, default: str = "learned") -> str:
-    """Resolve the grasp strategy for one asset.
-
-    Fixtures (static props and articulated furniture) always resolve to
-    ``"none"`` — they are never grasp-planned. Everything else uses ``default``.
-    """
-    if getattr(asset, "is_fixture", False):
-        return "none"
-    return default

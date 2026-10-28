@@ -34,7 +34,7 @@ Explain why the current owner cannot absorb the change before adding a new modul
 
 ## Development
 
-Requirements: Python 3.10+ and git. The unit tests need no GPU, Genesis, or GraspGen:
+Requirements: Python 3.10+ and git. The unit tests need no GPU or Genesis:
 
 ```shell
 python -m pip install -e ".[dev]"
@@ -49,7 +49,7 @@ scenario, seed count, success rate, and image tag in the pull request.
 ## Assets
 
 Every asset's `asset.json` names its license (`source.license`, SPDX). An asset without a redistributable license
-or a passing `llm_review` stays a draft: scenarios refuse it and the package does not carry it. Do not commit GraspGen code or checkpoints (NVIDIA research license), asset build files
+or a passing `llm_review` stays a draft: scenarios refuse it and the package does not carry it. Do not commit asset build files
 (they come from the package; see `robotsmith/assets/package.py`), or rollout output under `output/`.
 
 ## What never goes into the repository

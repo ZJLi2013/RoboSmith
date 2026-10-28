@@ -37,14 +37,13 @@ class AssetLibrary:
 
     def _load_catalog(self) -> None:
         """Scan ``root/<id>/`` for assets with model.urdf + asset.json."""
-        buckets = store.load_buckets(self.root)
         if not self.root.exists():
             return
         for asset_dir in sorted(self.root.iterdir()):
             if asset_dir.is_dir():
-                self._load_asset_dir(asset_dir, buckets)
+                self._load_asset_dir(asset_dir)
 
-    def _load_asset_dir(self, asset_dir: Path, buckets: dict) -> Optional[Asset]:
+    def _load_asset_dir(self, asset_dir: Path) -> Optional[Asset]:
         """Load a single asset directory into the in-memory catalog."""
         urdf_path = asset_dir / "model.urdf"
         if not urdf_path.exists() or not (asset_dir / store.ASSET_FILE).exists():
@@ -53,7 +52,7 @@ class AssetLibrary:
             name=asset_dir.name,
             root_dir=asset_dir,
             urdf_path=urdf_path,
-            metadata=store.load_metadata(asset_dir, buckets),
+            metadata=store.load_metadata(asset_dir),
             visual_mesh=self._find_mesh(asset_dir, "visual"),
             collision_mesh=self._find_mesh(asset_dir, "collision"),
             joints=parse_urdf_joints(urdf_path),

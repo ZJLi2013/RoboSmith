@@ -27,7 +27,7 @@ RoboSmith 在 Genesis 里搭场景、规划抓取和避障运动、跑 rollout�
 
 | 资产类别 | 动作 | 成功谓词 |
 |---|---|---|
-| 刚体 | `pick`、`place`（GraspGen 给抓取候选） | `inside`、`on`、`lifted`、`stacked`、`aligned` |
+| 刚体 | `pick`、`place`（几何抓取候选，仿真试抓选出） | `inside`、`on`、`lifted`、`stacked`、`aligned` |
 | 关节 | `open`、`close`（棱柱关节） | `joint_opened`、`joint_closed` |
 
 一个任务就是一个短 Python 文件：场景、技能意图、成功条件树。示例见
@@ -41,7 +41,7 @@ RoboSmith 在 Genesis 里搭场景、规划抓取和避障运动、跑 rollout�
 - 技术博客：[RoboSmith — 面向具身交互操作的 ROCm-native 合成数据管线](https://andyluo7.github.io/rocm/amd/mi300x/robotics/embodiedai/sdg/2026/07/01/robosmith-rocm-native-synthetic-data-pipeline/)。
 
 支持 MI300（gfx942）与 MI350（gfx950）。运动规划来自 [rocRobo](https://github.com/ZJLi2013/rocRobo)，以 sidecar
-容器运行。GraspGen 为 NVIDIA research / evaluation 许可，不随 RoboSmith 分发。
+容器运行。
 
 ## 状态
 

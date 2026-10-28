@@ -63,8 +63,7 @@ def try_candidates(context: dict, candidates: list[dict], out_dir: Path) -> dict
         asset = context["asset"]
         run_asset_pick(AssetPickValidationConfig(
             assets=[asset], output_dir=out_dir, n_episodes=1, seed=context["seed"], no_videos=True, clean=True,
-            settle_steps=context["settle_steps"], grasp_planner="geometric",
-            object_xy=tuple(context["object_xy"]), grasp_selection="trial_all"), asset)
+            settle_steps=context["settle_steps"], object_xy=tuple(context["object_xy"]), grasp_selection="trial_all"), asset)
     finally:
         geometric.GeometricGraspPlanner.plan, pick._pick_seed_transit = plan_geometric, seed_transit
     label = json.loads((out_dir / asset / f"franka_gen_pick_{asset}" / "episode_labels.json").read_text())[0]

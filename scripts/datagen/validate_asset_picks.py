@@ -15,9 +15,6 @@ from robotsmith.rollout.asset_pick_validation import (
     run_asset_pick_validation,
 )
 
-# Regression set: one asset per category from the c10/c11 "one success per
-# asset" demo (output/exp_c10_c11_one_success_per_asset_demo). Validates that
-# GraspGen + policy-bucket selection has no regression after refactors.
 DEFAULT_ASSETS = [
     "apple_02",
     "die_01",
@@ -26,7 +23,7 @@ DEFAULT_ASSETS = [
 
 
 def parse_args() -> argparse.Namespace:
-    ap = argparse.ArgumentParser(description="Validate learned picks across assets")
+    ap = argparse.ArgumentParser(description="Validate picks across assets")
     ap.add_argument("--assets", nargs="+", default=DEFAULT_ASSETS)
     ap.add_argument("--n-episodes", type=int, default=3)
     ap.add_argument("--seed", type=int, default=42)
@@ -39,19 +36,13 @@ def parse_args() -> argparse.Namespace:
         default=30,
         help="Physics settle steps after each reset before planning.",
     )
-    ap.add_argument("--grasp-planner", choices=["auto", "learned", "geometric"], default="geometric")
-    ap.add_argument("--grasp-selection", choices=["default", "trial", "trial_all"], default="trial",
+    ap.add_argument("--grasp-selection", choices=["trial", "trial_all"], default="trial",
                     help="trial: try candidates in simulation and keep the first that lifts; trial_all: try every one.")
-    ap.add_argument(
-        "--grasp-policy-bucket-override",
-        default=None,
-        help="Probe-only bucket override for Stage 1; does not edit metadata.",
-    )
     ap.add_argument("--object-xy", type=float, nargs=2, default=None, metavar=("X", "Y"),
                     help="Place the object here every episode instead of sampling the workspace.")
     ap.add_argument("--diagnose-dir", type=Path, default=None,
-                    help="With --grasp-planner geometric: when every episode fails, write the repair agent's "
-                         "request (robotsmith.grasp.diagnostics) under DIR/<asset>/.")
+                    help="When every episode fails, write the repair agent's request "
+                         "(robotsmith.grasp.diagnostics) under DIR/<asset>/.")
     return ap.parse_args()
 
 
@@ -66,8 +57,6 @@ def main() -> None:
             no_videos=args.no_videos,
             clean=args.clean,
             settle_steps=args.settle_steps,
-            grasp_planner=args.grasp_planner,
-            grasp_policy_bucket_override=args.grasp_policy_bucket_override,
             object_xy=tuple(args.object_xy) if args.object_xy else None,
             grasp_selection=args.grasp_selection,
             diagnose_dir=args.diagnose_dir,

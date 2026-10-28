@@ -23,7 +23,6 @@ from robotsmith.assets.schema import AssetMetadata, parse_urdf_joints
 
 ASSET_FILE = "asset.json"
 CHECKS_FILE = "checks.jsonl"
-BUCKETS_FILE = "grasp_policy_buckets.json"
 CHECK_VERSION = "1"
 SOURCE_FILES = frozenset({"provenance.json", "model.py", "generation.json", "reference.png"})
 REDISTRIBUTABLE = frozenset({"CC0-1.0", "CC-BY-4.0", "MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause"})
@@ -185,20 +184,7 @@ def duplicate_reasons(asset_dir: Path, checks: dict[str, dict]) -> list[str]:
     return reasons
 
 
-def load_buckets(assets_root: Path) -> dict:
-    path = assets_root / BUCKETS_FILE
-    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-
-
-def save_bucket(assets_root: Path, asset_name: str, bucket: str | list[str]) -> None:
-    buckets = load_buckets(assets_root)
-    buckets[asset_name] = bucket
-    (assets_root / BUCKETS_FILE).write_text(
-        json.dumps(dict(sorted(buckets.items())), indent=2) + "\n", encoding="utf-8"
-    )
-
-
-def load_metadata(asset_dir: Path, buckets: dict | None = None) -> AssetMetadata:
+def load_metadata(asset_dir: Path) -> AssetMetadata:
     """Assemble the in-memory ``AssetMetadata`` view from ``asset.json`` + current checks."""
     data = read_asset(asset_dir)
     ann = {k: v["value"] for k, v in data["annotations"].items()}
@@ -213,7 +199,6 @@ def load_metadata(asset_dir: Path, buckets: dict | None = None) -> AssetMetadata
         role="fixture" if data["kind"] == "fixture" else "object",
         description=ann.get("description", ""),
         upright_verified=checks.get("llm_review", {}).get("result") == "pass",
-        grasp_policy_bucket=(buckets or {}).get(data["id"]),
         mesh=dict(mesh_rec["metrics"]) if mesh_rec else {},
         handles=derive.handles(urdf, ann.get("handles", [])),
         place_targets=derive.place_targets(urdf, ann.get("place_targets", []), parse_urdf_joints(urdf)),
