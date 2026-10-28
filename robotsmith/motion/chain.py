@@ -34,6 +34,8 @@ from robotsmith.motion.params import MotionParams
 from robotsmith.motion.planner import MotionPlanner, Waypoint
 
 logger = logging.getLogger(__name__)
+# s41 experiment: per free segment, planned by plan_motion or fell back to a straight line.
+PLAN_SOURCES: list[dict] = []
 
 _FRANKA_Q_RANGE = _FRANKA_Q_UPPER - _FRANKA_Q_LOWER
 
@@ -246,6 +248,9 @@ def _solve_segment(
             control_dt=params.dt,
             attach=attach,
         )
+        PLAN_SOURCES.append({"segment": wp.label,
+                             "source": "planned" if plan.success and plan.trajectory else "fallback",
+                             "reason": None if plan.success else str(plan.reason)})
         if plan.success and plan.trajectory:
             segment_path = [np.asarray(q, dtype=np.float64) for q in plan.trajectory]
             q_to = segment_path[-1].copy()

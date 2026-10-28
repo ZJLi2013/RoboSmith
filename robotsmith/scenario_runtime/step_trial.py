@@ -6,6 +6,8 @@ again from the same snapshot with the target's moving link kept as an obstacle d
 
 from __future__ import annotations
 
+import hashlib
+
 import numpy as np
 
 from robotsmith.scenario_runtime import handoff
@@ -43,6 +45,74 @@ def _brief(h: dict) -> dict:
     out["contacts_before_loss"] = sorted({n for c in around[:6] for n in c["env"]})
     out["carry_env"] = (h.get("probe") or {}).get("carry_env")
     return out
+
+
+SETTLE_STEPS = 30
+S41_VARIANTS = (
+    ("baseline", "replay"),
+    ("replan_zero", "replan"),
+    ("roll_90", "replan"),
+    ("place_z_minus_1p5cm", "replan"),
+)
+
+
+def _n_contacts(c) -> int:
+    from robotsmith.sim.recorder import _raw
+
+    return int(_raw(c["link_a"]).size)
+
+
+def fixed_state(env, obj: str, parent: str | None, on_predicate) -> dict:
+    """The s41 definition of a fixed place: the task predicate holds, the object no longer touches
+    the robot and rests on the parent."""
+    ent = env.entity_map[obj]
+    touch_robot = _n_contacts(ent.get_contacts(with_entity=env.franka)) > 0
+    par = env.entity_map.get(parent) if parent else None
+    touch_parent = _n_contacts(ent.get_contacts(with_entity=par)) > 0 if par is not None else None
+    on = bool(on_predicate())
+    return {"on": on, "touch_robot": touch_robot, "touch_parent": touch_parent,
+            "obj_z": round(float(to_numpy(ent.get_pos()).reshape(-1)[2]), 4),
+            "fixed": on and not touch_robot and touch_parent is not False}
+
+
+def _settle(env, q_last, steps: int = SETTLE_STEPS) -> None:
+    for _ in range(steps):
+        env.franka.control_dofs_position(q_last, env.motors_dof)
+        env.scene.step()
+
+
+def run_place_variants(env, snapshot, *, seg, obj, parent, on_predicate, replan) -> list[dict]:
+    """From the place snapshot: replay the original commands and replan three variants; judge each
+    right at the end of the step and again after settling."""
+    from robotsmith.grasp import planner as grasp_planner
+    from robotsmith.motion import chain
+
+    post = env.scene.get_state()
+    ent = env.entity_map[obj]
+    results = []
+    try:
+        for variable, mode in S41_VARIANTS:
+            env.scene.reset(snapshot)
+            chain.PLAN_SOURCES.clear()
+            seg_v = seg
+            if mode == "replan":
+                grasp_planner.S41_ROLL_90 = variable == "roll_90"
+                try:
+                    seg_v = replan(place_z_delta=-0.015 if variable == "place_z_minus_1p5cm" else 0.0)
+                finally:
+                    grasp_planner.S41_ROLL_90 = False
+            samples = _replay(env, seg_v, ent, 0.0)
+            at_end = fixed_state(env, obj, parent, on_predicate)
+            _settle(env, seg_v[-1])
+            settled = fixed_state(env, obj, parent, on_predicate)
+            cmd_hash = hashlib.md5(np.round(np.asarray(seg_v, dtype=float)[:, :7], 3).tobytes()).hexdigest()[:10]
+            results.append({"variable": variable, "mode": mode, "cmd_hash": cmd_hash,
+                            "plan_sources": list(chain.PLAN_SOURCES) if mode == "replan" else None,
+                            "at_end": at_end, "settled": settled})
+    finally:
+        env.scene.reset(post)
+        env.franka.control_dofs_position(seg[-1], env.motors_dof)
+    return results
 
 
 def run_trials(env, snapshot, *, skill, phase, seg, obj, held_start, target, replan) -> list[dict]:

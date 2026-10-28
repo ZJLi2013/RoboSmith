@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import hashlib
 import json
 import logging
+import os
 from pathlib import Path
 import shutil
 import sys
@@ -92,6 +94,8 @@ def run_scenario_smoke(
     }
     target_positions.update(resolve_static_target_positions(env, scene_frames))
 
+    os.environ["ROBOTSMITH_SCENARIO_HASH"] = hashlib.sha256(
+        Path(package.source_path).read_bytes()).hexdigest()[:16]
     episodes = []
     episode_frame_counts: dict[int, int] = {}
     for ep in range(config.n_episodes):
@@ -128,6 +132,14 @@ def run_scenario_smoke(
             "handoffs": _json_safe(result.handoffs),
             "failed_step": None if success else _json_safe(handoff.first_failure(result.handoffs)),
         })
+        if not success:
+            failures = config.output_dir / "failures"
+            failures.mkdir(parents=True, exist_ok=True)
+            (failures / f"ep{ep:03d}.json").write_text(json.dumps({
+                "scenario": package.legacy_task.name, "seed": config.seed,
+                "scenario_hash": os.environ["ROBOTSMITH_SCENARIO_HASH"],
+                "failed_step": episodes[-1]["failed_step"], "handoffs": episodes[-1]["handoffs"],
+            }, indent=2), encoding="utf-8")
         dataset.save_episode()
 
     if hasattr(dataset, "consolidate"):

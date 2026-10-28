@@ -10,6 +10,7 @@ where the re-read changes nothing.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from dataclasses import dataclass
@@ -17,15 +18,30 @@ from typing import Callable
 
 import numpy as np
 
+from robotsmith.grasp import planner as grasp_planner
 from robotsmith.grasp.geometric import GeometricGraspPlanner
+from robotsmith.motion import chain
 from robotsmith.scenario_runtime import handoff
 from robotsmith.sim.franka import HOME_QPOS, to_numpy_f32
-from robotsmith.skills import plan_segment, resolve_frame, skill_phases
+from robotsmith.skills import Skill, plan_segment, resolve_frame, skill_phases
 from robotsmith.tasks import evaluate_success
 from robotsmith.tasks.task_spec import TaskSpec
 
 logger = logging.getLogger(__name__)
 _S40 = bool(os.environ.get("ROBOTSMITH_S40"))
+_S41 = bool(os.environ.get("ROBOTSMITH_S41"))
+
+
+def _repairs(scenario: str, target: str) -> list[dict]:
+    """s41 experiment: scene writebacks for this scenario and place target, bound to its content hash."""
+    path = os.environ.get("ROBOTSMITH_REPAIRS")
+    if not path or not os.path.exists(path):
+        return []
+    with open(path, encoding="utf-8") as f:
+        entries = json.load(f)
+    return [r for r in entries if r["scenario"] == scenario and r["target"] == target
+            and r["status"] in ("candidate", "active")
+            and r.get("scenario_hash") == os.environ.get("ROBOTSMITH_SCENARIO_HASH")]
 
 
 def _maybe_motion_planner(env):
@@ -114,13 +130,25 @@ def run_scenario_episode(
             scene_state = _live_scene_state(env, target_frames, skill_traces)
             obj = skill.target if skill.name == "pick" else held
             q_before, hc_before, hz_before = qpos, held_category, held_place_z
-            seg, held_category, held_place_z = plan_segment(
-                skill, i, task_spec.skills, env.planner, executor, env.solve_ik,
-                scene_state, motion_params, qpos, held_category, held_place_z,
-                phase=phase, **planner_kw,
-            )
+            applied = _repairs(task_spec.name, skill.target) if _S41 and skill.name == "place" else []
+            run_skill = skill
+            for r in applied:
+                if r["variable"] == "roll_90":
+                    grasp_planner.S41_ROLL_90 = True
+                elif r["variable"] == "place_z_minus_1p5cm":
+                    run_skill = Skill(skill.name, skill.target, skill.category, {**skill.params, "place_z": r["place_z"]})
+            chain.PLAN_SOURCES.clear()
+            try:
+                seg, held_category, held_place_z = plan_segment(
+                    run_skill, i, task_spec.skills, env.planner, executor, env.solve_ik,
+                    scene_state, motion_params, qpos, held_category, held_place_z,
+                    phase=phase, **planner_kw,
+                )
+            finally:
+                grasp_planner.S41_ROLL_90 = False
+            plan_sources = list(chain.PLAN_SOURCES)
             world_info = dict(getattr(executor, "last_place_world_info", None) or {})
-            snapshot = env.scene.get_state() if _S40 and skill.name == "place" and obj else None
+            snapshot = env.scene.get_state() if (_S40 or _S41) and skill.name == "place" and obj else None
             samples = record_fn(
                 env,
                 dataset,
@@ -139,7 +167,38 @@ def run_scenario_episode(
                 trace=skill_traces[-1] if skill_traces else None,
                 rocrobo=motion_planner is not None,
             ))
-            if snapshot is not None:
+            handoffs[-1]["plan_sources"] = plan_sources
+            if applied:
+                handoffs[-1]["applied_repairs"] = [r["variable"] for r in applied]
+            if (_S41 and snapshot is not None and phase != "transport"
+                    and i == len(task_spec.skills) - 1):
+                from robotsmith.scenario_runtime import step_trial
+
+                h = handoffs[-1]
+                parent = skill.target.split(".")[0]
+
+                def on_pred():
+                    return evaluate_scenario_task(env, task_spec, initial_positions=initial_positions)
+
+                h["fixed"] = step_trial.fixed_state(env, obj, parent, on_pred)
+                if not h["fixed"]["fixed"] and not applied:
+                    resolved = float(skill_traces[-1].get("resolved_place_z") or 0.0)
+
+                    def replan_s41(place_z_delta=0.0, skill=skill, i=i, phase=phase,
+                                   q=q_before, hc=hc_before, hz=hz_before):
+                        st = _live_scene_state(env, target_frames, [])
+                        sk = skill if not place_z_delta else Skill(
+                            skill.name, skill.target, skill.category,
+                            {**skill.params, "place_z": resolved + place_z_delta})
+                        s, _, _ = plan_segment(sk, i, task_spec.skills, env.planner, executor, env.solve_ik,
+                                               st, motion_params, q, hc, hz, phase=phase, **planner_kw)
+                        return s
+                    h["s41"] = step_trial.run_place_variants(
+                        env, snapshot, seg=seg, obj=obj, parent=parent, on_predicate=on_pred, replan=replan_s41)
+                    h["s41_resolved_place_z"] = resolved
+                    logger.warning("[s41] %s", [(t["variable"], t["at_end"]["fixed"], t["settled"]["fixed"],
+                                                 t["cmd_hash"]) for t in h["s41"]])
+            if _S40 and snapshot is not None:
                 h = handoffs[-1]
                 h["world"] = world_info
                 if h.get("done") is False and h.get("first_loss_frame") is not None:

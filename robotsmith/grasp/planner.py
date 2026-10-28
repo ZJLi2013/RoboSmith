@@ -21,6 +21,9 @@ from robotsmith.motion.types import Waypoint
 _DEFAULT_APPROACH = np.array([0.0, 0.0, -1.0])
 
 
+S41_ROLL_90 = False
+
+
 def _ee_quat_from_approach(approach: np.ndarray) -> np.ndarray:
     """EE quat whose gripper Z axis (approach) aligns with ``approach`` (insert dir).
 
@@ -41,6 +44,8 @@ def _ee_quat_from_approach(approach: np.ndarray) -> np.ndarray:
         x = ref - np.dot(ref, z) * z
     x = x / float(np.linalg.norm(x))
     y = np.cross(z, x)
+    if S41_ROLL_90:
+        x, y = y, -x
     return rotmat_to_quat_wxyz(np.column_stack([x, y, z]))
 
 
