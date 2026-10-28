@@ -125,7 +125,7 @@ def test_plan_place():
         category="bowl",
         place_point_world=np.array([0.5, 0.1, 0.85]),
     )
-    assert plan.metadata["source"] == "learned_place"
+    assert plan.metadata["source"] == "place"
     # Flange goes to the resolved world drop point (no table-relative recompute).
     np.testing.assert_allclose(plan.grasp_pos, [0.5, 0.1, 0.85])
 
