@@ -18,6 +18,7 @@ from typing import Callable
 import numpy as np
 
 from robotsmith.grasp.geometric import GeometricGraspPlanner
+from robotsmith.scenario_runtime import handoff
 from robotsmith.sim.franka import HOME_QPOS, to_numpy_f32
 from robotsmith.skills import plan_segment, resolve_frame, skill_phases
 from robotsmith.tasks import evaluate_success
@@ -50,6 +51,7 @@ class ScenarioEpisodeResult:
     initial_positions: dict[str, np.ndarray]
     skill_traces: list[dict]
     frame_count: int
+    handoffs: list[dict]
 
 
 def run_scenario_episode(
@@ -93,9 +95,11 @@ def run_scenario_episode(
 
     initial_positions = collect_object_positions(env)
     skill_traces: list[dict] = []
+    handoffs: list[dict] = []
     qpos = HOME_QPOS.copy()
     held_category: str | None = None
     held_place_z: float | None = None
+    held: str | None = None
     frame_count = 0
     motion_planner = _maybe_motion_planner(env)
 
@@ -107,20 +111,34 @@ def run_scenario_episode(
         # into transport/descend so descend re-reads the recoiled drawer.
         for phase in skill_phases(skill, target_frames.get(skill.target)):
             scene_state = _live_scene_state(env, target_frames, skill_traces)
+            obj = skill.target if skill.name == "pick" else held
             seg, held_category, held_place_z = plan_segment(
                 skill, i, task_spec.skills, env.planner, executor, env.solve_ik,
                 scene_state, motion_params, qpos, held_category, held_place_z,
                 phase=phase, **planner_kw,
             )
-            record_fn(
+            samples = record_fn(
                 env,
                 dataset,
                 seg,
                 task_spec,
-                primary_entity=None,
+                primary_entity=env.entity_map.get(obj) if obj else None,
                 camera_names=camera_names,
                 env_state_names=env_state_names,
             )
+            handoffs.append(handoff.check(
+                skill, phase, seg, samples or [], held=obj,
+                held_start=scene_state["positions"].get(obj) if obj else None,
+                target=scene_state["positions"].get(skill.target),
+                joints_before=scene_state["joint_positions"],
+                joints_after=env.get_joint_positions() if hasattr(env, "get_joint_positions") else {},
+                trace=skill_traces[-1] if skill_traces else None,
+                rocrobo=motion_planner is not None,
+            ))
+            if skill.name == "pick":
+                held = skill.target
+            elif skill.name == "place" and phase != "transport":
+                held = None
             frame_count += len(seg)
             if seg:
                 qpos = seg[-1]
@@ -129,6 +147,7 @@ def run_scenario_episode(
         initial_positions=initial_positions,
         skill_traces=skill_traces,
         frame_count=frame_count,
+        handoffs=handoffs,
     )
 
 

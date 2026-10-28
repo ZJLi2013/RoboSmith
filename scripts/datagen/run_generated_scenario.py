@@ -17,7 +17,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from robotsmith.scenario.adapters import resolved_target_positions, target_frames
 from robotsmith.rollout.video_export import copy_episode_videos
-from robotsmith.scenario_runtime import materialize_candidate
+from robotsmith.scenario_runtime import handoff, materialize_candidate
 from robotsmith.scenario_runtime.materialize import ScenarioRuntimePackage
 from robotsmith.scenario_runtime.runner import (
     collect_object_positions,
@@ -125,6 +125,8 @@ def run_scenario_smoke(
                 target_positions=target_positions,
                 skill_traces=result.skill_traces,
             ),
+            "handoffs": _json_safe(result.handoffs),
+            "failed_step": None if success else _json_safe(handoff.first_failure(result.handoffs)),
         })
         dataset.save_episode()
 

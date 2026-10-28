@@ -101,6 +101,7 @@ def test_run_scenario_episode_reanchors_to_live_resolved_positions(monkeypatch):
     ]
     assert result.frame_count == 2
     assert recorded == [1, 1]
+    assert [(h["skill"], h["object"]) for h in result.handoffs] == [("pick", "die"), ("place", "die")]
 
 
 def _fake_plan(x, y, z):
