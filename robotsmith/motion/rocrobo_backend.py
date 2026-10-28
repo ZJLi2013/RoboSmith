@@ -97,6 +97,8 @@ class RocRoboServeClient:
             "JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS=0",
             "-e",
             "JAX_PERSISTENT_CACHE_MIN_ENTRY_SIZE_BYTES=0",
+            *(["-e", f"JAX_PLATFORMS={os.environ['ROCROBO_JAX_PLATFORMS']}"]
+              if os.environ.get("ROCROBO_JAX_PLATFORMS") else []),
             self._container,
             "python",
             "-u",
@@ -174,6 +176,9 @@ class RocRoboServeClient:
                 return json.loads(line)
             except ValueError:
                 logger.warning("[rocrobo] non-JSON line from serve: %r", line[:400])
+                if os.environ.get("ROCROBO_DUMP_FAILED"):
+                    with open(os.environ["ROCROBO_DUMP_FAILED"], "a") as f:
+                        f.write(json.dumps(payload) + "\n")
                 raise
 
 
