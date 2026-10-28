@@ -25,6 +25,7 @@ from robotsmith.tasks import evaluate_success
 from robotsmith.tasks.task_spec import TaskSpec
 
 logger = logging.getLogger(__name__)
+_S40 = bool(os.environ.get("ROBOTSMITH_S40"))
 
 
 def _maybe_motion_planner(env):
@@ -112,11 +113,14 @@ def run_scenario_episode(
         for phase in skill_phases(skill, target_frames.get(skill.target)):
             scene_state = _live_scene_state(env, target_frames, skill_traces)
             obj = skill.target if skill.name == "pick" else held
+            q_before, hc_before, hz_before = qpos, held_category, held_place_z
             seg, held_category, held_place_z = plan_segment(
                 skill, i, task_spec.skills, env.planner, executor, env.solve_ik,
                 scene_state, motion_params, qpos, held_category, held_place_z,
                 phase=phase, **planner_kw,
             )
+            world_info = dict(getattr(executor, "last_place_world_info", None) or {})
+            snapshot = env.scene.get_state() if _S40 and skill.name == "place" and obj else None
             samples = record_fn(
                 env,
                 dataset,
@@ -135,6 +139,22 @@ def run_scenario_episode(
                 trace=skill_traces[-1] if skill_traces else None,
                 rocrobo=motion_planner is not None,
             ))
+            if snapshot is not None:
+                h = handoffs[-1]
+                h["world"] = world_info
+                if h.get("done") is False and h.get("first_loss_frame") is not None:
+                    from robotsmith.scenario_runtime import step_trial
+
+                    def replan(skill=skill, i=i, phase=phase, q=q_before, hc=hc_before, hz=hz_before):
+                        st = _live_scene_state(env, target_frames, [])
+                        s, _, _ = plan_segment(skill, i, task_spec.skills, env.planner, executor, env.solve_ik,
+                                               st, motion_params, q, hc, hz, phase=phase, **planner_kw)
+                        return s, dict(getattr(executor, "last_place_world_info", None) or {})
+                    h["s40"] = step_trial.run_trials(
+                        env, snapshot, skill=skill, phase=phase, seg=seg, obj=obj,
+                        held_start=scene_state["positions"].get(obj),
+                        target=scene_state["positions"].get(skill.target), replan=replan)
+                    logger.warning("[s40] %s", h["s40"])
             if skill.name == "pick":
                 held = skill.target
             elif skill.name == "place" and phase != "transport":

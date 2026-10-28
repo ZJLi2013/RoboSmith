@@ -201,6 +201,9 @@ def _place_destination_exempt(ctx: SkillContext) -> tuple[list[str], list[str]]:
     return exempt_links, exempt_boxes
 
 
+S40_KEEP_TARGET_LINK_IN_TRANSPORT = False
+
+
 def _author_place_world(
     ctx: SkillContext, place_plan: GraspPlan, q0: np.ndarray, approach: np.ndarray
 ) -> tuple[list[dict] | None, GraspPlan]:
@@ -222,12 +225,16 @@ def _author_place_world(
     if not ctx.motion_planner.collision_aware:
         return None, place_plan
     exempt_links, exempt_boxes = _place_destination_exempt(ctx)
+    if S40_KEEP_TARGET_LINK_IN_TRANSPORT and ctx.phase == "transport":
+        exempt_links = []
     place_world = build_obstacle_world(
         ctx.scene_state,
         ground_z=float(ctx.scene_state.get("table_surface_z", 0.0)),
         exempt_links=exempt_links,
         exempt_boxes=exempt_boxes,
     )
+    ctx.executor.last_place_world_info = {
+        "collision_aware": True, "exempt_links": list(exempt_links), "n_world": len(place_world)}
     return place_world, _author_transport_hover(
         ctx, place_plan, q0, place_world, approach
     )
