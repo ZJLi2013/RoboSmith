@@ -25,11 +25,15 @@ _CLOSED_BEFORE_FORCE = 35
 _log = logging.getLogger(__name__)
 
 
+def _raw(x) -> np.ndarray:
+    return x.cpu().numpy() if hasattr(x, "cpu") else np.asarray(x)
+
+
 def _probe_contacts(env, ent) -> dict:
     c = ent.get_contacts()
-    la = to_numpy(c["link_a"]).reshape(-1)
-    lb = to_numpy(c["link_b"]).reshape(-1)
-    fa = to_numpy(c["force_a"]).reshape(-1, 3)
+    la = _raw(c["link_a"]).reshape(-1)
+    lb = _raw(c["link_b"]).reshape(-1)
+    fa = _raw(c["force_a"]).reshape(-1, 3)
     own = {link.idx for link in ent.links}
     robot = {link.idx for link in env.franka.links}
     links = env.scene.rigid_solver.links
