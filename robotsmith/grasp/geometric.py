@@ -2,7 +2,8 @@
 
 The planner reads the asset's visual geometry, takes its yaw-oriented bounding box in the world
 frame, and emits top-down and side grasps for every horizontal box axis the gripper can close
-across. Candidates are not scored or screened beyond that width check: which one works is decided
+across. Grasps written back to the asset by a verified repair (``annotations``) come first.
+Candidates are not scored or screened beyond that width check: which one works is decided
 by trying them in simulation (``grasp_trial`` in the pick skill).
 """
 
@@ -15,6 +16,7 @@ import numpy as np
 import trimesh
 
 from robotsmith.assets import derive
+from robotsmith.grasp import annotations
 from robotsmith.grasp.planner import GraspPlan, GraspPlanner
 from robotsmith.grasp.transforms import quat_wxyz_to_matrix, rotmat_to_quat_wxyz
 from robotsmith.motion.types import Waypoint
@@ -62,14 +64,20 @@ class GeometricGraspPlanner(GraspPlanner):
     def __init__(self, gripper: GripperSpec = GripperSpec()):
         self.gripper = gripper
         self.last_filter_counts: dict[str, int] = {}
+        self.last_plans: list[GraspPlan] = []
 
     def plan(self, object_pos, object_quat=None, rng=None, *, category="block", asset: Any = None,
              object_height=None, scale=1.0) -> list[GraspPlan]:
         rot = np.eye(3) if object_quat is None else quat_wxyz_to_matrix(np.asarray(object_quat, dtype=np.float64))
         local = derive.visual_points(asset.urdf_path) - derive.inertial_origin(asset.urdf_path)
         world = local * scale @ rot.T + np.asarray(object_pos, dtype=np.float64)
-        plans = self.candidates(world, category)
+        written = [self._plan("annotation", *annotations.to_world(c, object_pos, object_quat), 0.0, category)
+                   for c in annotations.current_grasps(asset.root_dir)]
+        plans = written + self.candidates(world, category)
+        for k, p in enumerate(plans):
+            p.metadata["candidate_index"] = k
         self.last_filter_counts = {"raw": len(plans), "accepted": len(plans)}
+        self.last_plans = plans
         return plans
 
     def candidates(self, world_points: np.ndarray, category: str = "") -> list[GraspPlan]:

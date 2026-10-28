@@ -64,6 +64,8 @@ class AssetPickValidationConfig:
     grasp_policy_bucket_override: str | None = None
     object_xy: tuple[float, float] | None = None
     grasp_selection: str = "default"
+    # When every episode fails, write a diagnosis request for the repair agent under <diagnose_dir>/<asset>/.
+    diagnose_dir: Path | None = None
 
 
 @dataclass
@@ -212,6 +214,34 @@ def _evaluate_asset_pick_task(
     return evaluate_success(task_spec.success, env_state)
 
 
+def _start_state(env, episode_plan: AssetPickEpisodePlan) -> dict:
+    """The settled start the planner saw: object pose, simulator AABB and the candidates it produced."""
+    ent = env.entity_map["object"]
+    aabb = ent.get_AABB()
+    aabb = (aabb.cpu().numpy() if hasattr(aabb, "cpu") else np.asarray(aabb)).reshape(-1, 2, 3)[0]
+    plans = getattr(env.planner, "last_plans", None)
+    return {"pos": [float(v) for v in episode_plan.initial_positions["object"]],
+            "quat": [float(v) for v in env.object_quats["object"]], "aabb": aabb.tolist(),
+            "plans": list(plans) if plans is not None else None}
+
+
+def _write_diagnosis_request(config: AssetPickValidationConfig, env, asset_name: str, start: dict,
+                             label: dict) -> None:
+    from robotsmith.grasp.diagnostics import request
+
+    asset = env.asset_map["object"]
+    object_xy = list(config.object_xy) if config.object_xy else start["pos"][:2]
+    packet = request.evidence(
+        urdf_path=asset.urdf_path, category=_asset_category(asset_name), pos=start["pos"], quat=start["quat"],
+        aabb=start["aabb"], table_z=env.table_surface_z, gripper=env.planner.gripper, plans=start["plans"],
+        label=label, object_xy=object_xy)
+    path = request.write_request(
+        config.diagnose_dir / asset_name, packet=packet, table_z=env.table_surface_z, gripper=env.planner.gripper,
+        context={"asset": asset_name, "object_xy": object_xy, "seed": config.seed,
+                 "settle_steps": config.settle_steps})
+    print(f"[diagnose] {asset_name}: request written to {path}")
+
+
 def run_asset_pick(config: AssetPickValidationConfig, asset_name: str) -> dict:
     """Run rollout validation for one asset and return its per-asset summary.
 
@@ -282,6 +312,8 @@ def run_asset_pick(config: AssetPickValidationConfig, asset_name: str) -> dict:
             grasp_selection=config.grasp_selection,
         )
         pose_label = _object_pose_label(env, "object")
+        if ep == 0:
+            start = _start_state(env, episode_plan)
 
         traj = episode_plan.trajectory
         scene_state = episode_plan.scene_state
@@ -366,6 +398,8 @@ def run_asset_pick(config: AssetPickValidationConfig, asset_name: str) -> dict:
     )
 
     success_ids = [e["episode_index"] for e in episode_labels if e["success"]]
+    if config.diagnose_dir and not success_ids and start["plans"] is not None:
+        _write_diagnosis_request(config, env, asset_name, start, episode_labels[0])
     copied = []
     if not config.no_videos:
         copied.extend(copy_episode_videos(

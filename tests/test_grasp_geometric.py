@@ -58,7 +58,7 @@ def test_geometric_plan_reads_the_urdf_and_the_object_pose(tmp_path):
     urdf = tmp_path / "model.urdf"
     urdf.write_text('<robot name="t"><link name="base"><visual><origin xyz="0 0 0.025"/>'
                     '<geometry><box size="0.06 0.03 0.05"/></geometry></visual></link></robot>', encoding="utf-8")
-    asset = type("A", (), {"urdf_path": urdf})()
+    asset = type("A", (), {"urdf_path": urdf, "root_dir": urdf.parent})()
     yaw90 = np.array([np.cos(np.pi / 4), 0, 0, np.sin(np.pi / 4)])
     plans = GeometricGraspPlanner().plan(np.array([0.5, 0.0, 0.8]), yaw90, asset=asset)
     widths = sorted({round(p.metadata["closing_width"], 3) for p in plans})
@@ -73,7 +73,7 @@ def _bottle_urdf(tmp_path, inertial_rpy="0 0 0"):
     urdf.write_text(f'<robot name="t"><link name="base"><inertial><origin xyz="0 0 0.1" rpy="{inertial_rpy}"/>'
                     '<mass value="0.5"/></inertial><visual><origin xyz="0 0 0.1"/>'
                     '<geometry><box size="0.06 0.03 0.2"/></geometry></visual></link></robot>', encoding="utf-8")
-    return type("A", (), {"urdf_path": urdf})()
+    return type("A", (), {"urdf_path": urdf, "root_dir": urdf.parent})()
 
 
 def test_geometric_plan_places_the_urdf_relative_to_the_inertial_origin_genesis_reports(tmp_path):

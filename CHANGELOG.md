@@ -18,6 +18,17 @@ All notable user-facing changes are documented here. This project follows Semant
   sharing a query word when no category is given. `list_assets.py` shows each asset's category and takes
   `--category`, `--size` and `--query`.
 
+### Added
+
+- Grasp repair loop for geometric candidates (`robotsmith.grasp.diagnostics`). `validate_asset_picks --diagnose-dir`
+  writes, when every episode fails, a request for a diagnosis agent: the evidence of that run (settled pose, simulator
+  AABB, horizontal sections, candidates and trials, table height and gripper limits) plus a playbook of known failure
+  signatures. `python -m robotsmith.grasp.diagnostics.tool` is the agent's `try_grasp`; `...diagnostics.writeback`
+  re-trials the agent's repair once and, if it lifts, writes it to the asset.
+- `GeometricGraspPlanner` puts grasps written back to the asset (`grasp_candidates` annotation) ahead of its own
+  candidates, while a passing `trial_grasp` check is current for the asset's revision, build files and embodiment
+  (`robotsmith.grasp.annotations`).
+
 ### Changed
 
 - `SimEnv.reset` raises `SceneInvalid` when an object moves more than 5 cm, drops more than 5 cm or tips more than
