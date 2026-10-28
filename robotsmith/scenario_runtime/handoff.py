@@ -7,6 +7,8 @@ Place causes are candidates (``motion?`` / ``grip?`` / ``release?``), not conclu
 
 from __future__ import annotations
 
+import hashlib
+
 import numpy as np
 
 # Hand link origin sits ~0.10 m above the fingertips.
@@ -73,6 +75,18 @@ def check(skill, phase: str, seg, samples: list[dict], *, held: str | None,
     carry = dist[:release]
     lost = np.nonzero(carry > HELD_M)[0]
     first_loss = int(lost[0]) if lost.size else None
+    entry["seg_hash"] = hashlib.md5(np.round(np.asarray(seg, dtype=float)[:, :7], 3).tobytes()).hexdigest()[:10]
+    if "contacts" in samples[0]:
+        carried = samples[:first_loss if first_loss is not None else release]
+        around = samples[max(0, (first_loss or 0) - 5):(first_loss or 0) + 6] if first_loss is not None else []
+        entry["probe"] = {
+            "force_frames": sum(s.get("finger_mode") == "force" for s in samples[:release]),
+            "carry_env_contact_frames": sum(bool(s["contacts"]["env"]) for s in carried),
+            "carry_env": sorted({n for s in carried for n in s["contacts"]["env"]}),
+            "carry_robot_force_mean": round(float(np.mean([s["contacts"]["robot_force"] for s in carried])), 3)
+            if carried else None,
+            "around_loss": [s["contacts"] for s in around],
+        }
     entry.update(
         release_frame=release if release < len(dist) else None,
         first_loss_frame=first_loss,

@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -14,6 +16,31 @@ from robotsmith.sim.franka import (
 from robotsmith.sim.sim_env import SimEnv, render_cam
 from robotsmith.tasks import evaluate_success
 from robotsmith.tasks.task_spec import TaskSpec
+
+
+_PROBE_FORCE = float(os.environ.get("ROBOTSMITH_PROBE_FINGER_FORCE") or 0.0)
+_PROBE_CONTACTS = bool(os.environ.get("ROBOTSMITH_PROBE_CONTACTS"))
+# grasp (20) + hold (15) closed frames: force starts only after the close segment.
+_CLOSED_BEFORE_FORCE = 35
+_log = logging.getLogger(__name__)
+
+
+def _probe_contacts(env, ent) -> dict:
+    c = ent.get_contacts()
+    la = to_numpy(c["link_a"]).reshape(-1)
+    lb = to_numpy(c["link_b"]).reshape(-1)
+    fa = to_numpy(c["force_a"]).reshape(-1, 3)
+    own = {link.idx for link in ent.links}
+    robot = {link.idx for link in env.franka.links}
+    links = env.scene.rigid_solver.links
+    robot_f, env_names = 0.0, set()
+    for a, b, f in zip(la, lb, fa):
+        other = int(b if int(a) in own else a)
+        if other in robot:
+            robot_f += float(np.linalg.norm(f))
+        else:
+            env_names.add(links[other].name)
+    return {"robot_force": round(robot_f, 3), "env": sorted(env_names)}
 
 
 def articulated_joint_names(env) -> list[str]:
@@ -129,6 +156,14 @@ def record_episode(
 
         gripper_cmd = float(target_qpos[7])
         env.franka.control_dofs_position(target_qpos, env.motors_dof)
+        env._probe_closed = getattr(env, "_probe_closed", 0) + 1 if gripper_cmd < 0.02 else 0
+        force_on = (_PROBE_FORCE > 0 and primary_entity is not None
+                    and env._probe_closed > _CLOSED_BEFORE_FORCE)
+        if force_on:
+            env.franka.control_dofs_force(np.array([-_PROBE_FORCE, -_PROBE_FORCE]), env.finger_dof)
+            if not getattr(env, "_probe_force_logged", False):
+                _log.warning("[probe] finger force %.1f N on", _PROBE_FORCE)
+                env._probe_force_logged = True
         env.scene.step()
 
         finger_next = to_numpy(
@@ -143,7 +178,14 @@ def record_episode(
             "q": to_numpy(env.franka.get_dofs_position(env.motors_dof)).reshape(-1)[:7],
             "obj": None if primary_entity is None
             else to_numpy(primary_entity.get_pos()).reshape(-1)[:3],
+            "finger_mode": "force" if force_on else "position",
+            "cmd": np.asarray(target_qpos, dtype=np.float64)[:7].round(4),
         })
+        if _PROBE_CONTACTS and primary_entity is not None:
+            samples[-1]["contacts"] = _probe_contacts(env, primary_entity)
+            if not getattr(env, "_probe_contacts_logged", False):
+                _log.warning("[probe] contacts %s", samples[-1]["contacts"])
+                env._probe_contacts_logged = True
 
         frame = {
             "observation.state": ee_state,
