@@ -100,6 +100,7 @@ class RocRoboServeClient:
             *(["-e", f"JAX_PLATFORMS={os.environ['ROCROBO_JAX_PLATFORMS']}"]
               if os.environ.get("ROCROBO_JAX_PLATFORMS") else []),
             self._container,
+            *(["taskset", "-c", os.environ["ROCROBO_TASKSET"]] if os.environ.get("ROCROBO_TASKSET") else []),
             "python",
             "-u",
             "-m",
@@ -176,9 +177,6 @@ class RocRoboServeClient:
                 return json.loads(line)
             except ValueError:
                 logger.warning("[rocrobo] non-JSON line from serve: %r", line[:400])
-                if os.environ.get("ROCROBO_DUMP_FAILED"):
-                    with open(os.environ["ROCROBO_DUMP_FAILED"], "a") as f:
-                        f.write(json.dumps(payload) + "\n")
                 raise
 
 
@@ -344,6 +342,9 @@ class RocRoboBackend:
             resp = self._client.request(payload)
         except (RuntimeError, ValueError) as exc:
             logger.warning("[rocrobo] plan_motion failed: %s", exc)
+            if os.environ.get("ROCROBO_DUMP_FAILED"):
+                with open(os.environ["ROCROBO_DUMP_FAILED"], "a") as f:
+                    f.write(json.dumps(payload) + "\n")
             return PlanResult(success=False, reason=str(exc))
         if not resp.get("ok", False) or "traj" not in resp:
             reason = resp.get("reason") or resp.get("error") or "no-traj"
