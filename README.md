@@ -28,7 +28,7 @@ dataset with videos. It is data infrastructure, not a policy-training framework.
 
 | Asset kind | Actions | Success predicates |
 |---|---|---|
-| rigid | `pick`, `place` (learned grasp proposals from GraspGen) | `inside`, `on`, `lifted`, `stacked`, `aligned` |
+| rigid | `pick`, `place` (geometric grasp candidates, tried in simulation) | `inside`, `on`, `lifted`, `stacked`, `aligned` |
 | articulated | `open`, `close` (prismatic joints) | `joint_opened`, `joint_closed` |
 
 A task is a short Python file: scene, skill intents, and a success tree. See
@@ -42,8 +42,7 @@ A task is a short Python file: scene, skill intents, and a success tree. See
 - Blog post: [RoboSmith — a ROCm-native synthetic-data pipeline for embodied interactive manipulation](https://andyluo7.github.io/rocm/amd/mi300x/robotics/embodiedai/sdg/2026/07/01/robosmith-rocm-native-synthetic-data-pipeline/).
 
 Runs on MI300 (gfx942) and MI350 (gfx950). Motion planning comes from [rocRobo](https://github.com/ZJLi2013/rocRobo),
-run as a sidecar container. GraspGen is under an NVIDIA research / evaluation license and is not distributed with
-RoboSmith.
+run as a sidecar container.
 
 ## Status
 

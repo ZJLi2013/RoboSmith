@@ -1,5 +1,7 @@
 # RoboSmith design
 
+> 中文版：[design-cn.md](design-cn.md).
+
 RoboSmith turns **assets plus a declarative task** into **successful expert episodes recorded as a LeRobot
 dataset**. You write *what* should happen; RoboSmith decides *how*: it builds the scene, plans a grasp for every
 episode, generates a joint trajectory, rolls it out in Genesis, and keeps the success verdict next to the data.
@@ -10,24 +12,31 @@ consumes the dataset RoboSmith writes.
 ## Data flow
 
 ```text
-asset library ──► scenario YAML (scene relations + task + success) + teacher plan
-                      │  scenario/load.py solves relations; scenario/adapters.py lowers to the runtime
-                      ▼
-                  SimEnv (Genesis + Franka) ── reset, settle
-                      │
-     per skill:   grasp planner ──► GraspPlan ──► MotionExecutor ──► MotionPlanner (Genesis IK or rocRobo)
-                      │
-                      ▼
-                  rollout + success tree ──► LeRobot dataset, videos, run summary
+one-sentence task request
+  └─► agent writes the scenario YAML from the asset catalog (scenarios/AGENT_PROMPT.md)
+        └─ asset missing ─► agent generates it (Blender script, scene reconstruction, or image-to-3D)
+                              └─► LLM review + checks ──pass──► admitted to the asset library
+
+asset library + scenario YAML (scene relations + task + success)
+  └─► relations solved per seed (scenario/load.py), lowered to the runtime (scenario/adapters.py)
+        └─► SimEnv (Genesis + Franka): place, settle; reject the scene if an object rolled, dropped or tipped
+              └─► per skill
+                    pick:  candidates (grasps written back to the asset first, then geometric)
+                           ─► try each in simulation ─► execute the first that lifts
+                           all fail ─► diagnosis request ─► repair agent ─► re-trial ─► write back to the asset
+                    every skill: GraspPlan ─► MotionExecutor ─► MotionPlanner (Genesis IK or rocRobo)
+              └─► rollout + success tree ─► LeRobot dataset, videos, run summary
 ```
 
 Each arrow is one typed contract, and each layer has one owner in the code:
 
 | Contract | Type / module |
 |---|---|
+| Asset → library | `asset.json` + `checks.jsonl`, admitted on a passing review (`robotsmith/assets/store.py`) |
 | Asset → scene | `AssetMetadata` (`robotsmith/assets/`) |
 | Scenario → runtime | `robotsmith/scenario/load.py`, `robotsmith/scenario/adapters.py` |
 | Grasp → execution | `GraspPlan`, including its waypoints |
+| Repair → asset | `grasp_candidates` annotation + `trial_grasp` check (`robotsmith/grasp/annotations.py`, `grasp/diagnostics/`) |
 | Execution → motion backend | the `MotionPlanner` protocol (`robotsmith/motion/`) |
 | Simulator / recorder | `robotsmith/sim/sim_env.py`, `robotsmith/sim/recorder.py` (the only adapters) |
 
@@ -40,12 +49,12 @@ robotsmith/
 ├── scenes/            # SceneConfig / ObjectPlacement, upright pose, Genesis loader
 ├── tasks/             # TaskSpec, predicates, task presets
 ├── scenario_runtime/  # scenario load, materialize, segment-level runner
-├── grasp/             # learned grasp planner + feasibility gate
+├── grasp/             # geometric candidates, written-back grasps, repair-loop tools
 ├── motion/            # motion planning, rocRobo backend, collision world
 ├── execution/         # executor: skills to joint trajectories
 ├── skills/            # pick / place / open / close + registry
 ├── sim/               # Genesis SimEnv, Franka, LeRobot recorder
-└── rollout/           # rollout orchestration, episode layout, video export
+└── rollout/           # single-asset pick validation, episode layout, video export
 ```
 
 ## Key concepts
@@ -65,8 +74,7 @@ repositories lazily and run in their own image, not in the Genesis one.
 build files, the source's SPDX `license` and `attribution`, and annotations; each annotation records who wrote it (`human`, `harness`, `agent:<model>`,
 `check:<name>@<version>`, or `legacy` for values migrated without a known writer). `checks.jsonl` is append-only: one
 record per check run, bound to the asset revision and build hash. A record whose hash no longer matches the files does
-not count. Mass, inertia and joint limits live only in the URDF. Grasp policy buckets are a grasp-module result and
-live in the sidecar `assets/grasp_policy_buckets.json`. The loader assembles all of this into `AssetMetadata`.
+not count. Mass, inertia and joint limits live only in the URDF. The loader assembles all of this into `AssetMetadata`.
 
 What an asset can do follows from its annotations, not from its category:
 
@@ -129,31 +137,13 @@ contract for agents is [`scenarios/AGENT_PROMPT.md`](../scenarios/AGENT_PROMPT.m
   for expert rollouts; they never write waypoints, control the gripper, or call Genesis. Place targets on an
   articulated fixture follow the joint as it opens.
 
-### Grasp: generate, then only subtract
+### Grasp: geometric candidates, chosen by trial
 
-Each episode generates candidates on the object as it actually settled, then filters them down to one. Later steps
-never add candidates back:
-
-1. **Generate**: GraspGen diffusion on a 2000-point cloud in metres (`grasp/graspgen_wrapper.py`).
-2. **Support clearance**: drop grasps whose gripper mesh comes within 1 cm of the object's own support surface
-   (`grasp/collision_screen.py::support_clearance_mask`). This runs before top-k.
-3. **Geometric rejection**: the grasp point must sit above the support surface, the approach must not come from
-   below; keep the top `GRASP_TOP_K` (100).
-4. **Expand to waypoints**: pre-grasp (backed off along the approach axis) → grasp → close → retreat.
-5. **Feasibility gate** (`grasp/feasibility.py`): the fingers must land in the support band and IK must succeed on
-   every segment without a joint jump above 0.8 rad. This gate does not check collisions.
-6. **Select**: the best-scoring survivor, or — when the asset's metadata names a `grasp_policy_bucket` — the best
-   survivor in that bucket. If nothing survives, the episode records `no_feasible_grasp` instead of executing an
-   ungated grasp.
-
-The support surface is the target object's own base, not the table, so objects on shelves or inside drawers reject
-grasps that reach in from below. Grasp pose axes: local X opens the fingers, Y is palm height, Z is the approach.
-
-### Grasp: geometric candidates, chosen by trial (opt-in)
-
-`--grasp-planner geometric` builds candidates from the settled object's oriented box and `GripperSpec` only
-(`grasp/geometric.py`); `--grasp-selection trial` runs them in simulation and keeps the first one that lifts the
-object. Two Panda facts shape the candidates:
+Single-asset validation and scenario runs build candidates from the settled object's oriented box and `GripperSpec`
+only (`grasp/geometric.py`), try them in simulation and keep the first one that lifts the object. Single-asset
+validation tries each from the placed start state; a scenario tries each from the live scene (snapshot, replay,
+restore: `SimEnv.trial_from_here`), so drawers already opened and objects already moved stay as they are. Two Panda
+facts shape the candidates:
 
 - **The fingers close along the hand's local Y axis** (`panda_finger_joint*` `axis="0 1 0"`), so the hand rotation
   is `[finger × approach, finger, approach]`.
@@ -228,7 +218,6 @@ the initial state, run the skills, then evaluate the success tree. The run write
 - [LeRobot](https://github.com/huggingface/lerobot): dataset format and the SmolVLA training entry.
 - [rocRobo](https://github.com/ZJLi2013/rocRobo) on [PyRoki](https://github.com/chungmin99/pyroki): collision-free IK
   and trajectory optimisation.
-- [GraspGen](https://github.com/NVlabs/GraspGen): learned grasp proposals (NVIDIA research / evaluation license).
 - [Objaverse](https://objaverse.allenai.org/) and [Articraft](https://github.com/mattzh72/articraft): asset sources.
 - [Blender](https://www.blender.org/): LLM agents build single-object assets as Blender scripts.
 - [Hugging Face Hub](https://huggingface.co/docs/hub/datasets): the dataset that stores build files by hash.

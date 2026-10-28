@@ -17,6 +17,7 @@ from typing import Callable
 
 import numpy as np
 
+from robotsmith.grasp.geometric import GeometricGraspPlanner
 from robotsmith.sim.franka import HOME_QPOS, to_numpy_f32
 from robotsmith.skills import plan_segment, resolve_frame, skill_phases
 from robotsmith.tasks import evaluate_success
@@ -221,6 +222,9 @@ def _live_scene_state(
         # use them for phase-aware collision-world exemption of the manipulated link.
         "target_frames": target_frames,
     }
+    # Geometric candidates are judged by trying them from the live scene (snapshot, replay, restore).
+    if isinstance(getattr(env, "planner", None), GeometricGraspPlanner):
+        scene_state["grasp_trial"] = env.trial_from_here
     # Resolve every named target against the live world so e.g. a tray slot
     # tracks the drawer's current opening instead of a static "fully open" point.
     for name, frame in target_frames.items():

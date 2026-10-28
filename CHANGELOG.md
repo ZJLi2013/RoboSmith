@@ -31,6 +31,10 @@ All notable user-facing changes are documented here. This project follows Semant
 
 ### Changed
 
+- Geometric candidates chosen by trial are the only grasp path for single-asset validation and scenario runs.
+  Scenario runs try each candidate from the live scene and restore it afterwards (`SimEnv.trial_from_here`).
+  `--grasp-planner` is gone from both scripts and `validate_asset_picks --grasp-selection` takes `trial` (default)
+  or `trial_all`.
 - `SimEnv.reset` raises `SceneInvalid` when an object moves more than 5 cm, drops more than 5 cm or tips more than
   30 deg from where it was placed during the settle steps. Single-asset validation then reports the asset as an error
   without trying grasps, and scenario runs stop with the object and readings, instead of starting from a rolled or
@@ -82,6 +86,10 @@ All notable user-facing changes are documented here. This project follows Semant
 
 ### Removed
 
+- GraspGen and everything built around it: the learned planner and model wrapper, the support-clearance screen,
+  feasibility gate and 9-bucket policy, policy onboarding and the metadata-guided rollout orchestrator, the spconv
+  checkpoint converter, and the `grasp_policy_bucket` asset field with its `assets/grasp_policy_buckets.json` sidecar.
+  It no longer ran in any scenario: it found meshes only by the file names `visual.obj` / `collision.obj`.
 - `mass_kg`, `density_kg_m3`, `restitution`, `stable_poses` and `grasp_strategy` asset fields (mass comes from the
   URDF; the rest had no readers), `assets/catalog.json` and `AssetLibrary.save_catalog`,
   `scripts/assets/compute_stable_poses.py`, and `scripts/assets/import_objaverse.py`.

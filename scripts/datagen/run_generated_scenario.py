@@ -33,7 +33,6 @@ class ScenarioSmokeConfig:
     n_episodes: int = 1
     seed: int = 42
     settle_steps: int = 30
-    grasp_planner: str = "auto"
     fps: int = 30
 
 
@@ -46,7 +45,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--n-episodes", type=int, default=1)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--settle-steps", type=int, default=30)
-    parser.add_argument("--grasp-planner", choices=["auto", "learned"], default="auto")
     return parser.parse_args()
 
 
@@ -66,12 +64,7 @@ def run_scenario_smoke(
     from robotsmith.motion import MotionParams
 
     ensure_display()
-    env = SimEnv.build(
-        package.legacy_scene,
-        seed=config.seed,
-        fps=config.fps,
-        grasp_planner=config.grasp_planner,
-    )
+    env = SimEnv.build(package.legacy_scene, seed=config.seed, fps=config.fps)
     executor = MotionExecutor()
     motion_params = MotionParams()
     repo_id = f"local/robotsmith-scenario-{package.legacy_task.name}"
@@ -240,7 +233,6 @@ def main() -> None:
             n_episodes=args.n_episodes,
             seed=args.seed,
             settle_steps=args.settle_steps,
-            grasp_planner=args.grasp_planner,
         ),
     )
     print(json.dumps(summary, indent=2))

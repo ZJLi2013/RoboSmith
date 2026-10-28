@@ -36,16 +36,8 @@ EPISODE_DIAGNOSTIC_FIELDS = (
     "success",
     "frame_count",
     "selected_candidate_index",
-    "selected_policy_bucket",
-    "selected_policy_bucket_rank",
-    "requested_policy_bucket",
-    "requested_policy_bucket_missing",
-    "selected_approach_bin",
-    "selected_orientation_bin",
-    "hard_ok",
-    "no_feasible_grasp",
-    "p0_bucket_hard_ok_counts",
-    "score_exec",
+    "no_candidates",
+    "no_trial_success",
 )
 
 
@@ -60,10 +52,8 @@ class AssetPickValidationConfig:
     no_videos: bool = False
     clean: bool = False
     settle_steps: int = 30
-    grasp_planner: str = "auto"
-    grasp_policy_bucket_override: str | None = None
     object_xy: tuple[float, float] | None = None
-    grasp_selection: str = "default"
+    grasp_selection: str = "trial"
     # When every episode fails, write a diagnosis request for the repair agent under <diagnose_dir>/<asset>/.
     diagnose_dir: Path | None = None
 
@@ -264,21 +254,9 @@ def run_asset_pick(config: AssetPickValidationConfig, asset_name: str) -> dict:
     scene_config = _make_scene(asset_name)
     repo_id = f"local/robotsmith-pick-{asset_name}"
 
-    env = SimEnv.build(
-        scene_config,
-        seed=config.seed,
-        fps=FPS,
-        grasp_planner=config.grasp_planner,
-    )
-    if config.grasp_policy_bucket_override:
-        env.asset_map["object"].metadata.grasp_policy_bucket = config.grasp_policy_bucket_override
+    env = SimEnv.build(scene_config, seed=config.seed, fps=FPS)
     print(f"======== START {asset_name} ========")
-    print(
-        "[scene] "
-        "pose=upright "
-        f"grasp_planner={config.grasp_planner} "
-        f"settle_steps={config.settle_steps}"
-    )
+    print(f"[scene] pose=upright grasp_selection={config.grasp_selection} settle_steps={config.settle_steps}")
     executor = MotionExecutor()
     motion_params = MotionParams()
     cache_root = Path.home() / ".cache" / "huggingface" / "lerobot" / repo_id
@@ -343,29 +321,11 @@ def run_asset_pick(config: AssetPickValidationConfig, asset_name: str) -> dict:
             "success": bool(success),
             "frame_count": len(traj),
             "selected_candidate_index": pick_trace.get("selected_candidate_index"),
-            "selected_policy_bucket": pick_trace.get("selected_policy_bucket"),
-            "selected_policy_bucket_rank": pick_trace.get(
-                "selected_policy_bucket_rank",
-            ),
-            "requested_policy_bucket": pick_trace.get("requested_policy_bucket"),
-            "requested_policy_bucket_missing": pick_trace.get(
-                "requested_policy_bucket_missing",
-            ),
-            "selected_approach_bin": pick_trace.get("selected_approach_bin"),
-            "selected_orientation_bin": pick_trace.get("selected_orientation_bin"),
-            "hard_ok": pick_trace.get("hard_ok"),
-            "no_feasible_grasp": pick_trace.get("no_feasible_grasp"),
-            "p0_bucket_hard_ok_counts": pick_trace.get("p0_bucket_hard_ok_counts"),
-            "score_exec": pick_trace.get("score_exec"),
             "no_candidates": bool(pick_trace.get("no_candidates", False)),
             "no_trial_success": pick_trace.get("no_trial_success"),
             "trials": pick_trace.get("trials"),
             "trial_seconds": pick_trace.get("trial_seconds"),
             "filter_counts": pick_trace.get("filter_counts"),
-            "p0_candidate_count": pick_trace.get("p0_candidate_count"),
-            "p0_support_reject_count": pick_trace.get("p0_support_reject_count"),
-            "p0_ik_reject_count": pick_trace.get("p0_ik_reject_count"),
-            "p0_feasible_count": pick_trace.get("p0_feasible_count"),
             "object_initial_pos": [float(v) for v in episode_plan.initial_positions["object"]],
             "finger_final_qpos": [float(v) for v in to_numpy(env.franka.get_dofs_position(env.finger_dof))],
         }

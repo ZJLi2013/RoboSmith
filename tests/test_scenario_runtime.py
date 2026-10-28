@@ -57,7 +57,7 @@ def test_run_scenario_episode_reanchors_to_live_resolved_positions(monkeypatch):
 
     def fake_plan_segment(
         skill, index, skills, planner, executor, solve_ik, scene_state, params,
-        qpos, held_category=None, held_place_z=None, phase="all",
+        qpos, held_category=None, held_place_z=None, phase="all", **_,
     ):
         seen["positions"] = scene_state["positions"]
         assert "joint_positions" in scene_state

@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Optional
 
 
-NO_POSITIVE_GRASP_POLICY_BUCKET = "no_positive"
 """Sentinel for assets whose full Stage 1 bucket probe found no positive bucket."""
 
 # URDF joint types that carry a controllable / movable degree of freedom.
@@ -162,9 +161,6 @@ class AssetMetadata:
     description: str = ""
     upright_verified: bool = False
     """True when a current ``llm_review`` check record passes (the review checks the asset stands on +Z)."""
-    grasp_policy_bucket: str | list[str] | None = None
-    """Validated Stage 1 bucket(s), or ``no_positive`` after a full failed probe.
-    Read from the grasp sidecar ``assets/grasp_policy_buckets.json``, not ``asset.json``."""
     mesh: dict = field(default_factory=dict)
     """Metrics of the current ``mesh_consistency`` check record (empty if none)."""
     handles: list[dict] = field(default_factory=list)

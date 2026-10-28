@@ -1,18 +1,16 @@
 """``pick`` primitive: select an executable grasp and lift the object.
 
-Delegates candidate selection to ``robotsmith.grasp.feasibility`` and motion to
-``MotionExecutor``; freezes the grasped payload as an attached collision object
-(ACO) so downstream transport/place plan around it.
+Candidates are tried in simulation (``scene_state["grasp_trial"]``) and the first that lifts the target is
+executed; without a trial callback the planner's first candidate is used. Motion goes to ``MotionExecutor``;
+the grasped payload is frozen as an attached collision object (ACO) so downstream transport/place plan around it.
 """
 
 from __future__ import annotations
 
 import logging
-import os
 
 import numpy as np
 
-from robotsmith.grasp.feasibility import select_best_grasp_plan
 from robotsmith.grasp.planner import GraspPlan
 from robotsmith.grasp.transforms import pose_matrix
 from robotsmith.motion.params import MotionParams
@@ -22,68 +20,24 @@ from robotsmith.motion.rocrobo_world import (
     build_payload_spheres,
 )
 from robotsmith.skills.base import Skill, SkillContext
-from robotsmith.skills.frames import _float_or_none
 from robotsmith.skills.registry import register
 
 logger = logging.getLogger(__name__)
 
 
-def _policy_buckets(value) -> list[str] | None:
-    if isinstance(value, str):
-        return [value] if value else None
-    if isinstance(value, (list, tuple)):
-        buckets = [str(bucket) for bucket in value if bucket]
-        return buckets or None
-    return None
-
-
 def _pick_trace_entry(skill: Skill, category: str, plan) -> dict:
     """Flatten the selected grasp plan into a pick ``skill_trace`` record."""
-    md = plan.metadata
-    grasp_pos = plan.grasp_pos
-    pre_grasp_pos = plan.pre_grasp_pos
-    retreat_pos = plan.retreat_pos
-    p0_ok_count = md.get("feasibility_hard_ok_count")
-    p0_candidate_count = md.get("feasibility_candidate_count")
+    def _vec(v):
+        return [float(x) for x in v] if v is not None else None
+
     return {
         "skill": skill.name,
         "target": skill.target,
         "category": category,
-        "selected_candidate_index": md.get("candidate_index"),
-        "selected_policy_bucket": md.get("selected_policy_bucket"),
-        "selected_policy_bucket_rank": md.get("selected_policy_bucket_rank"),
-        "requested_policy_bucket": md.get("requested_policy_bucket"),
-        "requested_policy_bucket_missing": md.get("requested_policy_bucket_missing"),
-        "selected_approach_bin": md.get("approach_bin"),
-        "selected_orientation_bin": md.get("orientation_bin"),
-        "selected_grasp_pos": (
-            [float(v) for v in grasp_pos] if grasp_pos is not None else None
-        ),
-        "selected_pre_grasp_pos": (
-            [float(v) for v in pre_grasp_pos] if pre_grasp_pos is not None else None
-        ),
-        "selected_retreat_pos": (
-            [float(v) for v in retreat_pos] if retreat_pos is not None else None
-        ),
-        "hard_ok": md.get("feasibility_hard_ok"),
-        "no_feasible_grasp": bool(md.get("no_feasible_grasp", False)),
-        "p0_feasible": (
-            f"{p0_ok_count}/{p0_candidate_count}"
-            if p0_ok_count is not None and p0_candidate_count is not None
-            else None
-        ),
-        "p0_feasible_count": p0_ok_count,
-        "p0_candidate_count": p0_candidate_count,
-        "p0_support_ok_count": md.get("feasibility_support_ok_count"),
-        "p0_support_reject_count": md.get("feasibility_support_reject_count"),
-        "p0_ik_reject_count": (
-            md["feasibility_support_ok_count"] - p0_ok_count
-            if p0_ok_count is not None and md.get("feasibility_support_ok_count") is not None
-            else None
-        ),
-        "p0_bucket_candidate_counts": md.get("feasibility_bucket_candidate_counts"),
-        "p0_bucket_hard_ok_counts": md.get("feasibility_bucket_hard_ok_counts"),
-        "score_exec": _float_or_none(md.get("score_exec")),
+        "selected_candidate_index": plan.metadata.get("candidate_index"),
+        "selected_grasp_pos": _vec(plan.grasp_pos),
+        "selected_pre_grasp_pos": _vec(plan.pre_grasp_pos),
+        "selected_retreat_pos": _vec(plan.retreat_pos),
     }
 
 
@@ -106,54 +60,15 @@ def _candidates(ctx: SkillContext) -> tuple[list[GraspPlan], dict]:
 
 
 def _select_pick_plan(ctx: SkillContext) -> GraspPlan | None:
-    """Resolve grasp candidates for the target and pick the most executable one."""
+    """The planner's first candidate, for callers that run without a grasp trial."""
     skill = ctx.skill
-    scene_state = ctx.scene_state
-    quats = scene_state.get("object_quats", {})
-    asset = scene_state.get("assets", {}).get(skill.target)
-    bucket_priority = _policy_buckets(
-        getattr(asset.metadata, "grasp_policy_bucket", None)
-        if asset is not None
-        else None
-    )
     plans, filter_counts = _candidates(ctx)
     if not plans:
         ctx.trace({"skill": skill.name, "target": skill.target, "category": ctx.category,
-                   "filter_counts": filter_counts, "no_candidates": True, "no_feasible_grasp": True})
+                   "filter_counts": filter_counts, "no_candidates": True})
         return None
-    # Grasp geometry's no-entry floor is the target's OWN support surface
-    # (object bottom), not the global table — so a shelved / in-fixture object
-    # rejects sub-object grasps correctly. Tabletop objects have
-    # support_z == table_surface_z (byte-identical). See
-    # docs/grasping.md, Runtime P0 Feasibility.
-    obj_h_for_support = float(
-        skill.params.get("object_height")
-        or scene_state.get("object_heights", {}).get(skill.target, 0.0)
-        or 0.0
-    )
-    table_surface_z = float(scene_state.get("table_surface_z", 0.0))
-    support_z = (
-        float(ctx.obj_pos[2]) - obj_h_for_support / 2.0
-        if obj_h_for_support > 0.0
-        else table_surface_z
-    )
-    if len(plans) > 1:
-        plan = select_best_grasp_plan(
-            plans,
-            ctx.motion_planner.solve_ik,
-            ctx.qpos,
-            support_z=support_z,
-            asset=asset,
-            object_quat=quats.get(skill.target),
-            category=ctx.category,
-            bucket_priority=bucket_priority,
-        )
-    else:
-        plan = plans[0]
-    ctx.trace(
-        _pick_trace_entry(skill, ctx.category, plan) | {"filter_counts": filter_counts}
-    )
-    return plan
+    ctx.trace(_pick_trace_entry(skill, ctx.category, plans[0]) | {"filter_counts": filter_counts})
+    return plans[0]
 
 
 def _pick_motion_params(ctx: SkillContext) -> MotionParams:
@@ -256,7 +171,7 @@ def _select_by_trial(ctx: SkillContext, trial) -> tuple[GraspPlan, list[np.ndarr
         except RuntimeError as exc:
             traj, result = None, {"lifted": False, "lift_m": None, "seconds": 0.0, "motion_error": str(exc)}
         md = plan.metadata
-        trials.append({"candidate_index": md.get("candidate_index"), "kind": md.get("kind", md.get("policy_bucket")),
+        trials.append({"candidate_index": md.get("candidate_index"), "kind": md.get("kind"),
                        "closing_width": md.get("closing_width"), **result})
         if result["lifted"] and chosen is None:
             chosen = (plan, traj)
@@ -301,10 +216,6 @@ def run_pick(ctx: SkillContext) -> list[np.ndarray]:
         plan, traj = chosen if chosen else (None, None)
     else:
         plan = _select_pick_plan(ctx)
-        if plan is not None and plan.metadata.get("no_feasible_grasp") and (
-            os.environ.get("GRASP_EVAL_SKIP_NO_FEASIBLE", "1") == "1"
-        ):
-            plan = None
         traj = _pick_motion(ctx, plan) if plan is not None else None
     if plan is None:
         logger.debug("[skills] no executable grasp candidate; skip pick execution")

@@ -21,7 +21,8 @@ from robotsmith.sim.franka import (
     FORCE_LOWER, FORCE_UPPER, to_numpy,
 )
 from robotsmith.assets.schema import Asset
-from robotsmith.grasp.planner import GraspPlanner, resolve_grasp_strategy
+from robotsmith.grasp.geometric import GeometricGraspPlanner
+from robotsmith.grasp.planner import GraspPlanner
 from robotsmith.scenes.config import SceneConfig
 
 logger = logging.getLogger(__name__)
@@ -136,7 +137,6 @@ class SimEnv:
         cpu: bool = False,
         box_box_detection: bool = True,
         settle_steps: int = 30,
-        grasp_planner: str = "auto",
     ) -> SimEnv:
         """Create a fully-initialized SimEnv from a SceneConfig."""
         from robotsmith.assets.library import AssetLibrary
@@ -231,17 +231,6 @@ class SimEnv:
             cam_wrist.attach(end_effector, wrist_offset_T)
         logger.debug("[cam] wrist camera attached to franka hand link")
 
-        planner: GraspPlanner
-        if grasp_planner not in {"auto", "learned", "geometric"}:
-            raise ValueError(
-                "grasp_planner must be one of: auto, learned, geometric"
-            )
-        if grasp_planner == "geometric":
-            from robotsmith.grasp.geometric import GeometricGraspPlanner
-            planner = GeometricGraspPlanner()
-        else:
-            planner = cls._learned_planner(asset_map, table_z, seed)
-
         env = cls(
             scene=handle.scene,
             franka=franka,
@@ -257,7 +246,7 @@ class SimEnv:
             motors_dof=motors_dof,
             arm_dof=arm_dof,
             finger_dof=finger_dof,
-            planner=planner,
+            planner=GeometricGraspPlanner(),
             table_surface_z=table_z,
         )
 
@@ -274,46 +263,6 @@ class SimEnv:
         env.sync_object_states()
         return env
 
-    @staticmethod
-    def _learned_planner(asset_map: dict, table_z: float, seed: int) -> GraspPlanner:
-        # Only assets that actually resolve to a learned grasp need a mesh.
-        # Articulated assets resolve to "none" (moved by drag_handle, mesh from
-        # the URDF). This keeps the planner asset-aware instead of forcing a
-        # scene-wide mesh requirement.
-        missing_mesh = [
-            name for name, asset in asset_map.items()
-            if resolve_grasp_strategy(asset, default="learned") == "learned"
-            and asset.visual_mesh is None and asset.collision_mesh is None
-        ]
-        if missing_mesh:
-            raise RuntimeError(
-                "LearnedGraspPlanner requires a mesh for every learned-grasp object; "
-                f"missing visual/collision mesh for {missing_mesh}"
-            )
-        try:
-            from robotsmith.grasp.graspgen_wrapper import GraspGenModel
-            from robotsmith.grasp.learned_planner import LearnedGraspPlanner
-            cfg_path = os.environ.get("GRASPGEN_CONFIG", None)
-            model = GraspGenModel(config_yaml=cfg_path)
-            max_az = float(os.environ.get("MAX_APPROACH_Z", "1.0"))
-            top_k = int(os.environ.get("GRASP_TOP_K", "100"))
-            fixed_ori = os.environ.get("GRASP_FIXED_ORI", "0") == "1"
-            # 0 disables the screen. Not GraspGenX's 0.02: that is calibrated against a
-            # sparse sampled scene cloud and over-rejects low top-down grasps on an exact plane.
-            clearance = float(os.environ.get("GRASP_SUPPORT_CLEARANCE_M", "0.01"))
-            planner = LearnedGraspPlanner(
-                model, z_offset=table_z, max_approach_z=max_az,
-                fixed_orientation=fixed_ori, top_k=top_k,
-                support_clearance=clearance, seed=seed,
-            )
-            logger.debug("[grasp] using LearnedGraspPlanner")
-        except Exception as exc:
-            raise RuntimeError(
-                "LearnedGraspPlanner could not be initialized: "
-                f"{type(exc).__name__}: {exc}"
-            ) from exc
-        return planner
-
     def trial_trajectory(self, start: dict, trajectory: list, target: str, *, settle_steps: int = 30,
                          lift_m: float = 0.02) -> dict:
         """Reset to ``start`` (as ``reset`` takes it), replay ``trajectory`` without rendering, and
@@ -325,6 +274,23 @@ class SimEnv:
             self.franka.control_dofs_position(q, self.motors_dof)
             self.scene.step()
         dz = float(to_numpy(self.entity_map[target].get_pos()).reshape(-1)[2]) - z0
+        return {"lifted": dz > lift_m, "lift_m": round(dz, 4), "seconds": round(time.perf_counter() - t0, 3)}
+
+    def trial_from_here(self, trajectory: list, target: str, *, lift_m: float = 0.02) -> dict:
+        """Replay ``trajectory`` from the current scene state without rendering, report whether ``target``
+        ended at least ``lift_m`` higher, then restore the whole scene (bodies, joints, velocities)."""
+        snapshot = self.scene.get_state()
+        qpos = to_numpy(self.franka.get_dofs_position(self.motors_dof))
+        z0 = float(to_numpy(self.entity_map[target].get_pos()).reshape(-1)[2])
+        t0 = time.perf_counter()
+        try:
+            for q in trajectory:
+                self.franka.control_dofs_position(q, self.motors_dof)
+                self.scene.step()
+            dz = float(to_numpy(self.entity_map[target].get_pos()).reshape(-1)[2]) - z0
+        finally:
+            self.scene.reset(snapshot)
+            self.franka.control_dofs_position(qpos, self.motors_dof)
         return {"lifted": dz > lift_m, "lift_m": round(dz, 4), "seconds": round(time.perf_counter() - t0, 3)}
 
     # ---- Workspace ----

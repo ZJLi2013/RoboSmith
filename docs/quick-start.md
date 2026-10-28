@@ -17,14 +17,11 @@ Everything below needs an AMD GPU node with ROCm and Docker.
 
 ## 1. Layout on the host
 
-`scripts/setup/run_scenario.sh` expects these directories under `$HOME` (override with `REPO`, `GRASPGEN_DIR`,
-`GRASPGEN_MODELS`, `HF_CACHE`):
+`scripts/setup/run_scenario.sh` expects these directories under `$HOME` (override with `REPO`, `HF_CACHE`):
 
 ```text
 $HOME/RoboSmith         this repository
 $HOME/rocRobo           motion backend (sidecar)
-$HOME/GraspGen          GraspGen source
-$HOME/GraspGenModels    GraspGen checkpoints
 $HOME/.cache/huggingface  LeRobot datasets are written here
 ```
 
@@ -32,52 +29,21 @@ $HOME/.cache/huggingface  LeRobot datasets are written here
 cd $HOME
 git clone https://github.com/ZJLi2013/RoboSmith.git
 git clone --recurse-submodules https://github.com/ZJLi2013/rocRobo.git
-git clone --depth 1 https://github.com/NVlabs/GraspGen.git
 ```
 
 ## 2. Build the RoboSmith image
 
 Build from the repository root (`cd $HOME/RoboSmith`) with the image for your GPU architecture:
 
-| GPU | Build | Tag |
-|---|---|---|
-| MI300 (gfx942) | `docker build -f docker/Dockerfile.gfx942 -t robotsmith:gfx942-rocm6.4.3-genesis0.4.5 .` | includes GraspGen deps |
-| MI350 (gfx950) | `docker build -f docker/Dockerfile.gfx950 -t robotsmith:rocm-headless .`, then the GraspGen layer below | `robotsmith:rocm-headless-graspgen` |
+| GPU | Build |
+|---|---|
+| MI300 (gfx942) | `docker build -f docker/Dockerfile.gfx942 -t robotsmith:gfx942-rocm6.4.3-genesis0.4.5 .` |
+| MI350 (gfx950) | `docker build -f docker/Dockerfile.gfx950 -t robotsmith:rocm-headless .` |
 
 gfx942 needs its own older stack (ROCm 6.4.3, Genesis 0.4.5) because newer Genesis crashes while compiling collision
-kernels on that architecture. On gfx950, add the GraspGen layer:
+kernels on that architecture.
 
-```dockerfile
-FROM robotsmith:rocm-headless
-RUN python -m pip install --no-cache-dir git+https://github.com/ZJLi2013/spconv_rocm.git@rocm \
- && python -m pip install --no-cache-dir transformers==4.45.2 tensordict diffusers==0.11.1 \
-      huggingface-hub==0.25.2 sharedarray
-```
-
-```bash
-docker build -f Dockerfile.graspgen -t robotsmith:rocm-headless-graspgen .
-```
-
-Use `spconv_rocm`, not GraspGen's upstream `spconv-cu120`.
-
-## 3. GraspGen weights
-
-GraspGen is under an NVIDIA research / evaluation license and is not shipped with RoboSmith. Download the checkpoints
-to the host and convert them to the `spconv_rocm` weight layout once:
-
-```bash
-IMAGE=robotsmith:gfx942-rocm6.4.3-genesis0.4.5   # or robotsmith:rocm-headless-graspgen
-docker run --rm -v $HOME:/host $IMAGE bash -lc '
-  python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id=\"adithyamurali/GraspGenModels\", local_dir=\"/host/GraspGenModels\")"
-  cd /host/RoboSmith && python scripts/setup/_convert_spconv_ckpt.py \
-    /host/GraspGenModels/checkpoints/graspgen_franka_panda_gen.pth \
-    /host/GraspGenModels/checkpoints/graspgen_franka_panda_dis.pth'
-```
-
-This writes `*_rocm.pth` next to the originals; the grasp wrapper prefers them automatically. The run points
-`GRASPGEN_CONFIG` at `GraspGenModels/checkpoints/graspgen_franka_panda.yml`.
-
-## 4. Start the rocRobo sidecar
+## 3. Start the rocRobo sidecar
 
 Once per machine. The image is not published; build it from the rocRobo checkout. The container must be named
 `rocrobo_dev` (or set `ROCROBO_CONTAINER`) and mount rocRobo at `/rocrobo`:
@@ -92,12 +58,12 @@ docker run -d --name rocrobo_dev \
 docker exec rocrobo_dev pip install -e /rocrobo/pyroki --no-deps
 ```
 
-## 5. Run the drawer scenario
+## 4. Run the drawer scenario
 
 ```bash
 cd $HOME/RoboSmith
 bash scripts/setup/run_scenario.sh                                     # MI300
-IMAGE=robotsmith:rocm-headless-graspgen bash scripts/setup/run_scenario.sh   # MI350
+IMAGE=robotsmith:rocm-headless bash scripts/setup/run_scenario.sh            # MI350
 docker logs -f f1_m1
 ```
 
@@ -118,7 +84,7 @@ docker run --rm --device=/dev/kfd --device=/dev/dri --group-add video \
   bash -lc 'cd /workspace/robotsmith && python scripts/datagen/snapshot_scenario.py --scenario scenarios/pick_place_into_drawer.yaml'
 ```
 
-## 6. Write your own scenario
+## 5. Write your own scenario
 
 Copy a file from [`scenarios/`](../scenarios/), change the scene, skill intents, and success tree, and pass it with
 `SCENARIO=scenarios/<your_file>.py`. To have an agent draft one, give it

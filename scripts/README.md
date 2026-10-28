@@ -17,10 +17,10 @@ stage: **assets → datagen → setup**.
 - `snapshot_scenario.py`: render static layout snapshots (overview/topdown PNG).
 ## `setup/` — environment & service helpers
 
-Not product logic — ROCm/GraspGen environment plumbing:
+Not product logic — ROCm environment plumbing:
 
-- `_convert_spconv_ckpt.py`, `_install_scatter_shim.py`: ROCm GraspGen setup helpers (invoked by the Docker build / quick-start).
-- `run_scenario.sh`: canonical env-driven e2e launcher (RoboSmith + rocRobo sidecar); defaults to the MI300 / gfx942 image; override `NAME`/`SCENARIO`/`PLANNER`/`IMAGE`, and the host mounts `REPO`/`GRASPGEN_DIR`/`GRASPGEN_MODELS`/`HF_CACHE`.
+- `_install_scatter_shim.py`: `torch_scatter` shim installed by the Docker build.
+- `run_scenario.sh`: canonical env-driven e2e launcher (RoboSmith + rocRobo sidecar); defaults to the MI300 / gfx942 image; override `NAME`/`SCENARIO`/`IMAGE`, and the host mounts `REPO`/`HF_CACHE`.
 
 The dev-only `rocrobo_serve_smoke.py` under `scripts/setup/` is gitignored.
 
