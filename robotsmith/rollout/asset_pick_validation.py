@@ -60,10 +60,10 @@ class AssetPickValidationConfig:
     no_videos: bool = False
     clean: bool = False
     settle_steps: int = 30
-    grasp_planner: str = "auto"
+    grasp_planner: str = "geometric"
     grasp_policy_bucket_override: str | None = None
     object_xy: tuple[float, float] | None = None
-    grasp_selection: str = "default"
+    grasp_selection: str = "trial"
     # When every episode fails, write a diagnosis request for the repair agent under <diagnose_dir>/<asset>/.
     diagnose_dir: Path | None = None
 

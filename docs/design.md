@@ -129,7 +129,7 @@ contract for agents is [`scenarios/AGENT_PROMPT.md`](../scenarios/AGENT_PROMPT.m
   for expert rollouts; they never write waypoints, control the gripper, or call Genesis. Place targets on an
   articulated fixture follow the joint as it opens.
 
-### Grasp: generate, then only subtract
+### Grasp: generate, then only subtract (GraspGen, `--grasp-planner learned`)
 
 Each episode generates candidates on the object as it actually settled, then filters them down to one. Later steps
 never add candidates back:
@@ -149,11 +149,13 @@ never add candidates back:
 The support surface is the target object's own base, not the table, so objects on shelves or inside drawers reject
 grasps that reach in from below. Grasp pose axes: local X opens the fingers, Y is palm height, Z is the approach.
 
-### Grasp: geometric candidates, chosen by trial (opt-in)
+### Grasp: geometric candidates, chosen by trial (default)
 
-`--grasp-planner geometric` builds candidates from the settled object's oriented box and `GripperSpec` only
-(`grasp/geometric.py`); `--grasp-selection trial` runs them in simulation and keeps the first one that lifts the
-object. Two Panda facts shape the candidates:
+Single-asset validation and scenario runs build candidates from the settled object's oriented box and `GripperSpec`
+only (`grasp/geometric.py`), try them in simulation and keep the first one that lifts the object. Single-asset
+validation tries each from the placed start state; a scenario tries each from the live scene (snapshot, replay,
+restore: `SimEnv.trial_from_here`), so drawers already opened and objects already moved stay as they are. Two Panda
+facts shape the candidates:
 
 - **The fingers close along the hand's local Y axis** (`panda_finger_joint*` `axis="0 1 0"`), so the hand rotation
   is `[finger × approach, finger, approach]`.

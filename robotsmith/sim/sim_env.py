@@ -327,6 +327,23 @@ class SimEnv:
         dz = float(to_numpy(self.entity_map[target].get_pos()).reshape(-1)[2]) - z0
         return {"lifted": dz > lift_m, "lift_m": round(dz, 4), "seconds": round(time.perf_counter() - t0, 3)}
 
+    def trial_from_here(self, trajectory: list, target: str, *, lift_m: float = 0.02) -> dict:
+        """Replay ``trajectory`` from the current scene state without rendering, report whether ``target``
+        ended at least ``lift_m`` higher, then restore the whole scene (bodies, joints, velocities)."""
+        snapshot = self.scene.get_state()
+        qpos = to_numpy(self.franka.get_dofs_position(self.motors_dof))
+        z0 = float(to_numpy(self.entity_map[target].get_pos()).reshape(-1)[2])
+        t0 = time.perf_counter()
+        try:
+            for q in trajectory:
+                self.franka.control_dofs_position(q, self.motors_dof)
+                self.scene.step()
+            dz = float(to_numpy(self.entity_map[target].get_pos()).reshape(-1)[2]) - z0
+        finally:
+            self.scene.reset(snapshot)
+            self.franka.control_dofs_position(qpos, self.motors_dof)
+        return {"lifted": dz > lift_m, "lift_m": round(dz, 4), "seconds": round(time.perf_counter() - t0, 3)}
+
     # ---- Workspace ----
 
     @property

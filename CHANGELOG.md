@@ -31,6 +31,9 @@ All notable user-facing changes are documented here. This project follows Semant
 
 ### Changed
 
+- Geometric candidates chosen by trial are the default grasp for single-asset validation and scenario runs
+  (`--grasp-planner geometric`; GraspGen stays available as `learned`). Scenario runs try each candidate from the live
+  scene and restore it afterwards (`SimEnv.trial_from_here`).
 - `SimEnv.reset` raises `SceneInvalid` when an object moves more than 5 cm, drops more than 5 cm or tips more than
   30 deg from where it was placed during the settle steps. Single-asset validation then reports the asset as an error
   without trying grasps, and scenario runs stop with the object and readings, instead of starting from a rolled or

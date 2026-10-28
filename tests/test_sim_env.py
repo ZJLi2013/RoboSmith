@@ -96,3 +96,55 @@ def test_reset_raises_when_the_object_rolls_away():
 
     with pytest.raises(SceneInvalid, match="object: moved 0.535 m"):
         env.reset({"object": (0.42, -0.27)}, settle_steps=0)
+
+
+class _SnapshotScene:
+    def __init__(self, ent):
+        self.ent, self.calls = ent, []
+
+    def get_state(self):
+        self.calls.append("get_state")
+        return ("snapshot", tuple(self.ent.pos))
+
+    def step(self):
+        self.calls.append("step")
+        self.ent.pos[2] += 0.05
+
+    def reset(self, state):
+        self.calls.append("reset")
+        self.ent.pos = list(state[1])
+
+
+class _MovingEntity:
+    def __init__(self):
+        self.pos = [0.42, -0.27, 0.80]
+
+    def get_pos(self):
+        return list(self.pos)
+
+
+class _RecordingFranka(_FakeFranka):
+    def __init__(self):
+        self.commands = []
+
+    def get_dofs_position(self, *args, **kwargs):
+        return [0.1] * 9
+
+    def control_dofs_position(self, q, *args, **kwargs):
+        self.commands.append(list(q))
+
+
+def test_trial_from_here_restores_the_scene_and_the_arm_target():
+    env = object.__new__(SimEnv)
+    ent = _MovingEntity()
+    env.franka = _RecordingFranka()
+    env.motors_dof = list(range(9))
+    env.entity_map = {"object": ent}
+    env.scene = _SnapshotScene(ent)
+
+    result = env.trial_from_here([[0.0] * 9] * 3, "object")
+
+    assert result["lifted"] and result["lift_m"] == pytest.approx(0.15)
+    assert env.scene.calls == ["get_state", "step", "step", "step", "reset"]
+    assert ent.pos == pytest.approx([0.42, -0.27, 0.80])
+    assert env.franka.commands[-1] == pytest.approx([0.1] * 9)

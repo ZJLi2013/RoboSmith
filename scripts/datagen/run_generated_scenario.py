@@ -33,7 +33,7 @@ class ScenarioSmokeConfig:
     n_episodes: int = 1
     seed: int = 42
     settle_steps: int = 30
-    grasp_planner: str = "auto"
+    grasp_planner: str = "geometric"
     fps: int = 30
 
 
@@ -46,7 +46,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--n-episodes", type=int, default=1)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--settle-steps", type=int, default=30)
-    parser.add_argument("--grasp-planner", choices=["auto", "learned"], default="auto")
+    parser.add_argument("--grasp-planner", choices=["geometric", "auto", "learned"], default="geometric",
+                        help="geometric: candidates from asset geometry, each tried from the live scene before "
+                             "execution; auto / learned: GraspGen.")
     return parser.parse_args()
 
 
