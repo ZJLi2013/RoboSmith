@@ -1,5 +1,7 @@
 # RoboSmith design
 
+> 中文版：[design-cn.md](design-cn.md).
+
 RoboSmith turns **assets plus a declarative task** into **successful expert episodes recorded as a LeRobot
 dataset**. You write *what* should happen; RoboSmith decides *how*: it builds the scene, plans a grasp for every
 episode, generates a joint trajectory, rolls it out in Genesis, and keeps the success verdict next to the data.

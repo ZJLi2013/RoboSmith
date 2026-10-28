@@ -36,7 +36,7 @@ RoboSmith 在 Genesis 里搭场景、规划抓取和避障运动、跑 rollout�
 ## 上手
 
 - [Quick start](docs/quick-start.md)：从一台全新 GPU 节点跑出第一条抽屉 episode。
-- [Design](docs/design.md)：数据流、关键概念、代码结构、依赖的上游项目。
+- [设计](docs/design-cn.md)：数据流、关键概念、代码结构、依赖的上游项目（[英文版](docs/design.md)）。
 - [编写 scenario](scenarios/README.md)。
 - 技术博客：[RoboSmith — 面向具身交互操作的 ROCm-native 合成数据管线](https://andyluo7.github.io/rocm/amd/mi300x/robotics/embodiedai/sdg/2026/07/01/robosmith-rocm-native-synthetic-data-pipeline/)。
 
