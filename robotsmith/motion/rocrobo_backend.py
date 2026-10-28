@@ -114,7 +114,7 @@ class RocRoboServeClient:
             argv,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+            stderr=open(os.environ.get("ROCROBO_SERVE_STDERR", os.devnull), "a"),
             text=True,
             bufsize=1,
         )
@@ -170,7 +170,11 @@ class RocRoboServeClient:
                 self.available = False
                 self._kill()
                 raise RuntimeError("rocrobo serve closed (empty response)")
-            return json.loads(line)
+            try:
+                return json.loads(line)
+            except ValueError:
+                logger.warning("[rocrobo] non-JSON line from serve: %r", line[:400])
+                raise
 
 
 _CLIENT_SINGLETON: RocRoboServeClient | None = None
