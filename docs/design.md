@@ -10,24 +10,31 @@ consumes the dataset RoboSmith writes.
 ## Data flow
 
 ```text
-asset library ──► scenario YAML (scene relations + task + success) + teacher plan
-                      │  scenario/load.py solves relations; scenario/adapters.py lowers to the runtime
-                      ▼
-                  SimEnv (Genesis + Franka) ── reset, settle
-                      │
-     per skill:   grasp planner ──► GraspPlan ──► MotionExecutor ──► MotionPlanner (Genesis IK or rocRobo)
-                      │
-                      ▼
-                  rollout + success tree ──► LeRobot dataset, videos, run summary
+one-sentence task request
+  └─► agent writes the scenario YAML from the asset catalog (scenarios/AGENT_PROMPT.md)
+        └─ asset missing ─► agent generates it (Blender script, scene reconstruction, or image-to-3D)
+                              └─► LLM review + checks ──pass──► admitted to the asset library
+
+asset library + scenario YAML (scene relations + task + success)
+  └─► relations solved per seed (scenario/load.py), lowered to the runtime (scenario/adapters.py)
+        └─► SimEnv (Genesis + Franka): place, settle; reject the scene if an object rolled, dropped or tipped
+              └─► per skill
+                    pick:  candidates (grasps written back to the asset first, then geometric)
+                           ─► try each in simulation ─► execute the first that lifts
+                           all fail ─► diagnosis request ─► repair agent ─► re-trial ─► write back to the asset
+                    every skill: GraspPlan ─► MotionExecutor ─► MotionPlanner (Genesis IK or rocRobo)
+              └─► rollout + success tree ─► LeRobot dataset, videos, run summary
 ```
 
 Each arrow is one typed contract, and each layer has one owner in the code:
 
 | Contract | Type / module |
 |---|---|
+| Asset → library | `asset.json` + `checks.jsonl`, admitted on a passing review (`robotsmith/assets/store.py`) |
 | Asset → scene | `AssetMetadata` (`robotsmith/assets/`) |
 | Scenario → runtime | `robotsmith/scenario/load.py`, `robotsmith/scenario/adapters.py` |
 | Grasp → execution | `GraspPlan`, including its waypoints |
+| Repair → asset | `grasp_candidates` annotation + `trial_grasp` check (`robotsmith/grasp/annotations.py`, `grasp/diagnostics/`) |
 | Execution → motion backend | the `MotionPlanner` protocol (`robotsmith/motion/`) |
 | Simulator / recorder | `robotsmith/sim/sim_env.py`, `robotsmith/sim/recorder.py` (the only adapters) |
 
@@ -40,12 +47,12 @@ robotsmith/
 ├── scenes/            # SceneConfig / ObjectPlacement, upright pose, Genesis loader
 ├── tasks/             # TaskSpec, predicates, task presets
 ├── scenario_runtime/  # scenario load, materialize, segment-level runner
-├── grasp/             # learned grasp planner + feasibility gate
+├── grasp/             # geometric candidates, written-back grasps, repair-loop tools
 ├── motion/            # motion planning, rocRobo backend, collision world
 ├── execution/         # executor: skills to joint trajectories
 ├── skills/            # pick / place / open / close + registry
 ├── sim/               # Genesis SimEnv, Franka, LeRobot recorder
-└── rollout/           # rollout orchestration, episode layout, video export
+└── rollout/           # single-asset pick validation, episode layout, video export
 ```
 
 ## Key concepts
