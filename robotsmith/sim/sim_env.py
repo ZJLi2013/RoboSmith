@@ -35,6 +35,34 @@ TARGET_MARKER_SIZE = (0.06, 0.06, 0.005)
 # open even under a -2 m/s kick.
 PASSIVE_JOINT_DAMPING = 20.0
 
+# A healthy settle moves an object a few millimetres (die_01 lands on a face: 2.6 mm, 6 deg);
+# beyond these the object rolled, tipped or fell, and the episode no longer starts where it was placed.
+SETTLE_MAX_XY_M = 0.05
+SETTLE_MAX_DROP_M = 0.05
+SETTLE_MAX_TILT_DEG = 30.0
+
+
+class SceneInvalid(RuntimeError):
+    """Objects did not stay where they were placed through the settle steps."""
+
+
+def _z_axis(q_wxyz) -> np.ndarray:
+    w, x, y, z = (float(v) for v in q_wxyz)
+    return np.array([2 * (x * z + y * w), 2 * (y * z - x * w), 1 - 2 * (x * x + y * y)])
+
+
+def settle_violations(spawned: dict, settled: dict) -> list[str]:
+    """Objects whose settled pose left the spawn pose; both map name -> (xyz, quat_wxyz)."""
+    out = []
+    for name, (p0, q0) in spawned.items():
+        p1, q1 = settled[name]
+        dxy = float(np.hypot(p1[0] - p0[0], p1[1] - p0[1]))
+        drop = float(p0[2] - p1[2])
+        tilt = float(np.degrees(np.arccos(np.clip(_z_axis(q0) @ _z_axis(q1), -1.0, 1.0))))
+        if dxy > SETTLE_MAX_XY_M or drop > SETTLE_MAX_DROP_M or tilt > SETTLE_MAX_TILT_DEG:
+            out.append(f"{name}: moved {dxy:.3f} m, dropped {drop:.3f} m, tilted {tilt:.0f} deg")
+    return out
+
 
 def ensure_display():
     """Start Xvfb if no DISPLAY is set (headless rendering)."""
@@ -464,6 +492,7 @@ class SimEnv:
         self.franka.control_dofs_position(HOME_QPOS, self.motors_dof)
         self.franka.zero_all_dofs_velocity()
 
+        spawned = {}
         for name, pos in obj_positions.items():
             ent = self.entity_map.get(name)
             if ent is None:
@@ -477,6 +506,7 @@ class SimEnv:
             )
             po = self.placed_map.get(name)
             q_wxyz = po.quaternion if po else [1, 0, 0, 0]
+            spawned[name] = ((x, y, z), q_wxyz)
             ent.set_quat(
                 torch.tensor(q_wxyz, dtype=torch.float32,
                              device=self._device).unsqueeze(0),
@@ -494,7 +524,12 @@ class SimEnv:
         for _ in range(settle_steps):
             self.scene.step()
 
-        return self.sync_object_states()
+        positions = self.sync_object_states()
+        violations = settle_violations(
+            spawned, {name: (positions[name], self.object_quats[name]) for name in spawned})
+        if violations:
+            raise SceneInvalid("; ".join(violations))
+        return positions
 
     def sync_object_states(self) -> dict[str, np.ndarray]:
         """Sync object pose maps from the simulator after physics settling."""
