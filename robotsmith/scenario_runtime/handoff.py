@@ -97,5 +97,10 @@ def check(skill, phase: str, seg, samples: list[dict], *, held: str | None,
 
 
 def first_failure(handoffs: list[dict]) -> dict | None:
-    """The first handoff that did not finish (``done`` False), else None."""
-    return next((h for h in handoffs if h.get("done") is False), None)
+    """The first handoff that did not finish; for a failed task whose handoffs all passed, the last
+    place (the object never came to rest the way the task predicate asks)."""
+    failed = next((h for h in handoffs if h.get("done") is False), None)
+    if failed is not None:
+        return failed
+    place = next((h for h in reversed(handoffs) if h["skill"] == "place"), None)
+    return None if place is None else {**place, "done": False, "cause": "release?", "by_predicate": True}

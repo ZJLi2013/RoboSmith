@@ -47,3 +47,7 @@ def test_pick_and_open_handoff_and_first_failure():
                            trace={"move_vec": [-0.245, 0.0, 0.0]})
     assert opened["done"] is False
     assert handoff.first_failure([pick, opened]) is opened
+
+    seg, samples = _place()
+    placed = handoff.check(Skill("place", "goal"), "all", seg, samples, held="die", target=[0.5, 0.0, 0.8])
+    assert handoff.first_failure([pick, placed])["cause"] == "release?"
