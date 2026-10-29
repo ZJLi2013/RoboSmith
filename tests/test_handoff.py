@@ -50,4 +50,4 @@ def test_pick_and_open_handoff_and_first_failure():
 
     seg, samples = _place()
     placed = handoff.check(Skill("place", "goal"), "all", seg, samples, held="die", target=[0.5, 0.0, 0.8])
-    assert handoff.first_failure([pick, placed])["cause"] == "release?"
+    assert handoff.first_failure([pick, placed]) == {"skill": None, "done": False, "cause": "unknown"}
