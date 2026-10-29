@@ -13,7 +13,7 @@ from robotsmith.grasp.transforms import TOP_DOWN_QUAT
 from robotsmith.motion.rocrobo_world import build_obstacle_world
 from robotsmith.skills.base import SkillContext
 from robotsmith.skills.frames import _handle_links, _resolve_handle_drag
-from robotsmith.skills.registry import register
+from robotsmith.skills.registry import bound_leaf, register
 
 
 def _run_drag(ctx: SkillContext, *, opening: bool) -> list[np.ndarray]:
@@ -63,11 +63,11 @@ def _run_drag(ctx: SkillContext, *, opening: bool) -> list[np.ndarray]:
     return seg
 
 
-@register("open")
+@register("open", post=bound_leaf)
 def run_open(ctx: SkillContext) -> list[np.ndarray]:
     return _run_drag(ctx, opening=True)
 
 
-@register("close")
+@register("close", post=bound_leaf)
 def run_close(ctx: SkillContext) -> list[np.ndarray]:
     return _run_drag(ctx, opening=False)

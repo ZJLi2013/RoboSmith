@@ -42,6 +42,11 @@ All notable user-facing changes are documented here. This project follows Semant
 
 ### Changed
 
+- Scenario `open` / `close` steps are judged by `joint_opened` / `joint_closed` on the joint the executor drags,
+  at the end of the drag with no hold. `skills.frames.resolve_drag_joint` is the one answer for which joint and
+  which endpoint (the upper limit or `distance` for open, the lower limit for close), used by both the drag and the
+  load-time binding; `close` now drags to a nonzero lower limit instead of to 0. The handoff check keeps the joint
+  travel as a diagnostic. A missing joint observation raises `JudgeInputError`.
 - A scenario `place` is judged by the same `on` / `inside` predicate as the task: after its last phase the arm holds
   for 0.5 s, recorded into the episode, and the step's load-time binding is evaluated on that state. The step keeps
   its verdict, binding and judged state; an unchecked binding claims nothing, and the old 8 cm landing threshold is

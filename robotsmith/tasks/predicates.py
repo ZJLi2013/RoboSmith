@@ -107,6 +107,13 @@ def _observed(env_state: dict, key: str, name: str):
     return value
 
 
+def _joint_value(env_state: dict, obj: str, joint: str) -> float:
+    value = env_state.get("joint_positions", {}).get(obj, {}).get(joint)
+    if value is None or not np.isfinite(float(value)):
+        raise JudgeInputError(f"joint_positions[{obj!r}][{joint!r}] is missing or not finite")
+    return float(value)
+
+
 def _settled(frames: list, max_move: float, max_turn_deg: float) -> bool:
     """Every sampled frame (xyz + wxyz quat) stays within the limits of the last one."""
     frames = np.asarray(frames, dtype=np.float64)
@@ -185,8 +192,7 @@ def joint_opened(
     env_state expected keys:
       - "joint_positions": dict[str, dict[str, float]]  (object -> joint -> qpos)
     """
-    qpos = env_state["joint_positions"][object][joint]
-    return float(qpos) >= threshold
+    return _joint_value(env_state, object, joint) >= threshold
 
 
 @register_predicate("joint_closed")
@@ -194,7 +200,7 @@ def joint_closed(
     env_state: dict, *, object: str, joint: str, threshold: float = 0.02
 ) -> bool:
     """True if an articulated object's joint is at/below the closed *threshold*."""
-    qpos = env_state["joint_positions"][object][joint]
+    qpos = _joint_value(env_state, object, joint)
     return float(qpos) <= threshold
 
 

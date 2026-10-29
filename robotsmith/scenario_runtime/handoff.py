@@ -2,8 +2,8 @@
 
 Judged from per-frame sim samples (hand link, held object, actual arm joints) taken on the
 recording timeline, so a failed episode can be pinned to the first skill that did not finish.
-``place`` is only diagnosed here (its completion is the bound predicate the runner judges);
-its causes are candidates (``motion?`` / ``grip?`` / ``release?``), not conclusions.
+``place``, ``open`` and ``close`` are only diagnosed here (their completion is the bound predicate
+the runner judges); place causes are candidates (``motion?`` / ``grip?`` / ``release?``), not conclusions.
 """
 
 from __future__ import annotations
@@ -13,8 +13,6 @@ import numpy as np
 # Hand link origin sits ~0.10 m above the fingertips.
 HELD_M = 0.15
 LIFT_M = 0.02
-OPEN_FRACTION = 0.5
-CLOSED_M = 0.02
 LOSS_WINDOW = 10
 JUMP_RAD = 0.03
 
@@ -44,16 +42,9 @@ def check(skill, phase: str, seg, samples: list[dict], *, held: str | None,
     if skill.name in ("open", "close"):
         before = _joint_values(joints_before, skill.target)
         after = _joint_values(joints_after, skill.target)
-        if not after.size:
-            entry["done"] = None
-            return entry
-        if skill.name == "open":
+        if after.size:
             moved = float(np.abs(after - before).max()) if before.size else 0.0
-            need = OPEN_FRACTION * float(np.linalg.norm(trace.get("move_vec", [0.0])))
-            entry.update(joint_travel_m=round(moved, 4), done=moved >= need)
-        else:
-            entry.update(joint_end_m=round(float(np.abs(after).max()), 4),
-                         done=float(np.abs(after).max()) <= CLOSED_M)
+            entry.update(joint_travel_m=round(moved, 4), joint_end_m=round(float(np.abs(after).max()), 4))
         return entry
 
     if held is None or not samples or samples[-1].get("obj") is None:

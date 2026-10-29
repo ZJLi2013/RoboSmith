@@ -34,13 +34,17 @@ def test_every_scenario_binds_one_entry_per_step(name):
     assert TaskSpec.from_dict(task.to_dict()).step_bindings == task.step_bindings
 
 
-def test_drawer_place_binds_inside_and_leaves_the_close_out():
+def test_drawer_binds_place_inside_and_the_drawer_joint_for_open_and_close():
     task = materialize_candidate(SCENARIOS / "pick_place_into_drawer.yaml", seed=0).legacy_task
-    place = next(b for b, s in zip(task.step_bindings, task.skills) if s.name == "place")
-    assert place["status"] == "bound"
-    assert {k: place["params"][k] for k in ("object", "parent", "target", "mode")} == {
+    by_skill = {s.name: b for b, s in zip(task.step_bindings, task.skills)}
+    assert {k: by_skill["place"]["params"][k] for k in ("object", "parent", "target", "mode")} == {
         "object": "die", "parent": "drawer", "target": "drawer_opening", "mode": "inside"}
-    assert [b for b, s in zip(task.step_bindings, task.skills) if s.name != "place"] == [UNMIGRATED] * 3
+    assert by_skill["pick"] == UNMIGRATED
+    opened, closed = by_skill["open"], by_skill["close"]
+    assert (opened["predicate"], closed["predicate"]) == ("joint_opened", "joint_closed")
+    assert opened["params"]["object"] == closed["params"]["object"] == "drawer"
+    assert opened["params"]["joint"] == closed["params"]["joint"]
+    assert opened["params"]["threshold"] > closed["params"]["threshold"]
 
 
 @pytest.mark.parametrize("success, expected", [
