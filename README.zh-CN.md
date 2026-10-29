@@ -4,7 +4,7 @@
 
 **AMD ROCm 上的机器人操作合成数据生成。**
 
-RoboSmith 把资产和一段声明式任务变成录制好的专家 episode。你用几行 Python 写清桌上放什么、做哪几步、怎么算成功；
+RoboSmith 把资产和一段声明式任务变成录制好的专家 episode。你用一个短 YAML 文件写清桌上放什么、做哪几步、怎么算成功；
 RoboSmith 在 Genesis 里搭场景、规划抓取和避障运动、跑 rollout，把成功的 episode 导出为带视频的 LeRobot 数据集。
 它是数据基础设施，不是策略训练框架。
 
@@ -30,13 +30,13 @@ RoboSmith 在 Genesis 里搭场景、规划抓取和避障运动、跑 rollout�
 | 刚体 | `pick`、`place`（几何抓取候选，仿真试抓选出） | `inside`、`on`、`lifted`、`stacked`、`aligned` |
 | 关节 | `open`、`close`（棱柱关节） | `joint_opened`、`joint_closed` |
 
-一个任务就是一个短 Python 文件：场景、技能意图、成功条件树。示例见
+一个 scenario 是一个 YAML 文件（场景关系与成功条件树），旁边配一份写技能步骤的 teacher 计划。示例见
 [`scenarios/pick_place_into_drawer.yaml`](scenarios/pick_place_into_drawer.yaml)。
 
 ## 上手
 
 - [Quick start](docs/quick-start.md)：从一台全新 GPU 节点跑出第一条抽屉 episode。
-- [设计](docs/design-cn.md)：数据流、关键概念、代码结构、依赖的上游项目（[英文版](docs/design.md)）。
+- [设计](docs/design-cn.md)：teacher 与学生、数据流、模块、执行、验证、依赖的上游项目（[英文版](docs/design.md)）。
 - [编写 scenario](scenarios/README.md)。
 - 技术博客：[RoboSmith — 面向具身交互操作的 ROCm-native 合成数据管线](https://andyluo7.github.io/rocm/amd/mi300x/robotics/embodiedai/sdg/2026/07/01/robosmith-rocm-native-synthetic-data-pipeline/)。
 

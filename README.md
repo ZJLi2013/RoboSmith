@@ -5,7 +5,7 @@ English | [中文](README.zh-CN.md)
 **Synthetic data generation for robot manipulation on AMD ROCm.**
 
 RoboSmith turns assets plus a declarative task into recorded expert episodes. You describe what is on the table,
-which steps to run, and what counts as success in a few lines of Python; RoboSmith builds the scene in Genesis,
+which steps to run, and what counts as success in a short YAML file; RoboSmith builds the scene in Genesis,
 plans grasps and collision-aware motion, rolls out the episodes, and exports the successful ones as a LeRobot
 dataset with videos. It is data infrastructure, not a policy-training framework.
 
@@ -31,13 +31,14 @@ dataset with videos. It is data infrastructure, not a policy-training framework.
 | rigid | `pick`, `place` (geometric grasp candidates, tried in simulation) | `inside`, `on`, `lifted`, `stacked`, `aligned` |
 | articulated | `open`, `close` (prismatic joints) | `joint_opened`, `joint_closed` |
 
-A task is a short Python file: scene, skill intents, and a success tree. See
+A scenario is a YAML file (scene relations and a success tree) with a teacher plan of skill steps next to it. See
 [`scenarios/pick_place_into_drawer.yaml`](scenarios/pick_place_into_drawer.yaml).
 
 ## Get started
 
 - [Quick start](docs/quick-start.md): from a fresh GPU node to a recorded drawer episode.
-- [Design](docs/design.md): data flow, key concepts, code layout, and the projects RoboSmith builds on.
+- [Design](docs/design.md): teacher and student, data flow, modules, execution, verification, and the projects
+  RoboSmith builds on.
 - [Writing scenarios](scenarios/README.md).
 - Blog post: [RoboSmith — a ROCm-native synthetic-data pipeline for embodied interactive manipulation](https://andyluo7.github.io/rocm/amd/mi300x/robotics/embodiedai/sdg/2026/07/01/robosmith-rocm-native-synthetic-data-pipeline/).
 
