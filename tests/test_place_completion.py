@@ -66,6 +66,9 @@ class _Env:
     def get_joint_positions(self):
         return {}
 
+    def solve_ik(self, *args, **kwargs):
+        raise AssertionError("not used by the stubbed plan_segment")
+
 
 def _run(monkeypatch, steps, bindings, *, robot=False, phases=None):
     """Drive an episode whose every phase records 2 frames; return env, task, result and recorded lengths."""
