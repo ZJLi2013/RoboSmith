@@ -8,6 +8,7 @@ SceneConfig and TaskSpec(success: SuccessNode). The scenario success tree
 from __future__ import annotations
 
 from robotsmith.scenario.intents import SkillIntentSequenceSpec
+from robotsmith.scenario.relations import SolveError, split_ref
 from robotsmith.scenario.specs import (
     AllOf,
     AnyOf,
@@ -184,6 +185,69 @@ def to_legacy_skills(
         )
         for intent in intents.intents
     ]
+
+
+def _placement_relations(spec: SuccessSpec) -> tuple[list[dict], bool]:
+    """Positive on / inside relations of a success tree, and whether the tree is a pure conjunction."""
+    if isinstance(spec, TaskSuccessCfg):
+        return ([dict(spec.params)] if spec.predicate == "object_in_box" else []), True
+    if isinstance(spec, AllOf):
+        found, conj = [], True
+        for term in spec.terms:
+            rels, term_conj = _placement_relations(term)
+            found += rels
+            conj &= term_conj
+        return found, conj
+    return [], False
+
+
+def _unchecked(reason: str) -> dict:
+    return {"status": "unchecked", "reason": reason}
+
+
+def to_step_bindings(intents: SkillIntentSequenceSpec, success: SuccessSpec) -> list[dict]:
+    """Bind each teacher step to the completion condition it can be judged by, one entry per step.
+
+    Only ``place`` binds for now: the object placed is the one the preceding ``pick`` took, and its
+    relation is the success tree's single positive on / inside relation for that object. A relation whose
+    parent or target disagrees with the place raises ``SolveError``; trees with ``any_of`` / ``not``, an
+    object placed twice, or several candidate relations stay ``unchecked`` rather than guessed.
+    """
+    relations, conjunction = _placement_relations(success)
+    bindings, held, place_count = [], None, {}
+    for intent in intents.intents:
+        if intent.name == "pick":
+            held = intent.target
+        elif intent.name == "place" and held is not None:
+            place_count[held] = place_count.get(held, 0) + 1
+            held = None
+    held = None
+    for i, intent in enumerate(intents.intents):
+        if intent.name == "pick":
+            held = intent.target
+            bindings.append(_unchecked("not migrated"))
+            continue
+        if intent.name != "place":
+            bindings.append(_unchecked("not migrated"))
+            continue
+        obj, held = held, None
+        parent, target = split_ref(intent.target)
+        candidates = [r for r in relations if r["object"] == obj]
+        if obj is None:
+            bindings.append(_unchecked("no preceding pick"))
+        elif not conjunction:
+            bindings.append(_unchecked("success tree is not a conjunction"))
+        elif place_count.get(obj, 0) > 1:
+            bindings.append(_unchecked("object placed more than once"))
+        elif len(candidates) != 1:
+            bindings.append(_unchecked(f"{len(candidates)} success relations for {obj}"))
+        else:
+            rel = candidates[0]
+            if (rel["parent"], rel.get("target")) != (parent, target):
+                raise SolveError(f"teacher step {i} places {obj} at {intent.target}, but success wants "
+                                 f"{rel['mode']} {rel['parent']}.{rel.get('target')}")
+            bindings.append({"status": "bound", "predicate": "object_in_box", "params": rel})
+    return bindings
 
 
 def derive_contact_objects(task: TaskSpec) -> list[str]:

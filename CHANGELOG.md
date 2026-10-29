@@ -6,6 +6,13 @@ All notable user-facing changes are documented here. This project follows Semant
 
 ### Added
 
+- Step bindings (`robotsmith.scenario.adapters.to_step_bindings`): each teacher step gets the completion condition it
+  can be judged by. A `place` binds to the success tree's single positive `on` / `inside` relation for the object the
+  preceding `pick` took. A relation whose parent or target disagrees with the place fails at load. Trees with
+  `any_of` / `not`, an object placed twice, or several candidate relations stay `unchecked`, as do steps not yet
+  migrated. Lowered `on` / `inside` params keep the place-target name, so two shelves of one fixture stay distinct.
+  The runtime `TaskSpec` carries `step_bindings`, and `scenario_run_summary.json` records them. Nothing judges them yet.
+
 - `robotsmith.scenario_runtime.handoff`: every skill of a scenario episode reports whether it left the world the way
   the next skill needs it (drawer opened, object lifted, object carried until release and resting on the target,
   drawer closed). `scenario_run_summary.json` lists the handoffs and, for a failed episode, the first unfinished step

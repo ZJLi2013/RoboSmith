@@ -159,6 +159,7 @@ def run_scenario_smoke(
         "n_episodes": config.n_episodes,
         "success_count": sum(1 for ep in episodes if ep["success"]),
         "success_tree": package.legacy_task.success.to_dict(),
+        "step_bindings": _json_safe(package.legacy_task.step_bindings),
         "output_dir": str(config.output_dir),
         "dataset_root": str(dataset_root),
         "env_state_names": list(env_state_names),

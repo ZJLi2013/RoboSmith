@@ -9,6 +9,7 @@ from robotsmith.scenario.adapters import (
     to_legacy_scene_config,
     to_legacy_skills,
     to_legacy_task_spec,
+    to_step_bindings,
 )
 from robotsmith.scenario.intents import SkillIntentSequenceSpec
 from robotsmith.scenario.specs import SceneSpec, TaskSpec
@@ -45,6 +46,7 @@ def materialize_candidate(
     legacy_task = to_legacy_task_spec(candidate.task)
     if candidate.intents is not None:
         legacy_task.skills = to_legacy_skills(candidate.intents, candidate.task)
+        legacy_task.step_bindings = to_step_bindings(candidate.intents, candidate.task.success)
     return ScenarioRuntimePackage(
         source_path=candidate.source_path,
         scenario_scene=candidate.scene,
