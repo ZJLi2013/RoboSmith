@@ -204,8 +204,7 @@ def build_obstacle_world(
     partially overlap: ``is_articulated ⟹ is_fixture``, but a jointless fixture
     (e.g. ``two_layer_supporter``) is a fixture yet not articulated. Gating on
     ``is_articulated`` here (the old bug) silently dropped such static shelves /
-    weldments from the world, so the arm planned straight through them. See
-    docs/refactor.md "is_articulated vs is_fixture".
+    weldments from the world, so the arm planned straight through them.
 
     Each fixture's URDF collision boxes are emitted at its live world pose. The
     **kinematic axis** only decides whether to slide a joint: articulated fixtures
@@ -239,7 +238,7 @@ def build_obstacle_world(
         if asset.is_articulated:
             # Articulated fixture (drawer cabinet): the first movable joint's child
             # link rides the live joint value; the carcass stays static. First-joint
-            # only (multi-DOF assets are a future item, see refactor.md).
+            # only (multi-DOF assets are a future item).
             joint = asset.movable_joints[0]
             joint_value = float(
                 joint_positions.get(name, {}).get(joint.name, 0.0) or 0.0

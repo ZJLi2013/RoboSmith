@@ -40,8 +40,7 @@ def _maybe_motion_planner(env):
 
     logger.info("[rocrobo] collision-free backend enabled (ROCROBO_BACKEND)")
     # Franka base is mounted on the table at world z=table_surface_z; rocRobo plans
-    # with its base at z=0, so the backend rebases all poses/world geometry
-    # (drawer_feature.md, coordinate-frame fix).
+    # with its base at z=0, so the backend rebases all poses/world geometry.
     return RocRoboBackend(env.solve_ik, base_z=float(getattr(env, "table_surface_z", 0.0)))
 
 
@@ -87,7 +86,7 @@ def run_scenario_episode(
     # in-drawer starts keep their height); the sim must not recompute it from the
     # table surface. Articulated assets stay anchored at their built pose, and
     # fixtures (fixed-base weldments like a shelf) are anchored at load time and
-    # must not be re-set. See docs/design.md §5.1 and docs/features/feature12_pick_place_into_drawer.md §5.
+    # must not be re-set.
     articulated = set(getattr(env, "articulated_joint_dofs", {}) or {})
     obj_xyz_map = {
         name: (float(pos[0]), float(pos[1]), float(pos[2]))

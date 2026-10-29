@@ -40,7 +40,7 @@ class MotionParams:
     grasp_settle_steps: int = 15  # hold after finger-close before lift
     contact_settle_steps: int = 20  # zero-vel dwell before release/retreat in a
     # contact drag (lets the dragged joint's velocity decay so it does not spring
-    # back when the gripper lets go) — see drawer_feature.md.
+    # back when the gripper lets go).
 
     # -- fixed step counts (legacy / place path) --
     approach_steps: int = 40

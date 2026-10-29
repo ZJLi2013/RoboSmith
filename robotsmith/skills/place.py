@@ -2,8 +2,7 @@
 
 Supports tabletop places (explicit/held ``place_z``) and articulated-opening
 places (live tray-floor anchor). With a collision-aware planner the transport
-hover height is authored from reachability instead of a template constant
-(see docs/features/drawer_feature.md).
+hover height is authored from reachability instead of a template constant.
 """
 
 from __future__ import annotations
@@ -31,8 +30,7 @@ logger = logging.getLogger(__name__)
 # Robot/gripper property (not asset geometry), so it lives here, not in metadata.
 _DRAWER_PLACE_EE_CLEARANCE = 0.10
 
-# Adaptive pre-insert standoff authoring (docs/features/drawer_feature.md,
-# place_insertion_strategy.md §4 = supporter milestone A). A fixed template hover
+# Adaptive pre-insert standoff authoring. A fixed template hover
 # height is blind to whether the goal is reachable from this base/arm pose with the
 # carried payload; for a drawer-interior or shelf place it can pin the standoff in
 # an unreachable/occluded spot, so the collision-aware plan_motion misses the
@@ -101,8 +99,7 @@ def _resolve_place_plan(
     Every place consumes the destination's already-resolved world point
     (``ctx.obj_pos`` = the marker / opening world xyz from the resolver) and
     lifts the EE-flange by a grasp-relative offset; the planner never re-derives
-    a table-relative drop height. See docs/features/feature12_pick_place_into_drawer.md
-    (§5 W2) and docs/refactor.md R3.
+    a table-relative drop height.
 
     - Articulated opening: marker = live tray-floor; offset = gripper clearance.
     - Marker / tabletop: marker = target world xyz; offset = the held object's
@@ -115,7 +112,7 @@ def _resolve_place_plan(
     # World insert direction for the final approach (default top-down -Z); declared
     # on the target's frame / placement affordance and rotated to world. Off-axis
     # (e.g. a side tuck-under shelf) routes the same standoff→insert→retract path
-    # along this axis instead of straight down (docs/refactor.md R4).
+    # along this axis instead of straight down.
     approach = resolve_approach(frame, ctx.scene_state)
     requested_place_z = _float_or_none(skill.params.get("place_z"))
     marker = np.asarray(ctx.obj_pos, dtype=np.float64).copy()
@@ -150,8 +147,7 @@ def _insert_strategy(ctx: SkillContext, approach: np.ndarray) -> str:
     """Place insert/extract motion mode: ``"planned"`` vs ``"cartesian"`` (default).
 
     Decided purely by **geometry + backend**, no kinematic-type branch (the end
-    state is a single ``planned`` place; this gate is temporary scaffolding — see
-    place_insertion_strategy.md §1.1): a **side-insert** (non-vertical approach)
+    state is a single ``planned`` place; this gate is temporary scaffolding): a **side-insert** (non-vertical approach)
     under a collision-aware backend routes descend/retreat through ``plan_motion``
     so the arm weaves under the upper shelf without the near-singular wrist flip a
     forced straight line produces. Top-down places (drawer / tabletop, approach ≈
@@ -210,13 +206,13 @@ def _author_place_world(
     emits **every fixture** (``is_fixture``) as box obstacles — articulated furniture
     (drawer cabinet, ridden by its live joint value) *and* jointless weldments
     (e.g. ``two_layer_supporter``) alike; membership keys off the role axis, not
-    ``is_articulated`` (see ``build_obstacle_world`` / refactor.md). The place
+    ``is_articulated`` (see ``build_obstacle_world``). The place
     destination is dropped via ``_place_destination_exempt`` (the moving tray link
     and/or the named place-target box, e.g. ``shelf_lower``) so it is the *goal*, not
     an obstacle — unified on ``is_fixture``, covering both the drawer tray and a
     jointless shelf. The hover endpoint height is authored from reachability instead
     of the template constant so the carried-in plan_motion clears the obstacles
-    rather than scraping (drawer_feature.md). Tabletop / collision-blind runs build
+    rather than scraping. Tabletop / collision-blind runs build
     no world and leave the plan untouched.
     """
     if not ctx.motion_planner.collision_aware:
@@ -250,8 +246,7 @@ def _place_transport_seed(
     ``executor.place``'s ``transport`` segment plan the whole q0→standoff inbound
     move through ``plan_motion`` (seed-continuous, collision-free). The authored
     standoff (``_author_transport_hover``) is exactly the endpoint whose
-    ``plan_motion(q0 → hover)`` it gated on, so this reuses the validated plan
-    (refactor.md R5).
+    ``plan_motion(q0 → hover)`` it gated on, so this reuses the validated plan.
 
     Collision-blind (no plan_motion): keep a geometry-agnostic base aim so the
     joint-space transport segment does not under-rotate the base and release off to

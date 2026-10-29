@@ -27,8 +27,7 @@ def _ee_quat_from_approach(approach: np.ndarray) -> np.ndarray:
     Reproduces ``TOP_DOWN_QUAT`` exactly for the default ``-Z`` so drawer / tabletop
     places stay byte-identical; for a side approach builds an orthonormal frame with
     Z = approach and fingers along the most-horizontal perpendicular. Finger yaw is
-    a first cut (orientation/IK tuning for genuine tuck-under is deferred — see
-    docs/refactor.md R4 "Franka 近界位形").
+    a first cut (orientation/IK tuning for genuine tuck-under is deferred).
     """
     z = np.asarray(approach, dtype=np.float64).reshape(3)
     z = z / float(np.linalg.norm(z))
@@ -105,13 +104,13 @@ class GraspPlanner(ABC):
         Place planning needs no grasp candidates, just a target pose. The caller passes
         ``place_point_world`` (the already-resolved world drop point: marker / opening / shelf world
         xyz lifted by the grasp-relative offset); the planner never re-derives a table-relative drop
-        height (see docs/features/feature12_pick_place_into_drawer.md §5 W2).
+        height.
 
         ``approach`` is the world **insert direction** (unit; default top-down ``-Z``, = grasp frame
         Z). The standoff sits one ``place_retreat_clearance`` back along ``-approach``; the executor's
         Cartesian segment then inserts along ``+approach`` and retracts back along ``-approach``.
         Top-down is just the ``-Z`` value (drawer / tabletop unchanged), side tuck-under is e.g.
-        ``+X`` — same code path, no per-case branch (docs/refactor.md R4).
+        ``+X`` — same code path, no per-case branch.
         """
         if place_point_world is None:
             raise ValueError(
