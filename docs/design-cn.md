@@ -56,12 +56,14 @@ flowchart TD
 一次 scenario 运行中的主要调用方向（延迟导入双向都有，不画）：
 
 ```mermaid
-flowchart LR
+flowchart TD
     subgraph Data["编写的数据"]
+        direction LR
         YAML["scenario YAML<br/>+ teacher 计划"]
         LIB["assets/<br/>资产库"]
     end
     subgraph Load["加载"]
+        direction LR
         SC["scenario/<br/>求解关系、降级"]
         SCN["scenes/<br/>SceneConfig"]
     end
@@ -72,28 +74,30 @@ flowchart LR
         EX["execution/<br/>MotionExecutor"]
         MO["motion/<br/>路由、IK、规划"]
     end
-    SIM["sim/<br/>SimEnv、recorder、world_state"]
-    TA["tasks/<br/>成功谓词"]
-    RR["rocRobo sidecar<br/>（JAX）"]
+    subgraph Sim["仿真与判定"]
+        direction LR
+        SIM["sim/<br/>SimEnv、recorder、world_state"]
+        TA["tasks/<br/>成功谓词"]
+    end
+    RR["rocRobo sidecar (JAX)"]
     RO["rollout/<br/>单资产验证"]
-    OUT[("数据集 +<br/>运行汇总")]
+    OUT[("数据集 + 运行汇总")]
 
     YAML --> SC
     LIB --> SC
     SC --> SCN
     SC --> RT
     RT --> SK
+    RO --> SK
     SK --> GR
     SK --> EX
     EX --> MO
-    MO -.->|docker exec, JSONL| RR
+    MO -.->|docker exec| RR
     GR -->|trial_from_here| SIM
     MO --> SIM
     RT -->|record_episode| SIM
     SIM -->|世界状态| TA
-    RT --> TA
     SIM --> OUT
-    RO --> SK
 ```
 
 | 包 | 负责什么 | 主要入口 |
@@ -187,34 +191,31 @@ scenario 层有自己的 `TaskSpec`（只有任务、没有动作），在 `scen
 
 ```mermaid
 sequenceDiagram
-    participant S as run_generated_scenario
+    participant S as 运行脚本
     participant R as runner
+    participant K as 技能原语
     participant E as SimEnv
-    participant K as skills.plan_segment
-    participant G as grasp
-    participant M as execution + motion
     participant H as handoff
-    participant J as tasks.predicates
-    S->>R: run_scenario_episode（任务：步骤 + 成功判定树）
-    R->>E: reset：放置、静止（物体移动则 SceneInvalid）
-    loop 每个 teacher 步骤、每一段
-        R->>E: 读实时场景（位置、关节、目标坐标系）
-        R->>K: 步骤、scene_state、当前 qpos
-        K->>G: pick / place 计划
-        G->>E: trial_from_here：存快照、试候选、恢复
-        K->>M: 路点
-        M-->>K: 关节目标（按段路由）
-        R->>E: record_episode：推进目标、写帧
+    participant J as 谓词
+    S->>R: run_scenario_episode
+    R->>E: reset + 静置
+    loop 每个步骤 / 每一段
+        R->>E: 读实时场景
+        R->>K: plan_segment
+        K->>E: trial_from_here (pick)
+        K-->>R: 关节目标
+        R->>E: record_episode
         E-->>R: 逐帧采样
-        R->>H: check（步骤、采样），只记录
+        R->>H: check（只记录）
     end
     R-->>S: 交接记录、末条 qpos
-    S->>E: settle_window（保持末条 qpos 0.5 s）、collect_world_state
-    S->>J: evaluate_success（成功判定树、世界状态）
+    S->>E: settle_window 0.5 s
+    S->>E: collect_world_state
+    S->>J: evaluate_success
     J-->>S: 成败、judge_state
 ```
 
-`plan_segment` 在 `SKILL_PRIMITIVES`（`skills/registry.py`）里找到这一步的原语，用 `SkillContext`（步骤、抓取规划器、
+图中「技能原语」合指 `skills/`、`grasp/`、`execution/`、`motion/`。`plan_segment` 在 `SKILL_PRIMITIVES`（`skills/registry.py`）里找到这一步的原语，用 `SkillContext`（步骤、抓取规划器、
 执行器、运动规划器、实时场景、当前关节目标）调用它。只有放到关节体目标上的 `place` 拆成 `transport` 和 `descend` 两段，
 这样下降前会重读回弹后的抽屉；其他步骤都是一段。
 

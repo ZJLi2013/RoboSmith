@@ -61,12 +61,14 @@ Each arrow is one typed contract, and each layer has one owner in the code:
 Main call direction during a scenario run (lazy imports go both ways and are not drawn):
 
 ```mermaid
-flowchart LR
+flowchart TD
     subgraph Data["authoring data"]
+        direction LR
         YAML["scenario YAML<br/>+ teacher plan"]
         LIB["assets/<br/>asset library"]
     end
     subgraph Load["load"]
+        direction LR
         SC["scenario/<br/>solve relations, lower"]
         SCN["scenes/<br/>SceneConfig"]
     end
@@ -77,28 +79,30 @@ flowchart LR
         EX["execution/<br/>MotionExecutor"]
         MO["motion/<br/>routing, IK, planning"]
     end
-    SIM["sim/<br/>SimEnv, recorder, world_state"]
-    TA["tasks/<br/>success predicates"]
-    RR["rocRobo sidecar<br/>(JAX)"]
+    subgraph Sim["simulator and judge"]
+        direction LR
+        SIM["sim/<br/>SimEnv, recorder, world_state"]
+        TA["tasks/<br/>success predicates"]
+    end
+    RR["rocRobo sidecar (JAX)"]
     RO["rollout/<br/>single-asset validation"]
-    OUT[("dataset +<br/>run summary")]
+    OUT[("dataset + run summary")]
 
     YAML --> SC
     LIB --> SC
     SC --> SCN
     SC --> RT
     RT --> SK
+    RO --> SK
     SK --> GR
     SK --> EX
     EX --> MO
-    MO -.->|docker exec, JSONL| RR
+    MO -.->|docker exec| RR
     GR -->|trial_from_here| SIM
     MO --> SIM
     RT -->|record_episode| SIM
     SIM -->|world state| TA
-    RT --> TA
     SIM --> OUT
-    RO --> SK
 ```
 
 | Package | Owns | Main entry points |
@@ -208,34 +212,31 @@ re-reads the live scene and plans only that step.
 
 ```mermaid
 sequenceDiagram
-    participant S as run_generated_scenario
+    participant S as run script
     participant R as runner
+    participant K as skill primitive
     participant E as SimEnv
-    participant K as skills.plan_segment
-    participant G as grasp
-    participant M as execution + motion
     participant H as handoff
-    participant J as tasks.predicates
-    S->>R: run_scenario_episode(task: steps + success tree)
-    R->>E: reset: place, settle (SceneInvalid if an object moved)
-    loop each teacher step, each phase
-        R->>E: read live scene (positions, joints, target frames)
-        R->>K: step, scene_state, current qpos
-        K->>G: pick / place plan
-        G->>E: trial_from_here: snapshot, try candidate, restore
-        K->>M: waypoints
-        M-->>K: joint targets (per-segment routing)
-        R->>E: record_episode: step targets, write frames
+    participant J as predicates
+    S->>R: run_scenario_episode
+    R->>E: reset + settle
+    loop each step / phase
+        R->>E: read live scene
+        R->>K: plan_segment
+        K->>E: trial_from_here (pick)
+        K-->>R: joint targets
+        R->>E: record_episode
         E-->>R: per-frame samples
-        R->>H: check(step, samples), recorded only
+        R->>H: check (recorded only)
     end
     R-->>S: handoffs, final qpos
-    S->>E: settle_window(hold final qpos, 0.5 s), collect_world_state
-    S->>J: evaluate_success(success tree, world state)
+    S->>E: settle_window 0.5 s
+    S->>E: collect_world_state
+    S->>J: evaluate_success
     J-->>S: success, judge_state
 ```
 
-`plan_segment` finds the step's primitive in `SKILL_PRIMITIVES` (`skills/registry.py`) and calls it with a
+The skill primitive stands for `skills/`, `grasp/`, `execution/` and `motion/` together. `plan_segment` finds the step's primitive in `SKILL_PRIMITIVES` (`skills/registry.py`) and calls it with a
 `SkillContext` (step, grasp planner, executor, motion planner, live scene, current joint target). Only `place` onto
 an articulated target splits into `transport` and `descend`, so the descend re-reads the drawer after it recoils;
 every other step is one phase.
