@@ -52,6 +52,19 @@ def evaluate_success(node: "SuccessNode", env_state: dict) -> bool:
     raise ValueError(f"unknown success op '{node.op}'")
 
 
+def failed_leaves(node: "SuccessNode", env_state: dict) -> list[dict]:
+    """Leaves whose value works against the tree's verdict; a leaf under ``not`` fails by being true."""
+
+    def walk(n: "SuccessNode", want: bool) -> list[dict]:
+        if n.op == "leaf":
+            return [] if evaluate_predicate(n.predicate, env_state, n.params) == want else [n.to_dict()]
+        if n.op == "not":
+            return walk(n.terms[0], not want)
+        return [leaf for t in n.terms for leaf in walk(t, want)]
+
+    return walk(node, True)
+
+
 def find_leaf(node: "SuccessNode", predicate: str) -> "SuccessNode | None":
     """Return the first leaf with the given predicate name, or None.
 

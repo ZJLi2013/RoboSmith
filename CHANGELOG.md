@@ -42,6 +42,12 @@ All notable user-facing changes are documented here. This project follows Semant
 
 ### Changed
 
+- A scenario `place` is judged by the same `on` / `inside` predicate as the task: after its last phase the arm holds
+  for 0.5 s, recorded into the episode, and the step's load-time binding is evaluated on that state. The step keeps
+  its verdict, binding and judged state; an unchecked binding claims nothing, and the old 8 cm landing threshold is
+  gone (the per-frame samples remain as diagnostics). When the place is the last step, the task judge reuses its
+  hold. A failed episode also lists the success-tree leaves that failed (`failed_leaves`). The skill registry is
+  `SKILL_DEFS` (`SkillDef(primitive, post, settle_s)`), replacing `SKILL_PRIMITIVES`.
 - Judging reads the simulator through one module, `robotsmith/sim/world_state.py`: `collect_world_state` reads one
   step and never advances it; `settle_window` holds the arm at its last command and is the only judging code that
   steps. A zero settle steps nothing. Scenario runs and single-asset validation both judge from it. Missing or

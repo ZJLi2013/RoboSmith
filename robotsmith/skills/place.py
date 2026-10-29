@@ -20,7 +20,7 @@ from robotsmith.skills.frames import (
     _float_or_none,
     resolve_approach,
 )
-from robotsmith.skills.registry import register
+from robotsmith.skills.registry import bound_leaf, register
 
 logger = logging.getLogger(__name__)
 
@@ -267,7 +267,7 @@ def _place_transport_seed(
     return seed, _transit_lerp(q0, seed, ctx.params)
 
 
-@register("place")
+@register("place", post=bound_leaf, settle_s=0.5)
 def run_place(ctx: SkillContext) -> list[np.ndarray]:
     # Phase split (live re-anchoring): "transport" moves to straight above the
     # target; "descend" re-reads the (recoiled) target and goes vertical. "all" is

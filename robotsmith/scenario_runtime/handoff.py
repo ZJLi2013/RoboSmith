@@ -2,7 +2,8 @@
 
 Judged from per-frame sim samples (hand link, held object, actual arm joints) taken on the
 recording timeline, so a failed episode can be pinned to the first skill that did not finish.
-Place causes are candidates (``motion?`` / ``grip?`` / ``release?``), not conclusions.
+``place`` is only diagnosed here (its completion is the bound predicate the runner judges);
+its causes are candidates (``motion?`` / ``grip?`` / ``release?``), not conclusions.
 """
 
 from __future__ import annotations
@@ -12,7 +13,6 @@ import numpy as np
 # Hand link origin sits ~0.10 m above the fingertips.
 HELD_M = 0.15
 LIFT_M = 0.02
-TARGET_XY_M = 0.08
 OPEN_FRACTION = 0.5
 CLOSED_M = 0.02
 LOSS_WINDOW = 10
@@ -83,16 +83,10 @@ def check(skill, phase: str, seg, samples: list[dict], *, held: str | None,
     if first_loss is not None:
         window = steps[max(0, first_loss - LOSS_WINDOW):first_loss]
         jump = float(window.max()) if window.size else 0.0
-        entry.update(max_joint_step_before_loss_rad=round(jump, 4), done=False,
+        entry.update(max_joint_step_before_loss_rad=round(jump, 4),
                      cause="motion?" if jump >= JUMP_RAD else "grip?")
-        return entry
-    if phase == "transport" or target is None:
-        entry["done"] = True
-        return entry
-    to_target = float(np.linalg.norm(obj[-1][:2] - np.asarray(target, dtype=float)[:2]))
-    entry.update(to_target_xy_m=round(to_target, 4), done=to_target <= TARGET_XY_M)
-    if not entry["done"]:
-        entry["cause"] = "release?"
+    if phase != "transport" and target is not None:
+        entry["to_target_xy_m"] = round(float(np.linalg.norm(obj[-1][:2] - np.asarray(target, dtype=float)[:2])), 4)
     return entry
 
 
