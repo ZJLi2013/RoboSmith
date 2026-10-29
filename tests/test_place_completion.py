@@ -103,7 +103,7 @@ PICK_PLACE_CLOSE = PICK_PLACE + [("close", "drawer")]
 
 def test_place_binds_its_leaf_and_unchecked_claims_nothing():
     assert SKILL_DEFS["place"].post is bound_leaf and SKILL_DEFS["place"].settle_s == 0.5
-    assert SKILL_DEFS["pick"].post is None
+    assert SKILL_DEFS["pick"].post is bound_leaf and SKILL_DEFS["pick"].settle_s == 0.0
     place = Skill("place", "supporter.shelf")
     assert bound_leaf(place, BOUND).to_dict() == SuccessNode.leaf("object_in_box", ON).to_dict()
     assert bound_leaf(place, UNCHECKED) is None
