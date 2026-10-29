@@ -139,13 +139,11 @@ def evaluate_scenario_task(
     initial_positions: dict[str, np.ndarray],
     reference_positions: dict[str, np.ndarray] | None = None,
 ) -> bool:
-    """Evaluate a generated scenario task against the live final state."""
+    """Evaluate a generated scenario task against the live state after the settle window."""
 
-    object_positions: dict[str, np.ndarray] = {}
-    for name, ent in env.entity_map.items():
-        object_positions[name] = to_numpy_f32(ent.get_pos()).copy()
     env_state = {
-        "object_positions": object_positions,
+        **collect_judge_state(env),
+        "object_positions": collect_object_positions(env),
         "initial_positions": initial_positions,
         "target_positions": reference_positions or {},
         "joint_positions": (
@@ -153,6 +151,43 @@ def evaluate_scenario_task(
         ),
     }
     return evaluate_success(task_spec.success, env_state)
+
+
+def _arr(x) -> np.ndarray:
+    return np.asarray(x.cpu().numpy() if hasattr(x, "cpu") else x, dtype=np.float64)
+
+
+def _touches(ent, other) -> bool:
+    return _arr(ent.get_contacts(with_entity=other)["link_a"]).size > 0
+
+
+def collect_judge_state(env, *, settle_s: float = 0.5, samples: int = 10) -> dict:
+    """Hold the arm for ``settle_s`` (stepping, not recording) and read what success predicates judge:
+    each entity's pose at ``samples`` points of the window, its final world collision AABB, and which
+    entities (``"robot"`` for the arm) it touches at the end."""
+    names = list(env.entity_map)
+    q = env.franka.get_dofs_position(env.motors_dof)
+    steps = max(1, round(settle_s / samples / float(env.scene.dt)))
+    window: dict[str, list] = {name: [] for name in names}
+    for _ in range(samples):
+        for _ in range(steps):
+            env.franka.control_dofs_position(q, env.motors_dof)
+            env.scene.step()
+        for name in names:
+            ent = env.entity_map[name]
+            window[name].append(np.r_[_arr(ent.get_pos()).reshape(-1)[:3],
+                                      _arr(ent.get_quat()).reshape(-1)[:4]].tolist())
+    contacts = {
+        name: [other for other in names if other != name
+               and _touches(env.entity_map[name], env.entity_map[other])]
+        + (["robot"] if _touches(env.entity_map[name], env.franka) else [])
+        for name in names
+    }
+    return {
+        "aabbs": {name: _arr(env.entity_map[name].get_AABB()).reshape(2, 3).tolist() for name in names},
+        "contacts": contacts,
+        "window": window,
+    }
 
 
 def collect_object_positions(env) -> dict[str, np.ndarray]:
