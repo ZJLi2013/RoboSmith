@@ -111,7 +111,7 @@ flowchart TD
 | `execution/` | 把计划编译成运动链和关节轨迹 | `MotionExecutor` |
 | `motion/` | 按段路由、IK 与考虑碰撞的规划、碰撞世界 | `chain.execute_motion_chain`、`MotionPlanner`、`GenesisBackend`、`RocRoboBackend`、`rocrobo_world` |
 | `sim/` | Genesis 环境、Franka 常量、LeRobot 录制、判定读取的状态 | `SimEnv`（`reset`、`trial_from_here`）、`record_episode`、`collect_world_state`、`settle_window` |
-| `tasks/` | 运行时任务与成功谓词 | `TaskSpec`、`SuccessNode`、`PREDICATE_REGISTRY`、`object_in_box`、`evaluate_success`、`JudgeInputError` |
+| `tasks/` | 运行时任务与成功谓词 | `TaskSpec`、`SuccessNode`、`PREDICATE_REGISTRY`、`object_in_box`、`grasped`、`evaluate_success`、`JudgeInputError` |
 | `rollout/` | 单资产抓取验证（及其诊断请求）、episode 布局、视频导出 | `asset_pick_validation`、`video_export` |
 
 脚本：`scripts/datagen/run_generated_scenario.py` 运行一个 scenario；`scripts/datagen/validate_asset_picks.py` 逐资产验证
@@ -284,17 +284,23 @@ sequenceDiagram
 
 1. **场景检查（第一步之前）。** `SimEnv.reset` 放置物体、静止，物体水平移动超过 5 cm、下落超过 5 cm 或倾斜超过 30°
    时抛 `SceneInvalid`。场景无效时不试抓、不诊断。
-2. **交接检查（每步之后）。** `place` 在最后一段之后，按步骤绑定指向的关系（与任务同一个 `on` / `inside` 谓词）判定；
-   判定前静置 0.5 s，这段静置录进 episode；结论、绑定与所判的状态都记在这一步上。未检查的绑定只记原因、不声称成功，
-   两段式 place 的 `transport` 段不判。`open` / `close` 同样按绑定判定，在拖动结束时判、不静置：绑定指向执行器拖动的那个
-   关节（`skills/frames.py::resolve_drag_joint`）及其终点（open 为上限或 `distance`，close 为下限），开过「终点 − 2 cm」
-   或关到「下限 + 2 cm」以内。`pick` 仍由 `scenario_runtime/handoff.py::check` 用逐帧采样判断：结束时物体距手 ≤ 0.15 m
-   且比起点高 ≥ 2 cm。其余步骤的逐帧采样只作诊断：open / close 记关节位移；place 记物体离手的帧、离手前的关节跳变和
-   候选原因（`motion?`、`grip?`、`release?`）。失败的 episode 把第一个未完成的
-   步骤记为 `failed_step`，步骤全过时记 `unknown`，并列出失败的判定树叶子。步骤结果不决定 episode 成败。
+2. **步骤完成（每步之后）。** 每个 teacher 步骤都按加载时绑定的完成条件判（`scenario/adapters.py::to_step_bindings`），
+   用的是与任务同一组谓词（`SkillDef.post`、`runner._judge_completion`）。结论、绑定与所判的状态都记在这一步上，
+   像任务一样可以离线复判。
+   - `pick` → `grasped`：两根不同的手指 link 都接触目标，且比本步起点（在本步规划、试抓之前读取）高 ≥ 2 cm；
+     在动作结束时判，不静置。
+   - `place` → 成功判定树里、前一个 pick 拿起的物体对应的 `on` / `inside` 关系；判定前静置 0.5 s，这段静置录进 episode；
+     两段式 place 的 `transport` 段不判。
+   - `open` / `close` → 执行器拖动的那个关节（`skills/frames.py::resolve_drag_joint`）上的 `joint_opened` / `joint_closed`：
+     开过「终点 − 2 cm」（终点为上限或 `distance`）或关到「下限 + 2 cm」以内；在拖动结束时判，不静置。
+   - 未检查的绑定（`any_of` / `not` 判定树、物体放了两次、候选关系不唯一）只记原因、不声称成功。
+
+   `scenario_runtime/handoff.py::check` 的逐帧采样只作诊断：pick 记距手距离与抬升，open / close 记关节位移，place 记
+   物体离手的帧、离手前的关节跳变和候选原因（`motion?`、`grip?`、`release?`）。失败的 episode 把第一个未完成的步骤记为
+   `failed_step`，步骤全过时记 `unknown`，并列出失败的判定树叶子。步骤结果不决定 episode 成败。
 3. **任务成功（最后一步之后）。** `runner.evaluate_scenario_task` 让手臂保持最后的指令静置 0.5 s
    （`sim/world_state.py::settle_window`，判定代码里唯一推进仿真的地方；末步是 place 时复用它录下的静置，不再静置第二次），用 `collect_world_state` 读一步（位置、姿态、
-   世界碰撞包围盒、实体级接触、关节），再用 `tasks/predicates.py::evaluate_success` 求值成功判定树：
+   世界碰撞包围盒、实体级接触、接触每个实体的手指 link、关节），再用 `tasks/predicates.py::evaluate_success` 求值成功判定树：
    - `on` / `inside`（`object_in_box`）：物体包围盒对放置目标碰撞盒（随关节运动）——`on` 要中心在盒内，`inside` 要整个
      水平范围落在容器底板内，下沿距盒顶 2 cm 以内——且与目标所属资产有接触、不碰机器人、静置窗口内每帧相对末帧都在
      5 mm / 5° 以内。朝向不计入，立着放在板上的积木也算在板上；需要物体正立的任务另行声明。
@@ -302,7 +308,7 @@ sequenceDiagram
    - 观测缺失或非有限值时抛 `JudgeInputError`，不当作假。
    - run summary 记录实际求值的判定树（`success_tree`）和每个 episode 的判定状态（`judge_state`），离线复判结果相同。
 
-已知近似：接触只到实体级（碰到柜子侧壁也算碰到柜子）；`inside` 不检查容器上界；父物体的 yaw 用加载时的值。
+已知近似：接触只到实体级（碰到柜子侧壁也算碰到柜子）；`inside` 不检查容器上界；父物体的 yaw 用加载时的值；`grasped` 只说明 pick 结束时抓着，不保证搬运途中不滑脱。
 
 ### 修复环
 
@@ -331,21 +337,6 @@ flowchart TD
 agent 可以提候选位姿与 IK 起点、提资产修正请求、标记场景问题；不可以改夹爪规格、控制参数或候选规则，也不能按资产单独
 设控制参数。改构建文件的资产修正（质量、碰撞体、朝向）走重建和重新评审。`validate_asset_picks.py --diagnose-dir` 写出
 请求；调起 agent 由调用方负责。
-
-### 进行中：逐步检查与任务判定用同一套词汇
-
-`place`、`open`、`close` 与成功判定树已经共用一套词汇；`pick` 仍是按技能写死的阈值。这次迁移在实施前先做了设计评审，
-目标是每一步都读同一份世界状态、用同一组谓词：
-
-1. 一个只读的世界状态采集入口和显式静置窗口——已完成（`sim/world_state.py`）。
-2. 加载时把每个 teacher 步骤绑定到可判定的完成条件（place 绑定到成功判定树里、前一个 pick 拿起的物体对应的 `on` /
-   `inside` 关系），矛盾在加载时报错——已完成（`scenario/adapters.py::to_step_bindings`）。
-3. `place` 用共用谓词判定；中途静置走录制路径；步骤结果与任务结果分开输出——已完成（`SkillDef.post`、
-   `runner._judge_completion`）。
-4. `open` / `close` 按执行器解析出的具名关节判定——已完成（`resolve_drag_joint`）。
-5. `pick` 用手指级接触（`grasped`）加相对本步起点的抬升判定。
-
-逐帧的交接采样保留为诊断，用来解释失败的步骤，不再决定成败。
 
 ## 执行与数据
 

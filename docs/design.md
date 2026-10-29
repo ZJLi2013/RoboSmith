@@ -116,7 +116,7 @@ flowchart TD
 | `execution/` | compile a plan into a motion chain and a joint trajectory | `MotionExecutor` |
 | `motion/` | segment routing, IK and collision-aware planning, the collision world | `chain.execute_motion_chain`, `MotionPlanner`, `GenesisBackend`, `RocRoboBackend`, `rocrobo_world` |
 | `sim/` | the Genesis environment, Franka constants, the LeRobot recorder, and what judges read | `SimEnv` (`reset`, `trial_from_here`), `record_episode`, `collect_world_state`, `settle_window` |
-| `tasks/` | the runtime task and the success predicates | `TaskSpec`, `SuccessNode`, `PREDICATE_REGISTRY`, `object_in_box`, `evaluate_success`, `JudgeInputError` |
+| `tasks/` | the runtime task and the success predicates | `TaskSpec`, `SuccessNode`, `PREDICATE_REGISTRY`, `object_in_box`, `grasped`, `evaluate_success`, `JudgeInputError` |
 | `rollout/` | single-asset pick validation (and its diagnosis requests), episode layout, video export | `asset_pick_validation`, `video_export` |
 
 Scripts: `scripts/datagen/run_generated_scenario.py` runs a scenario; `scripts/datagen/validate_asset_picks.py`
@@ -316,23 +316,30 @@ Three checks read the simulator; none trusts the plan.
 1. **Scene check (before the first step).** `SimEnv.reset` places objects, settles them and raises `SceneInvalid`
    if an object moved more than 5 cm, dropped more than 5 cm or tipped more than 30°. An invalid scene is not
    attempted or diagnosed.
-2. **Handoff check (after each step).** A `place` is judged after its last phase by the relation its step binding
-   names (the same `on` / `inside` predicate as the task), on the world state after a 0.5 s hold that is recorded
-   into the episode; the verdict, its binding and the judged state are kept on the step. An unchecked binding
-   records why and claims nothing, and the `transport` phase of a two-phase place is not judged. `open` / `close`
-   are judged the same way at the end of the drag, without a hold: their binding names the joint the executor drags
-   (`skills/frames.py::resolve_drag_joint`) and its endpoint (the upper limit or `distance` for open, the lower
-   limit for close), opened past endpoint − 2 cm or closed below lower + 2 cm. `pick` is still judged by
-   `scenario_runtime/handoff.py::check` from the per-frame samples: it ends with the object within 0.15 m of the
-   hand and at least 2 cm higher. For the other steps the samples are diagnostics: joint travel for open / close;
-   for a place, the frame the object left the hand, the joint jump before it, and a candidate cause (`motion?`,
-   `grip?`, `release?`). A failed episode reports
-   its first unfinished step as `failed_step`, or `unknown` when every step passed, plus the success-tree leaves
-   that failed. Steps do not decide episode success.
+2. **Step completion (after each step).** Every teacher step is judged by the condition bound to it at load
+   (`scenario/adapters.py::to_step_bindings`), through the same predicates as the task (`SkillDef.post`,
+   `runner._judge_completion`). The verdict, its binding and the judged state stay on the step, so it re-judges
+   offline like the task.
+   - `pick` → `grasped`: two different finger links touch the target and it rose at least 2 cm from the step's own
+     start (read before the step was planned or trialled), at the end of the action, with no hold.
+   - `place` → the success tree's `on` / `inside` relation for the object the preceding pick took, after a 0.5 s
+     hold that is recorded into the episode; the `transport` phase of a two-phase place is not judged.
+   - `open` / `close` → `joint_opened` / `joint_closed` on the joint the executor drags
+     (`skills/frames.py::resolve_drag_joint`), past its endpoint − 2 cm (the upper limit or `distance`) or below its
+     lower limit + 2 cm, at the end of the drag, with no hold.
+   - An unchecked binding (`any_of` / `not` trees, an object placed twice, several candidate relations) records why
+     and claims nothing.
+
+   The per-frame samples of `scenario_runtime/handoff.py::check` are diagnostics only: distance and lift for a
+   pick, joint travel for open / close, and for a place the frame the object left the hand, the joint jump before
+   it and a candidate cause (`motion?`, `grip?`, `release?`). A failed episode reports its first unfinished step as
+   `failed_step`, or `unknown` when every step passed, plus the success-tree leaves that failed. Steps do not decide
+   episode success.
 3. **Task success (after the last step).** `runner.evaluate_scenario_task` holds the arm at its last command for
    0.5 s (`sim/world_state.py::settle_window`, the only judging code that steps the simulator; when the last step
    is a place, its recorded hold is reused instead of a second one), reads one step with
-   `collect_world_state` (positions, poses, world collision AABBs, entity-level contacts, joints), and evaluates the
+   `collect_world_state` (positions, poses, world collision AABBs, entity-level contacts, the finger links touching
+   each entity, joints), and evaluates the
    success tree with `tasks/predicates.py::evaluate_success`:
    - `on` / `inside` (`object_in_box`): the object's AABB against the place target's collision box (riding its
      joint) — centre over the box for `on`, whole footprint over the container floor for `inside`, bottom within 2 cm
@@ -345,7 +352,8 @@ Three checks read the simulator; none trusts the plan.
      verdict re-judges offline to the same result.
 
 Known approximations: contacts are entity-level (touching a cabinet's side wall counts as touching the cabinet);
-`inside` does not check the container's upper bound; the parent's yaw is the load-time value.
+`inside` does not check the container's upper bound; the parent's yaw is the load-time value; `grasped` holds at
+the end of the pick and says nothing about the object staying in the hand during transport.
 
 ### Repair loop
 
@@ -375,22 +383,6 @@ The agent may propose candidate poses and IK starts, request asset corrections, 
 change the gripper spec, control parameters or candidate rules, or set control parameters per asset. Asset fixes that
 change build files (mass, collision, orientation) go through a rebuild and a new review. `validate_asset_picks.py
 --diagnose-dir` writes the requests; calling the agent is the caller's job.
-
-### In progress: one vocabulary for step and task checks
-
-`place`, `open`, `close` and the success tree now share one vocabulary; `pick` still uses per-skill thresholds.
-The migration, reviewed before implementation, makes every step read one world state and one predicate set:
-
-1. One read-only world-state collector and an explicit settle window — done (`sim/world_state.py`).
-2. Bind each teacher step to the completion condition it can be judged by at load time (a place to the success
-   tree's `on` / `inside` relation for the object the preceding pick took), with contradictions failing at load —
-   done (`scenario/adapters.py::to_step_bindings`).
-3. `place` judged by the shared predicates; a mid-episode settle is recorded; step and task results stay separate —
-   done (`SkillDef.post`, `runner._judge_completion`).
-4. `open` / `close` judged by the named joints the executor resolves — done (`resolve_drag_joint`).
-5. `pick` judged by finger-level contact (`grasped`) and lift from the step's start.
-
-The per-frame handoff samples stay as diagnostics that explain a failed step; they stop deciding it.
 
 ## Rollout and data
 
