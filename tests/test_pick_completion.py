@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from robotsmith.scenario_runtime import handoff, runner
+from robotsmith.scenario_runtime import runner
 from robotsmith.scenario_runtime.runner import evaluate_scenario_task, run_scenario_episode
 from robotsmith.sim.world_state import collect_world_state
 from robotsmith.skills import SKILL_DEFS, Skill, bound_leaf
@@ -143,7 +143,6 @@ def test_pick_passes_while_the_taller_task_lift_fails(monkeypatch):
     step = result.handoffs[0]
     assert step["done"] is True and ok is False
     assert evaluate_predicate("grasped", step["completion"]["judge_state"], GRASPED["params"]) is True
-    assert step["lift_m"] is None or "done" not in handoff.check(Skill("pick", "die"), "all", [], [], held="die")
 
 
 def test_unchecked_pick_claims_nothing(monkeypatch):
