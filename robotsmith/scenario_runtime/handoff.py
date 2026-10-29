@@ -1,9 +1,8 @@
-"""Per-skill handoff checks: did each skill leave the world the way the next one needs it?
+"""Per-skill handoff diagnostics: how each step moved the world, read from per-frame sim samples.
 
-Judged from per-frame sim samples (hand link, held object, actual arm joints) taken on the
-recording timeline, so a failed episode can be pinned to the first skill that did not finish.
-``place``, ``open`` and ``close`` are only diagnosed here (their completion is the bound predicate
-the runner judges); place causes are candidates (``motion?`` / ``grip?`` / ``release?``), not conclusions.
+Samples (hand link, held object, actual arm joints) are taken on the recording timeline. A step's
+completion is its bound predicate, judged by the runner; these readings explain a failed step and pin
+a failed episode to it. Place causes are candidates (``motion?`` / ``grip?`` / ``release?``), not conclusions.
 """
 
 from __future__ import annotations
@@ -12,7 +11,6 @@ import numpy as np
 
 # Hand link origin sits ~0.10 m above the fingertips.
 HELD_M = 0.15
-LIFT_M = 0.02
 LOSS_WINDOW = 10
 JUMP_RAD = 0.03
 
@@ -48,7 +46,6 @@ def check(skill, phase: str, seg, samples: list[dict], *, held: str | None,
         return entry
 
     if held is None or not samples or samples[-1].get("obj") is None:
-        entry["done"] = None
         return entry
     obj = np.asarray([s["obj"] for s in samples], dtype=float)
     hand = np.asarray([s["hand"] for s in samples], dtype=float)
@@ -56,8 +53,7 @@ def check(skill, phase: str, seg, samples: list[dict], *, held: str | None,
 
     if skill.name == "pick":
         lift = float(obj[-1][2] - np.asarray(held_start, dtype=float)[2]) if held_start is not None else 0.0
-        entry.update(dist_end_m=round(float(dist[-1]), 4), lift_m=round(lift, 4),
-                     done=bool(dist[-1] <= HELD_M and lift >= LIFT_M))
+        entry.update(dist_end_m=round(float(dist[-1]), 4), lift_m=round(lift, 4))
         return entry
 
     release = min(_release_frame(seg), len(dist))

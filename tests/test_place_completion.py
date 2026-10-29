@@ -17,6 +17,8 @@ MARKS = [2, 3, 4, 6, 8, 9, 10, 12, 14, 15]
 
 
 class _Ent:
+    links = ()
+
     def __init__(self, pos, robot=False):
         self.pos, self.robot = np.asarray(pos, dtype=float), robot
 
@@ -45,8 +47,13 @@ class _Scene:
 
 
 class _Franka:
+    links = ()
+
     def control_dofs_position(self, q, dofs):
         pass
+
+    def get_contacts(self, with_entity=None):
+        return {"link_a": np.zeros(0), "link_b": np.zeros(0)}
 
 
 class _Env:
@@ -96,7 +103,7 @@ PICK_PLACE_CLOSE = PICK_PLACE + [("close", "drawer")]
 
 def test_place_binds_its_leaf_and_unchecked_claims_nothing():
     assert SKILL_DEFS["place"].post is bound_leaf and SKILL_DEFS["place"].settle_s == 0.5
-    assert SKILL_DEFS["pick"].post is None
+    assert SKILL_DEFS["pick"].post is bound_leaf and SKILL_DEFS["pick"].settle_s == 0.0
     place = Skill("place", "supporter.shelf")
     assert bound_leaf(place, BOUND).to_dict() == SuccessNode.leaf("object_in_box", ON).to_dict()
     assert bound_leaf(place, UNCHECKED) is None

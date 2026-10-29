@@ -75,6 +75,8 @@ def test_a_joint_the_asset_lacks_fails_at_load():
 
 
 class _Ent:
+    links = ()
+
     def __init__(self, pos):
         self.pos = np.asarray(pos, dtype=float)
 
@@ -99,7 +101,8 @@ class _Env:
     def __init__(self, q, rebound=None):
         self.q, self.rebound = q, rebound
         self.scene = SimpleNamespace(dt=1.0 / 30.0, t=0, step=self._step)
-        self.franka = SimpleNamespace(control_dofs_position=lambda q, dofs: None)
+        self.franka = SimpleNamespace(control_dofs_position=lambda q, dofs: None, links=(),
+                                      get_contacts=lambda: {"link_a": np.zeros(0), "link_b": np.zeros(0)})
         self.entity_map = {"die": _Ent([0.6, 0.0, 0.835]), "drawer": _Ent([0.6, 0.0, 0.775])}
         self.placed_map, self.object_heights, self.asset_map, self.object_quats = {}, {}, {}, {}
         self.table_surface_z, self.articulated_joint_dofs, self.planner = 0.775, {}, object()

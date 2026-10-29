@@ -42,6 +42,10 @@ All notable user-facing changes are documented here. This project follows Semant
 
 ### Changed
 
+- Scenario `pick` steps are judged by the new `grasped` predicate: two different finger links touch the target and
+  it rose at least 2 cm from the step's own start, read before the step is planned (`step_start_positions` in the
+  judged state, separate from the episode start). `collect_world_state` adds `finger_contacts`, the finger links
+  touching each entity. Every built-in skill now has a completion condition; `handoff.check` only diagnoses.
 - Scenario `open` / `close` steps are judged by `joint_opened` / `joint_closed` on the joint the executor drags,
   at the end of the drag with no hold. `skills.frames.resolve_drag_joint` is the one answer for which joint and
   which endpoint (the upper limit or `distance` for open, the lower limit for close), used by both the drag and the

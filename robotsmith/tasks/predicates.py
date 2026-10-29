@@ -180,6 +180,23 @@ def object_in_box(
                 and _settled(frames, max_move, max_turn_deg))
 
 
+@register_predicate("grasped")
+def grasped(env_state: dict, *, object: str, lift: float = 0.02) -> bool:
+    """True if two different finger links touch ``object`` and it rose at least ``lift`` from the step's start.
+
+    The start is ``env_state["step_start_positions"]`` (read before the step was planned), not the episode
+    start the task's ``lifted`` uses.
+    """
+    fingers = env_state.get("finger_contacts", {}).get(object)
+    if fingers is None:
+        raise JudgeInputError(f"finger_contacts[{object!r}] is missing")
+    start = _observed(env_state, "step_start_positions", object)
+    _observed(env_state, "object_positions", object)
+    rose = object_above({"object_positions": env_state["object_positions"], "initial_positions": {object: start}},
+                        object=object, reference="step start", z_margin=lift)
+    return bool(len(set(fingers)) >= 2 and rose)
+
+
 @register_predicate("joint_opened")
 def joint_opened(
     env_state: dict, *, object: str, joint: str, threshold: float

@@ -120,8 +120,11 @@ def run_scenario_episode(
         # anchors (== legacy per-subtask loop) and splits dynamic-anchor places
         # into transport/descend so descend re-reads the recoiled drawer.
         phases = skill_phases(skill, target_frames.get(skill.target))
+        step_start = None
         for phase in phases:
             scene_state = _live_scene_state(env, target_frames, skill_traces)
+            if step_start is None:
+                step_start = {n: np.asarray(p).tolist() for n, p in collect_object_positions(env).items()}
             obj = skill.target if skill.name == "pick" else held
             seg, held_category, held_place_z = plan_segment(
                 skill, i, task_spec.skills, env.planner, executor, env.solve_ik,
@@ -161,7 +164,7 @@ def run_scenario_episode(
                 else:
                     binding = (task_spec.step_bindings[i] if i < len(task_spec.step_bindings)
                                else {"status": "unchecked", "reason": "no step binding"})
-                    window = _judge_completion(env, entry, skill, skill_def, binding, qpos, record_step)
+                    window = _judge_completion(env, entry, skill, skill_def, binding, qpos, record_step, step_start)
                     frame_count += entry["completion"].get("settle_frames", 0)
 
     return ScenarioEpisodeResult(
@@ -174,12 +177,14 @@ def run_scenario_episode(
     )
 
 
-def _judge_completion(env, entry: dict, skill, skill_def, binding: dict, hold, record_step) -> dict | None:
+def _judge_completion(env, entry: dict, skill, skill_def, binding: dict, hold, record_step,
+                      step_start: dict) -> dict | None:
     """Judge the step's bound completion after a recorded ``settle_s`` hold; return the window it judged
     (``None`` for a zero hold, which the task judge must not reuse).
 
-    An unchecked binding records why and claims nothing. The judged state (one world-state read plus
-    the window) is kept on the entry, so the step verdict re-judges offline like the task verdict.
+    An unchecked binding records why and claims nothing. The judged state (one world-state read, the
+    window, and the object positions read before the step was planned) is kept on the entry, so the step
+    verdict re-judges offline like the task verdict.
     """
     node = skill_def.post(skill, binding)
     if node is None:
@@ -192,7 +197,7 @@ def _judge_completion(env, entry: dict, skill, skill_def, binding: dict, hold, r
         frames.append(q)
 
     window = settle_window(env, hold, settle_s=skill_def.settle_s, step=step)
-    state = {**collect_world_state(env), "window": window}
+    state = {**collect_world_state(env), "window": window, "step_start_positions": step_start}
     done = bool(evaluate_success(node, state))
     entry.update(done=done, completion={**binding, "settle_frames": len(frames), "judge_state": state})
     if not done and skill.name == "place":
