@@ -113,6 +113,7 @@ def object_in_box(
     box: list[list[float]],
     yaw_deg: float,
     mode: str,
+    target: str | None = None,
     tol: float = 0.02,
     joint: str | None = None,
     axis: list[float] | None = None,
@@ -121,6 +122,7 @@ def object_in_box(
 ) -> bool:
     """True if the object, as the simulator last saw it, rests on (``on``) or in (``inside``) a box of ``parent``.
 
+    ``target`` names the place target the box came from; judging ignores it, step bindings match on it.
     ``box`` is ``[lo, hi]`` in the parent frame at zero joint configuration; when ``joint`` is set the box
     rides that prismatic joint by its live value. The object's world collision AABB decides: ``on`` needs
     the AABB centre over the box and its bottom within ``tol`` of the box top; ``inside`` (the box is the

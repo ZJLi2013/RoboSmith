@@ -257,6 +257,7 @@ def _success(node: dict, assets: dict, placements: dict) -> SuccessSpec:
             "object": obj,
             "parent": parent,
             "box": spec["box"],
+            "target": target,
             "yaw_deg": placements[parent].yaw_deg,
             "mode": key,
             "tol": CONTACT_TOL_M,

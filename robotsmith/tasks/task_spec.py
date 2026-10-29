@@ -62,6 +62,7 @@ class TaskSpec:
     contact_objects: list[str] = field(default_factory=list)
     success: SuccessNode = field(default_factory=lambda: SuccessNode(op="leaf"))
     skills: list[Skill] = field(default_factory=list)
+    step_bindings: list[dict] = field(default_factory=list)
     episode_length: int = 200
     dart_sigma: float = 0.0
 
@@ -73,6 +74,7 @@ class TaskSpec:
             "contact_objects": self.contact_objects,
             "success": self.success.to_dict(),
             "skills": [s.to_dict() for s in self.skills],
+            "step_bindings": [dict(b) for b in self.step_bindings],
             "episode_length": self.episode_length,
             "dart_sigma": self.dart_sigma,
         }
