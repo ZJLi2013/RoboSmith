@@ -44,9 +44,10 @@ def test_pick_and_open_handoff_and_first_failure():
 
     opened = handoff.check(Skill("open", "drawer"), "all", [], [], held=None,
                            joints_before={"drawer": {"slide": 0.0}},
-                           joints_after={"drawer": {"slide": -0.05}},
-                           trace={"move_vec": [-0.245, 0.0, 0.0]})
-    assert opened["done"] is False
+                           joints_after={"drawer": {"slide": -0.05}})
+    assert "done" not in opened
+    assert opened["joint_travel_m"] == pytest.approx(0.05) and opened["joint_end_m"] == pytest.approx(0.05)
+    opened["done"] = False
     assert handoff.first_failure([pick, opened]) is opened
 
     seg, samples = _place()

@@ -176,7 +176,8 @@ def run_scenario_episode(
 
 
 def _judge_completion(env, entry: dict, skill, skill_def, binding: dict, hold, record_step) -> dict | None:
-    """Judge the step's bound completion after a recorded ``settle_s`` hold; return the window it judged.
+    """Judge the step's bound completion after a recorded ``settle_s`` hold; return the window it judged
+    (``None`` for a zero hold, which the task judge must not reuse).
 
     An unchecked binding records why and claims nothing. The judged state (one world-state read plus
     the window) is kept on the entry, so the step verdict re-judges offline like the task verdict.
@@ -195,9 +196,9 @@ def _judge_completion(env, entry: dict, skill, skill_def, binding: dict, hold, r
     state = {**collect_world_state(env), "window": window}
     done = bool(evaluate_success(node, state))
     entry.update(done=done, completion={**binding, "settle_frames": len(frames), "judge_state": state})
-    if not done:
+    if not done and skill.name == "place":
         entry.setdefault("cause", "release?")
-    return window
+    return window if window["steps"] else None
 
 
 def evaluate_scenario_task(

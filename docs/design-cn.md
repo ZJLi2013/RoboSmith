@@ -286,9 +286,11 @@ sequenceDiagram
    时抛 `SceneInvalid`。场景无效时不试抓、不诊断。
 2. **交接检查（每步之后）。** `place` 在最后一段之后，按步骤绑定指向的关系（与任务同一个 `on` / `inside` 谓词）判定；
    判定前静置 0.5 s，这段静置录进 episode；结论、绑定与所判的状态都记在这一步上。未检查的绑定只记原因、不声称成功，
-   两段式 place 的 `transport` 段不判。其余步骤仍由 `scenario_runtime/handoff.py::check` 用逐帧采样判断：`open` 关节位移
-   达到请求行程的一半；`pick` 结束时物体距手 ≤ 0.15 m 且比起点高 ≥ 2 cm；`close` 关节回到 2 cm 以内。对 place，逐帧采样
-   只作诊断：物体离手的帧、离手前的关节跳变和候选原因（`motion?`、`grip?`、`release?`）。失败的 episode 把第一个未完成的
+   两段式 place 的 `transport` 段不判。`open` / `close` 同样按绑定判定，在拖动结束时判、不静置：绑定指向执行器拖动的那个
+   关节（`skills/frames.py::resolve_drag_joint`）及其终点（open 为上限或 `distance`，close 为下限），开过「终点 − 2 cm」
+   或关到「下限 + 2 cm」以内。`pick` 仍由 `scenario_runtime/handoff.py::check` 用逐帧采样判断：结束时物体距手 ≤ 0.15 m
+   且比起点高 ≥ 2 cm。其余步骤的逐帧采样只作诊断：open / close 记关节位移；place 记物体离手的帧、离手前的关节跳变和
+   候选原因（`motion?`、`grip?`、`release?`）。失败的 episode 把第一个未完成的
    步骤记为 `failed_step`，步骤全过时记 `unknown`，并列出失败的判定树叶子。步骤结果不决定 episode 成败。
 3. **任务成功（最后一步之后）。** `runner.evaluate_scenario_task` 让手臂保持最后的指令静置 0.5 s
    （`sim/world_state.py::settle_window`，判定代码里唯一推进仿真的地方；末步是 place 时复用它录下的静置，不再静置第二次），用 `collect_world_state` 读一步（位置、姿态、
@@ -332,7 +334,7 @@ agent 可以提候选位姿与 IK 起点、提资产修正请求、标记场景�
 
 ### 进行中：逐步检查与任务判定用同一套词汇
 
-`place` 与成功判定树已经共用一套词汇；`pick`、`open`、`close` 仍是按技能写死的阈值。这次迁移在实施前先做了设计评审，
+`place`、`open`、`close` 与成功判定树已经共用一套词汇；`pick` 仍是按技能写死的阈值。这次迁移在实施前先做了设计评审，
 目标是每一步都读同一份世界状态、用同一组谓词：
 
 1. 一个只读的世界状态采集入口和显式静置窗口——已完成（`sim/world_state.py`）。
@@ -340,7 +342,7 @@ agent 可以提候选位姿与 IK 起点、提资产修正请求、标记场景�
    `inside` 关系），矛盾在加载时报错——已完成（`scenario/adapters.py::to_step_bindings`）。
 3. `place` 用共用谓词判定；中途静置走录制路径；步骤结果与任务结果分开输出——已完成（`SkillDef.post`、
    `runner._judge_completion`）。
-4. `open` / `close` 按执行器解析出的具名关节判定。
+4. `open` / `close` 按执行器解析出的具名关节判定——已完成（`resolve_drag_joint`）。
 5. `pick` 用手指级接触（`grasped`）加相对本步起点的抬升判定。
 
 逐帧的交接采样保留为诊断，用来解释失败的步骤，不再决定成败。

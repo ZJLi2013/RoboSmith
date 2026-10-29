@@ -8,6 +8,7 @@ SceneConfig and TaskSpec(success: SuccessNode). The scenario success tree
 from __future__ import annotations
 
 from robotsmith.scenario.intents import SkillIntentSequenceSpec
+from robotsmith.scenario.load import CONTACT_TOL_M
 from robotsmith.scenario.relations import SolveError, split_ref
 from robotsmith.scenario.specs import (
     AllOf,
@@ -27,6 +28,7 @@ from robotsmith.scenario.validators import (
     validate_task,
 )
 from robotsmith.skills import Skill
+from robotsmith.skills.frames import resolve_drag_joint
 from robotsmith.scenes.config import ObjectPlacement, SceneConfig
 from robotsmith.tasks.task_spec import SuccessNode, TaskSpec as LegacyTaskSpec
 
@@ -205,14 +207,33 @@ def _unchecked(reason: str) -> dict:
     return {"status": "unchecked", "reason": reason}
 
 
-def to_step_bindings(intents: SkillIntentSequenceSpec, success: SuccessSpec) -> list[dict]:
+def _joint_binding(intent, assets: dict) -> dict:
+    """``open`` / ``close`` bind to the joint the executor drags and the endpoint it drags to, within the
+    task loader's tolerance: opened past ``end - tol``, closed below ``lower + tol``."""
+    asset = assets.get(intent.target)
+    if asset is None:
+        raise SolveError(f"teacher step {intent.name} {intent.target!r} has no asset")
+    drag = resolve_drag_joint(asset, intent.name, dict(intent.params))
+    if intent.name == "open":
+        predicate, threshold = "joint_opened", drag.end - CONTACT_TOL_M
+    else:
+        predicate, threshold = "joint_closed", drag.lower + CONTACT_TOL_M
+    return {"status": "bound", "predicate": predicate,
+            "params": {"object": intent.target, "joint": drag.joint.name, "threshold": threshold}}
+
+
+def to_step_bindings(intents: SkillIntentSequenceSpec, success: SuccessSpec,
+                     assets: dict | None = None) -> list[dict]:
     """Bind each teacher step to the completion condition it can be judged by, one entry per step.
 
-    Only ``place`` binds for now: the object placed is the one the preceding ``pick`` took, and its
-    relation is the success tree's single positive on / inside relation for that object. A relation whose
-    parent or target disagrees with the place raises ``SolveError``; trees with ``any_of`` / ``not``, an
-    object placed twice, or several candidate relations stay ``unchecked`` rather than guessed.
+    ``open`` / ``close`` bind to their joint through ``_joint_binding`` (``assets`` maps scene object
+    names to assets). A ``place`` binds when the object placed is the one the preceding ``pick`` took and
+    the success tree has a single positive on / inside relation for that object. A relation whose parent
+    or target disagrees with the place raises ``SolveError``; trees with ``any_of`` / ``not``, an object
+    placed twice, or several candidate relations stay ``unchecked`` rather than guessed. ``pick`` is not
+    migrated.
     """
+    assets = assets or {}
     relations, conjunction = _placement_relations(success)
     bindings, held, place_count = [], None, {}
     for intent in intents.intents:
@@ -226,6 +247,9 @@ def to_step_bindings(intents: SkillIntentSequenceSpec, success: SuccessSpec) -> 
         if intent.name == "pick":
             held = intent.target
             bindings.append(_unchecked("not migrated"))
+            continue
+        if intent.name in ("open", "close"):
+            bindings.append(_joint_binding(intent, assets))
             continue
         if intent.name != "place":
             bindings.append(_unchecked("not migrated"))

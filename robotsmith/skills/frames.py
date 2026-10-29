@@ -147,13 +147,32 @@ def _place_target_spec(asset, name: str | None) -> dict:
     raise ValueError(f"asset {asset.name!r} has no place_target {name!r}")
 
 
+def resolve_drag_joint(asset, skill_name: str, params: dict) -> SimpleNamespace:
+    """The joint an ``open`` / ``close`` drags and the joint value it drags to.
+
+    One answer for the executor and the step binding: the joint is ``params["joint"]`` or the asset's
+    first movable joint; ``open`` ends at ``params["distance"]`` or the joint's upper limit, ``close`` at
+    its lower limit.
+    """
+    movable = asset.movable_joints
+    joint_name = params.get("joint") or (movable[0].name if movable else None)
+    joint = asset.get_joint(joint_name) if joint_name else None
+    if joint is None:
+        raise ValueError(f"{asset.name!r} has no task joint for {skill_name}")
+    lower = float(joint.lower or 0.0)
+    upper = float(joint.upper if joint.upper is not None else 0.3)
+    distance = _float_or_none(params.get("distance"))
+    end = (distance if distance is not None else upper) if skill_name == "open" else lower
+    return SimpleNamespace(joint=joint, lower=lower, upper=upper, end=end)
+
+
 def _resolve_handle_drag(ctx: SkillContext, *, opening: bool):
     """Resolve (handle_world_pos, move_vec, moving_link) for an open/close drag.
 
     The handle is a frame anchored to the articulated asset's joint (its
     ``metadata.handles`` local position), resolved through ``resolve_frame``; the
-    drag direction is the URDF joint axis in world frame and the distance is the
-    remaining joint travel (or skill ``distance`` override).
+    drag direction is the URDF joint axis in world frame and the distance runs from
+    the live joint value to the endpoint ``resolve_drag_joint`` gives.
     """
     skill = ctx.skill
     scene_state = ctx.scene_state
@@ -166,21 +185,14 @@ def _resolve_handle_drag(ctx: SkillContext, *, opening: bool):
         raise ValueError(f"{skill.target!r} has no handle annotation for {skill.name}")
     local_pos = handles[0].get("local_pos", [0.0, 0.0, 0.0])
 
-    movable = asset.movable_joints
-    joint_name = skill.params.get("joint") or (movable[0].name if movable else None)
-    joint = asset.get_joint(joint_name) if joint_name else None
-    if joint is None:
-        raise ValueError(f"{skill.target!r} has no task joint for {skill.name}")
+    drag = resolve_drag_joint(asset, skill.name, skill.params)
+    joint, joint_name = drag.joint, drag.joint.name
 
     quat = scene_state.get("object_quats", {}).get(skill.target, [1.0, 0.0, 0.0, 0.0])
     open_dir_world = rotate_vec_wxyz(quat, np.asarray(joint.axis, dtype=np.float64))
     norm = float(np.linalg.norm(open_dir_world))
     if norm > 1e-9:
         open_dir_world = open_dir_world / norm
-
-    travel = float(joint.upper if joint.upper is not None else 0.3)
-    distance = _float_or_none(skill.params.get("distance"))
-    full_travel = distance if distance is not None else travel
 
     # Re-anchor to the joint's live opening so the grasp lands on the handle where
     # it actually is. The runtime refreshes ``joint_positions`` before each
@@ -193,7 +205,7 @@ def _resolve_handle_drag(ctx: SkillContext, *, opening: bool):
         else None
     )
     if slide_now is None:
-        slide_now = 0.0 if opening else full_travel
+        slide_now = drag.lower if opening else drag.upper
 
     handle_frame = SimpleNamespace(
         kind="articulated",
@@ -203,11 +215,7 @@ def _resolve_handle_drag(ctx: SkillContext, *, opening: bool):
     )
     handle_world = resolve_frame(handle_frame, scene_state, slide_override=slide_now)
 
-    if opening:
-        move_vec = open_dir_world * (full_travel - slide_now)
-    else:
-        # Close: drag from the current opening all the way back to closed.
-        move_vec = -open_dir_world * slide_now
+    move_vec = open_dir_world * (drag.end - slide_now)
     return handle_world, move_vec, joint.child
 
 

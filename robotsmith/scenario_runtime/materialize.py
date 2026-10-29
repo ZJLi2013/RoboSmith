@@ -11,7 +11,9 @@ from robotsmith.scenario.adapters import (
     to_legacy_task_spec,
     to_step_bindings,
 )
+from robotsmith.assets.library import AssetLibrary
 from robotsmith.scenario.intents import SkillIntentSequenceSpec
+from robotsmith.scenario.load import DEFAULT_ASSETS
 from robotsmith.scenario.specs import SceneSpec, TaskSpec
 from robotsmith.scenario_runtime.loader import ScenarioCandidate, load_candidate
 from robotsmith.scenes.config import SceneConfig
@@ -46,7 +48,9 @@ def materialize_candidate(
     legacy_task = to_legacy_task_spec(candidate.task)
     if candidate.intents is not None:
         legacy_task.skills = to_legacy_skills(candidate.intents, candidate.task)
-        legacy_task.step_bindings = to_step_bindings(candidate.intents, candidate.task.success)
+        library = AssetLibrary(DEFAULT_ASSETS)
+        assets = {o.name: library.get(o.asset) for o in candidate.scene.objects}
+        legacy_task.step_bindings = to_step_bindings(candidate.intents, candidate.task.success, assets)
     return ScenarioRuntimePackage(
         source_path=candidate.source_path,
         scenario_scene=candidate.scene,

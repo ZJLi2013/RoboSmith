@@ -319,11 +319,14 @@ Three checks read the simulator; none trusts the plan.
 2. **Handoff check (after each step).** A `place` is judged after its last phase by the relation its step binding
    names (the same `on` / `inside` predicate as the task), on the world state after a 0.5 s hold that is recorded
    into the episode; the verdict, its binding and the judged state are kept on the step. An unchecked binding
-   records why and claims nothing, and the `transport` phase of a two-phase place is not judged. The other steps are
-   still judged by `scenario_runtime/handoff.py::check` from the per-frame samples: `open` moved the joint at least
-   half the requested stroke; `pick` ends with the object within 0.15 m of the hand and at least 2 cm higher;
-   `close` returns the joint to within 2 cm. For a place, the samples are diagnostics: the frame the object left the
-   hand, the joint jump before it, and a candidate cause (`motion?`, `grip?`, `release?`). A failed episode reports
+   records why and claims nothing, and the `transport` phase of a two-phase place is not judged. `open` / `close`
+   are judged the same way at the end of the drag, without a hold: their binding names the joint the executor drags
+   (`skills/frames.py::resolve_drag_joint`) and its endpoint (the upper limit or `distance` for open, the lower
+   limit for close), opened past endpoint − 2 cm or closed below lower + 2 cm. `pick` is still judged by
+   `scenario_runtime/handoff.py::check` from the per-frame samples: it ends with the object within 0.15 m of the
+   hand and at least 2 cm higher. For the other steps the samples are diagnostics: joint travel for open / close;
+   for a place, the frame the object left the hand, the joint jump before it, and a candidate cause (`motion?`,
+   `grip?`, `release?`). A failed episode reports
    its first unfinished step as `failed_step`, or `unknown` when every step passed, plus the success-tree leaves
    that failed. Steps do not decide episode success.
 3. **Task success (after the last step).** `runner.evaluate_scenario_task` holds the arm at its last command for
@@ -375,7 +378,7 @@ change build files (mass, collision, orientation) go through a rebuild and a new
 
 ### In progress: one vocabulary for step and task checks
 
-`place` and the success tree now share one vocabulary; `pick`, `open` and `close` still use per-skill thresholds.
+`place`, `open`, `close` and the success tree now share one vocabulary; `pick` still uses per-skill thresholds.
 The migration, reviewed before implementation, makes every step read one world state and one predicate set:
 
 1. One read-only world-state collector and an explicit settle window — done (`sim/world_state.py`).
@@ -384,7 +387,7 @@ The migration, reviewed before implementation, makes every step read one world s
    done (`scenario/adapters.py::to_step_bindings`).
 3. `place` judged by the shared predicates; a mid-episode settle is recorded; step and task results stay separate —
    done (`SkillDef.post`, `runner._judge_completion`).
-4. `open` / `close` judged by the named joints the executor resolves.
+4. `open` / `close` judged by the named joints the executor resolves — done (`resolve_drag_joint`).
 5. `pick` judged by finger-level contact (`grasped`) and lift from the step's start.
 
 The per-frame handoff samples stay as diagnostics that explain a failed step; they stop deciding it.
