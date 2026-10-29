@@ -64,7 +64,7 @@ def _success(pkg, moved: dict, joints: dict | None = None) -> bool:
         "target_positions": {},
         "aabbs": {n: [p + bounds[n][0], p + bounds[n][1]] for n, p in positions.items()},
         "contacts": {n: [m for m in positions if m != n] for n in positions},
-        "window": {n: [[*p, 1.0, 0.0, 0.0, 0.0]] * 2 for n, p in positions.items()},
+        "window": {"steps": [1, 2], "poses": {n: [[*p, 1.0, 0.0, 0.0, 0.0]] * 2 for n, p in positions.items()}},
     }
     return evaluate_success(pkg.legacy_task.success, state)
 
