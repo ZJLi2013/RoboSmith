@@ -16,7 +16,7 @@ from pathlib import Path
 import jsonschema
 import yaml
 
-from robotsmith.assets import derive, store
+from robotsmith.assets import store
 from robotsmith.assets.library import AssetLibrary
 from robotsmith.scenario import relations
 from robotsmith.scenario.intents import SkillIntentSequenceSpec, SkillIntentSpec
@@ -253,14 +253,11 @@ def _success(node: dict, assets: dict, placements: dict) -> SuccessSpec:
         if target is None:
             raise relations.SolveError(f"{key}: '{parent}' must name a place target as <id>.<target>")
         spec = relations.place_target(assets[parent], target)
-        lo, hi = derive.visual_bounds(assets[obj].urdf_path)
         params = {
             "object": obj,
             "parent": parent,
             "box": spec["box"],
             "yaw_deg": placements[parent].yaw_deg,
-            "object_bottom": float(-lo[2]),
-            "object_height": float(hi[2] - lo[2]),
             "mode": key,
             "tol": CONTACT_TOL_M,
         }

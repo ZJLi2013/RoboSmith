@@ -8,7 +8,7 @@ import jsonschema
 import numpy as np
 import pytest
 
-from robotsmith.assets import store
+from robotsmith.assets import derive, store
 from robotsmith.assets.library import AssetLibrary
 from robotsmith.scenario.load import SCHEMA, _read, load_scenario
 from robotsmith.scenario_runtime import materialize_candidate
@@ -28,6 +28,12 @@ def _placed(pkg) -> dict:
     return {o.name_override: np.asarray(o.fixed_position) for o in pkg.legacy_scene.objects}
 
 
+def _bounds(pkg) -> dict:
+    library = AssetLibrary(ASSETS)
+    return {o.name_override: derive.visual_bounds(library.get(o.asset_query).urdf_path)
+            for o in pkg.legacy_scene.objects}
+
+
 def _box_leaf(pkg) -> dict:
     node = pkg.legacy_task.success
     while node.op != "leaf":
@@ -43,16 +49,22 @@ def _on_box(pkg, slide: float = 0.0, dy: float = 0.0) -> list[float]:
     local = (lo + hi) / 2.0 + np.asarray(leaf.get("axis") or [0, 0, 0]) * slide + [0.0, dy, 0.0]
     c, s = np.cos(np.radians(leaf["yaw_deg"])), np.sin(np.radians(leaf["yaw_deg"]))
     xy = base[:2] + [c * local[0] - s * local[1], s * local[0] + c * local[1]]
-    return [xy[0], xy[1], base[2] + hi[2] + leaf["object_bottom"]]
+    return [xy[0], xy[1], base[2] + hi[2] - _bounds(pkg)[leaf["object"]][0][2]]
 
 
 def _success(pkg, moved: dict, joints: dict | None = None) -> bool:
+    """Judge an upright, settled layout where every object touches every other one but not the robot."""
     placed = _placed(pkg)
+    positions = {**placed, **{k: np.asarray(v) for k, v in moved.items()}}
+    bounds = _bounds(pkg)
     state = {
-        "object_positions": {**placed, **{k: np.asarray(v) for k, v in moved.items()}},
+        "object_positions": positions,
         "initial_positions": placed,
         "joint_positions": joints or {},
         "target_positions": {},
+        "aabbs": {n: [p + bounds[n][0], p + bounds[n][1]] for n, p in positions.items()},
+        "contacts": {n: [m for m in positions if m != n] for n in positions},
+        "window": {n: [[*p, 1.0, 0.0, 0.0, 0.0]] * 2 for n, p in positions.items()},
     }
     return evaluate_success(pkg.legacy_task.success, state)
 

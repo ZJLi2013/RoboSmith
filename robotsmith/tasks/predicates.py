@@ -83,6 +83,16 @@ def object_above(env_state: dict, *, object: str, reference: str, z_margin: floa
     return float(pos[2] - initial_z) >= z_margin
 
 
+def _settled(window: list, max_move: float, max_turn_deg: float) -> bool:
+    """Every sampled frame (xyz + wxyz quat) stays within the limits of the last one."""
+    frames = np.asarray(window, dtype=np.float64)
+    last = frames[-1]
+    moved = np.linalg.norm(frames[:, :3] - last[:3], axis=1).max()
+    dots = np.clip(np.abs(frames[:, 3:] @ last[3:]), 0.0, 1.0)
+    turned = np.degrees(2.0 * np.arccos(dots)).max()
+    return bool(moved <= max_move and turned <= max_turn_deg)
+
+
 @register_predicate("object_in_box")
 def object_in_box(
     env_state: dict,
@@ -91,33 +101,45 @@ def object_in_box(
     parent: str,
     box: list[list[float]],
     yaw_deg: float,
-    object_bottom: float,
-    object_height: float,
     mode: str,
     tol: float = 0.02,
     joint: str | None = None,
     axis: list[float] | None = None,
+    max_move: float = 0.005,
+    max_turn_deg: float = 5.0,
 ) -> bool:
-    """True if the object's centre is over a box of ``parent`` and its bottom rests on it.
+    """True if the object, as the simulator last saw it, rests on (``on``) or in (``inside``) a box of ``parent``.
 
-    ``box`` is ``[lo, hi]`` in the parent frame at zero joint configuration; when
-    ``joint`` is set the box rides that prismatic joint by its live value.
-    ``mode="on"``: bottom within ``tol`` of the box top. ``mode="inside"``: bottom
-    between box top - ``tol`` and box top + ``object_height``.
+    ``box`` is ``[lo, hi]`` in the parent frame at zero joint configuration; when ``joint`` is set the box
+    rides that prismatic joint by its live value. The object's world collision AABB decides: ``on`` needs
+    the AABB centre over the box and its bottom within ``tol`` of the box top; ``inside`` (the box is the
+    container floor) needs the whole AABB footprint over the box and its bottom within ``tol`` of the top.
+    Both need the object touching ``parent``, not touching the robot, and still through the settle window.
     """
     lo, hi = np.asarray(box[0], dtype=np.float64), np.asarray(box[1], dtype=np.float64)
     if joint is not None:
         shift = np.asarray(axis, dtype=np.float64) * float(env_state["joint_positions"][parent][joint])
         lo, hi = lo + shift, hi + shift
-    obj = np.asarray(env_state["object_positions"][object], dtype=np.float64)
+    a_lo, a_hi = (np.asarray(v, dtype=np.float64) for v in env_state["aabbs"][object])
     base = np.asarray(env_state["object_positions"][parent], dtype=np.float64)
     c, s = np.cos(np.radians(yaw_deg)), np.sin(np.radians(yaw_deg))
-    dx, dy = obj[0] - base[0], obj[1] - base[1]
-    lx, ly = c * dx + s * dy, -s * dx + c * dy
-    over = lo[0] <= lx <= hi[0] and lo[1] <= ly <= hi[1]
-    gap = (obj[2] - object_bottom) - (base[2] + hi[2])
-    rests = abs(gap) <= tol if mode == "on" else -tol <= gap <= object_height
-    return bool(over and rests)
+
+    def local(x: float, y: float) -> tuple[float, float]:
+        dx, dy = x - base[0], y - base[1]
+        return c * dx + s * dy, -s * dx + c * dy
+
+    def over(x: float, y: float) -> bool:
+        lx, ly = local(x, y)
+        return bool(lo[0] <= lx <= hi[0] and lo[1] <= ly <= hi[1])
+
+    if mode == "on":
+        placed = over((a_lo[0] + a_hi[0]) / 2.0, (a_lo[1] + a_hi[1]) / 2.0)
+    else:
+        placed = all(over(x, y) for x in (a_lo[0], a_hi[0]) for y in (a_lo[1], a_hi[1]))
+    rests = abs(a_lo[2] - (base[2] + hi[2])) <= tol
+    touching = env_state["contacts"][object]
+    return bool(placed and rests and parent in touching and "robot" not in touching
+                and _settled(env_state["window"][object], max_move, max_turn_deg))
 
 
 @register_predicate("joint_opened")

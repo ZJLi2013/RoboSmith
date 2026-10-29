@@ -12,7 +12,6 @@ from robotsmith.sim.franka import (
     to_numpy, get_ee_state, compute_ee_delta,
 )
 from robotsmith.sim.sim_env import SimEnv, render_cam
-from robotsmith.tasks import evaluate_success
 from robotsmith.tasks.task_spec import TaskSpec
 
 
@@ -158,26 +157,6 @@ def record_episode(
         dataset.add_frame(frame)
 
     return samples
-
-
-def evaluate_episode(
-    env: SimEnv,
-    task_spec: TaskSpec,
-    pick_obj_names: list[str],
-    initial_positions: dict[str, np.ndarray],
-) -> bool:
-    """Run the task's success predicate against current entity positions."""
-    env_state = {"object_positions": {}, "initial_positions": initial_positions}
-    for name in pick_obj_names:
-        ent = env.entity_map.get(name)
-        if ent is not None:
-            env_state["object_positions"][name] = to_numpy(
-                ent.get_pos()
-            ).copy()
-    # Articulated joint state for joint_opened/joint_closed predicates.
-    if hasattr(env, "get_joint_positions"):
-        env_state["joint_positions"] = env.get_joint_positions()
-    return evaluate_success(task_spec.success, env_state)
 
 
 def save_summary(

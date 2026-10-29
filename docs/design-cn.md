@@ -116,8 +116,9 @@ revision 和构建哈希；哈希和文件对不上的记录不算数。质量�
 - **关系按 seed 求解**（`robotsmith/scenario/relations.py`），只用资产几何：显示包围盒、碰撞盒、放置目标和棱柱关节。
   `near: robot` 在 Franka 工作空间的环形区域内采样，所以一个 scenario 是一族布局；`variations` 按 seed 替换字段，
   `split` 为 playground 与 test 预留 seed 区间。
-- **成功判据**是由 `all_of` / `any_of` / `not` 组成的谓词树，谓词读的是资产几何，不是手调阈值：`inside` / `on` 判断
-  物体是否在放置目标的碰撞盒里（随关节一起运动）。这棵树本应对执行方隐藏。
+- **成功判据**是由 `all_of` / `any_of` / `not` 组成的谓词树。`inside` / `on` 判的是手臂静置 0.5 s 后仿真里的状态
+  （`collect_judge_state`）：物体的世界碰撞包围盒与放置目标碰撞盒（随关节一起运动）的关系、与目标所属资产有接触且不碰
+  机器人、静置窗口内没有移动。朝向不计入，立着放在板上的积木也算在板上；需要物体正立的任务另行声明。这棵树本应对执行方隐藏。
 - **Teacher 计划**（`scenarios/teacher/<name>.yaml`）写专家执行要用的 `pick` / `place` / `open` / `close` 步骤；
   它从不写路点、不控制夹爪、不调用 Genesis。关节固定件上的放置目标随关节打开而移动。
 

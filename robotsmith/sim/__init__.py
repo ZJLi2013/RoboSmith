@@ -7,7 +7,7 @@ produce datasets.
 Submodules:
   franka    — Franka Panda constants and EE utilities
   sim_env   — Genesis SimEnv (scene + robot + cameras + IK + reset)
-  recorder  — LeRobot dataset recording, evaluation, summary
+  recorder  — LeRobot dataset recording, summary
 """
 
 from robotsmith.sim.franka import (
@@ -21,7 +21,7 @@ __all__ = [
     "ACTION_NAMES", "STATE_NAMES",
     "to_numpy", "get_ee_state", "compute_ee_delta",
     "SimEnv", "ensure_display", "render_cam",
-    "create_dataset", "record_episode", "evaluate_episode", "save_summary",
+    "create_dataset", "record_episode", "save_summary",
 ]
 
 
@@ -30,7 +30,7 @@ def __getattr__(name: str):
         from importlib import import_module
         sim_env = import_module("robotsmith.sim.sim_env")
         return getattr(sim_env, name)
-    if name in {"create_dataset", "record_episode", "evaluate_episode", "save_summary"}:
+    if name in {"create_dataset", "record_episode", "save_summary"}:
         from importlib import import_module
         recorder = import_module("robotsmith.sim.recorder")
         return getattr(recorder, name)
