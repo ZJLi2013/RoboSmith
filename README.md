@@ -37,7 +37,8 @@ A task is a short Python file: scene, skill intents, and a success tree. See
 ## Get started
 
 - [Quick start](docs/quick-start.md): from a fresh GPU node to a recorded drawer episode.
-- [Design](docs/design.md): data flow, key concepts, code layout, and the projects RoboSmith builds on.
+- [Design](docs/design.md): teacher and student, data flow, modules, execution, verification, and the projects
+  RoboSmith builds on.
 - [Writing scenarios](scenarios/README.md).
 - Blog post: [RoboSmith — a ROCm-native synthetic-data pipeline for embodied interactive manipulation](https://andyluo7.github.io/rocm/amd/mi300x/robotics/embodiedai/sdg/2026/07/01/robosmith-rocm-native-synthetic-data-pipeline/).
 
