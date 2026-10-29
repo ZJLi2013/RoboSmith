@@ -130,9 +130,11 @@ contract for agents is [`scenarios/AGENT_PROMPT.md`](../scenarios/AGENT_PROMPT.m
   collision boxes, place targets and prismatic joints. `near: robot` samples the Franka workspace annulus, so one
   scenario is a distribution of layouts; `variations` swap fields per seed and `split` reserves seed ranges for
   playground and test.
-- **Success** is a tree of `all_of` / `any_of` / `not` over predicates that read asset geometry, not hand-tuned
-  thresholds: `inside` / `on` test the object against a place target's collision box (riding its joint). The tree is
-  meant to be hidden from the executor.
+- **Success** is a tree of `all_of` / `any_of` / `not` over predicates. `inside` / `on` judge what the simulator shows
+  after the arm holds still for 0.5 s (`collect_judge_state`): the object's world collision AABB against a place
+  target's collision box (riding its joint), contact with the target's asset and none with the robot, and no motion
+  through the window. Orientation does not count, so a block standing on its end is on the shelf; a task that needs
+  the object upright states that separately. The tree is meant to be hidden from the executor.
 - **Teacher plans** (`scenarios/teacher/<name>.yaml`) hold the scripted `pick` / `place` / `open` / `close` steps
   for expert rollouts; they never write waypoints, control the gripper, or call Genesis. Place targets on an
   articulated fixture follow the joint as it opens.

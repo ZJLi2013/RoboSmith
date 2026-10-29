@@ -31,6 +31,11 @@ All notable user-facing changes are documented here. This project follows Semant
 
 ### Changed
 
+- `on` / `inside` success predicates judge the simulator's state after a 0.5 s settle (the object's world collision
+  AABB, contact with the target's asset and none with the robot, no motion in the window) instead of a load-time
+  upright bottom offset. A block placed standing on its end now counts as on the shelf, and an object still held,
+  bridging a drawer rim or still moving does not. `robotsmith.sim.recorder.evaluate_episode`, which nothing called,
+  is removed.
 - Geometric candidates chosen by trial are the only grasp path for single-asset validation and scenario runs.
   Scenario runs try each candidate from the live scene and restore it afterwards (`SimEnv.trial_from_here`).
   `--grasp-planner` is gone from both scripts and `validate_asset_picks --grasp-selection` takes `trial` (default)
