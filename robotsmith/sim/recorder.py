@@ -101,8 +101,9 @@ def record_episode(
     primary_entity=None,
     camera_names: tuple[str, ...] = ("up", "wrist"),
     env_state_names: tuple[str, ...] | list[str] = (),
-) -> list[float]:
-    """Step through a trajectory, record frames, return per-step Z of primary_entity.
+) -> list[dict]:
+    """Step through a trajectory, record frames, return per-step sim samples: hand link xyz,
+    actual arm joints, and primary_entity xyz (None without one).
 
     When ``env_state_names`` is provided the live articulated joint positions
     are written to ``observation.environment_state`` each frame, so the dataset
@@ -112,7 +113,7 @@ def record_episode(
         env.franka.get_dofs_position(env.finger_dof)
     ).astype(np.float32)
     prev_ee_state = get_ee_state(env.end_effector, finger_vals)
-    obj_z_hist: list[float] = []
+    samples: list[dict] = []
 
     for target_qpos in traj:
         finger_vals = to_numpy(
@@ -137,9 +138,12 @@ def record_episode(
         action = compute_ee_delta(prev_ee_state, next_ee, gripper_cmd)
         prev_ee_state = next_ee
 
-        if primary_entity is not None:
-            cz = float(to_numpy(primary_entity.get_pos())[2])
-            obj_z_hist.append(cz)
+        samples.append({
+            "hand": to_numpy(env.end_effector.get_pos()).reshape(-1)[:3],
+            "q": to_numpy(env.franka.get_dofs_position(env.motors_dof)).reshape(-1)[:7],
+            "obj": None if primary_entity is None
+            else to_numpy(primary_entity.get_pos()).reshape(-1)[:3],
+        })
 
         frame = {
             "observation.state": ee_state,
@@ -153,7 +157,7 @@ def record_episode(
         frame.update(images)
         dataset.add_frame(frame)
 
-    return obj_z_hist
+    return samples
 
 
 def evaluate_episode(

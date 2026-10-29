@@ -6,6 +6,10 @@ All notable user-facing changes are documented here. This project follows Semant
 
 ### Added
 
+- `robotsmith.scenario_runtime.handoff`: every skill of a scenario episode reports whether it left the world the way
+  the next skill needs it (drawer opened, object lifted, object carried until release and resting on the target,
+  drawer closed). `scenario_run_summary.json` lists the handoffs and, for a failed episode, the first unfinished step
+  with a candidate cause (`motion?`, `grip?`, `release?`), or `unknown` when every handoff passed.
 - `robotsmith.assets.producers`: asset generation (TRELLIS.2 and Hunyuan3D backends, `generate_asset`) and
   `mesh_to_urdf`, moved from RocRecon.
 - `robotsmith.scenario.relations`: a relation solver that places scenario objects per seed from asset geometry
