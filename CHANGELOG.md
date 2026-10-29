@@ -35,6 +35,11 @@ All notable user-facing changes are documented here. This project follows Semant
 
 ### Changed
 
+- Judging reads the simulator through one module, `robotsmith/sim/world_state.py`: `collect_world_state` reads one
+  step and never advances it; `settle_window` holds the arm at its last command and is the only judging code that
+  steps. A zero settle steps nothing. Scenario runs and single-asset validation both judge from it. Missing or
+  non-finite observations raise `JudgeInputError`. `scenario_run_summary.json` records `success_tree` and each
+  episode's `judge_state`, so a verdict re-judges offline to the same result.
 - `on` / `inside` success predicates judge the simulator's state after a 0.5 s settle (the object's world collision
   AABB, contact with the target's asset and none with the robot, no motion in the window) instead of a load-time
   upright bottom offset. A block placed standing on its end now counts as on the shelf, and an object still held,
