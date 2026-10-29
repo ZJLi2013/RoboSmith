@@ -247,8 +247,13 @@ Single-asset validation and scenario runs build candidates from the settled obje
 only (`grasp/geometric.py`), try them in simulation and keep the first one that lifts the object. Single-asset
 validation tries each from the placed start state; a scenario tries each from the live scene (snapshot, replay,
 restore: `SimEnv.trial_from_here`), so drawers already opened and objects already moved stay as they are. Grasps an
-agent wrote back to the asset (`grasp_candidates`, see [Repair loop](#repair-loop)) are tried first. Two Panda facts
-shape the candidates:
+agent wrote back to the asset (`grasp_candidates`, see [Repair loop](#repair-loop)) are tried first.
+
+There is no learned grasp model: the trial is the judge, so candidate quality only changes how many are tried;
+geometric candidates fail in ways an agent can read (no candidate, too wide, IK branch jump) and are deterministic for
+a reproducible bench; and the teacher already has privileged geometry, so it does not estimate grasps from images.
+
+Two Panda facts shape the candidates:
 
 - **The fingers close along the hand's local Y axis** (`panda_finger_joint*` `axis="0 1 0"`), so the hand rotation
   is `[finger × approach, finger, approach]`.
@@ -391,6 +396,10 @@ the initial state, run the steps, then judge the task. The run writes:
 - Articulation supports prismatic joints only; revolute open / close, push / press, and bimanual tasks are not
   implemented.
 - Holding is position-controlled; heavier objects slip (see [Grasp](#grasp-geometric-candidates-chosen-by-trial)).
+- Flat, wide objects (a phone lying down) have no candidate family; the repair loop reports them as unknown.
+- Generated assets can use an open visual mesh as their collision body, so objects roll off at reset; the scene
+  check rejects them, and the fix is on the asset side.
+- In `pick_one_of_three` the snapshot trial and the execution disagree once; the cause is not known.
 - One asset per process: `SimEnv.build` initialises Genesis every time, so a second build in the same process fails.
 - The first `plan_motion` of a new scene shape compiles for about 10 minutes; later runs reuse the JAX disk cache.
 - Data comes from scripted IK replay only; there is no DAgger-style or closed-loop evaluation backend yet.
