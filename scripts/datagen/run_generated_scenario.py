@@ -19,6 +19,7 @@ from robotsmith.scenario.adapters import resolved_target_positions, target_frame
 from robotsmith.rollout.video_export import copy_episode_videos
 from robotsmith.scenario_runtime import handoff, materialize_candidate
 from robotsmith.scenario_runtime.materialize import ScenarioRuntimePackage
+from robotsmith.tasks import failed_leaves
 from robotsmith.scenario_runtime.runner import (
     collect_object_positions,
     evaluate_scenario_task,
@@ -114,6 +115,7 @@ def run_scenario_smoke(
             initial_positions=result.initial_positions,
             reference_positions=target_positions,
             hold=result.final_qpos,
+            window=result.final_window,
         )
         final_positions = collect_object_positions(env)
         episodes.append({
@@ -129,6 +131,7 @@ def run_scenario_smoke(
             ),
             "handoffs": _json_safe(result.handoffs),
             "failed_step": None if success else _json_safe(handoff.first_failure(result.handoffs)),
+            "failed_leaves": [] if success else failed_leaves(package.legacy_task.success, judge_state),
         })
         dataset.save_episode()
 

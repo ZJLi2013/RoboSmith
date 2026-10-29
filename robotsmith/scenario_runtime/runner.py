@@ -21,7 +21,7 @@ from robotsmith.grasp.geometric import GeometricGraspPlanner
 from robotsmith.scenario_runtime import handoff
 from robotsmith.sim.franka import HOME_QPOS, to_numpy_f32
 from robotsmith.sim.world_state import collect_world_state, settle_window
-from robotsmith.skills import plan_segment, resolve_frame, skill_phases
+from robotsmith.skills import SKILL_DEFS, plan_segment, resolve_frame, skill_phases
 from robotsmith.tasks import evaluate_success
 from robotsmith.tasks.task_spec import TaskSpec
 
@@ -54,6 +54,9 @@ class ScenarioEpisodeResult:
     frame_count: int
     handoffs: list[dict]
     final_qpos: np.ndarray
+    # The settle the last step recorded and judged, still the world's current state; None when the
+    # episode ended on a step that did not settle.
+    final_window: dict | None = None
 
 
 def run_scenario_episode(
@@ -106,12 +109,19 @@ def run_scenario_episode(
     motion_planner = _maybe_motion_planner(env)
 
     planner_kw = {"motion_planner": motion_planner} if motion_planner is not None else {}
+    window = None
+
+    def record_step(q):
+        record_fn(env, dataset, [q], task_spec, camera_names=camera_names, env_state_names=env_state_names)
+
     for i, skill in enumerate(task_spec.skills):
+        skill_def = SKILL_DEFS.get(skill.name)
         # Per-phase closed loop: re-sense + re-anchor before each phase, not just
         # at the subtask boundary. ``skill_phases`` returns one phase for static
         # anchors (== legacy per-subtask loop) and splits dynamic-anchor places
         # into transport/descend so descend re-reads the recoiled drawer.
-        for phase in skill_phases(skill, target_frames.get(skill.target)):
+        phases = skill_phases(skill, target_frames.get(skill.target))
+        for phase in phases:
             scene_state = _live_scene_state(env, target_frames, skill_traces)
             obj = skill.target if skill.name == "pick" else held
             seg, held_category, held_place_z = plan_segment(
@@ -128,7 +138,7 @@ def run_scenario_episode(
                 camera_names=camera_names,
                 env_state_names=env_state_names,
             )
-            handoffs.append(handoff.check(
+            entry = handoff.check(
                 skill, phase, seg, samples or [], held=obj,
                 held_start=scene_state["positions"].get(obj) if obj else None,
                 target=scene_state["positions"].get(skill.target),
@@ -136,7 +146,8 @@ def run_scenario_episode(
                 joints_after=env.get_joint_positions() if hasattr(env, "get_joint_positions") else {},
                 trace=skill_traces[-1] if skill_traces else None,
                 rocrobo=motion_planner is not None,
-            ))
+            )
+            handoffs.append(entry)
             if skill.name == "pick":
                 held = skill.target
             elif skill.name == "place" and phase != "transport":
@@ -144,6 +155,15 @@ def run_scenario_episode(
             frame_count += len(seg)
             if seg:
                 qpos = seg[-1]
+            window = None
+            if skill_def is not None and skill_def.post is not None:
+                if phase != phases[-1]:
+                    entry["done"] = None
+                else:
+                    binding = (task_spec.step_bindings[i] if i < len(task_spec.step_bindings)
+                               else {"status": "unchecked", "reason": "no step binding"})
+                    window = _judge_completion(env, entry, skill, skill_def, binding, qpos, record_step)
+                    frame_count += entry["completion"].get("settle_frames", 0)
 
     return ScenarioEpisodeResult(
         initial_positions=initial_positions,
@@ -151,7 +171,33 @@ def run_scenario_episode(
         frame_count=frame_count,
         handoffs=handoffs,
         final_qpos=qpos,
+        final_window=window,
     )
+
+
+def _judge_completion(env, entry: dict, skill, skill_def, binding: dict, hold, record_step) -> dict | None:
+    """Judge the step's bound completion after a recorded ``settle_s`` hold; return the window it judged.
+
+    An unchecked binding records why and claims nothing. The judged state (one world-state read plus
+    the window) is kept on the entry, so the step verdict re-judges offline like the task verdict.
+    """
+    node = skill_def.post(skill, binding)
+    if node is None:
+        entry.update(done=None, completion=dict(binding))
+        return None
+    frames = []
+
+    def step(q):
+        record_step(q)
+        frames.append(q)
+
+    window = settle_window(env, hold, settle_s=skill_def.settle_s, step=step)
+    state = {**collect_world_state(env), "window": window}
+    done = bool(evaluate_success(node, state))
+    entry.update(done=done, completion={**binding, "settle_frames": len(frames), "judge_state": state})
+    if not done:
+        entry.setdefault("cause", "release?")
+    return window
 
 
 def evaluate_scenario_task(
@@ -162,10 +208,13 @@ def evaluate_scenario_task(
     reference_positions: dict[str, np.ndarray] | None = None,
     hold,
     settle_s: float = 0.5,
+    window: dict | None = None,
 ) -> tuple[bool, dict]:
     """Settle for ``settle_s`` holding the arm at ``hold`` (the last commanded qpos), then judge the task.
+    ``window`` is a settle the last step already recorded; it is reused instead of settling again.
     Returns the verdict and the exact state it judged, which re-judges offline to the same verdict."""
-    window = settle_window(env, hold, settle_s=settle_s)
+    if window is None:
+        window = settle_window(env, hold, settle_s=settle_s)
     env_state = {
         **collect_world_state(env),
         "window": window,

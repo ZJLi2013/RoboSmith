@@ -111,7 +111,7 @@ flowchart TD
 | `scenario/` | scenario YAML: schema, per-seed relation solver, success tree, teacher plan; lowering to the runtime | `load.load_scenario`, `relations.solve`, `specs` (`SceneSpec`, `TaskSpec`, `SuccessSpec`), `intents.SkillIntentSpec`, `adapters` |
 | `scenes/` | scene configuration and loading into Genesis | `SceneConfig`, `ObjectPlacement`, `genesis_loader` |
 | `scenario_runtime/` | one scenario run: materialize the runtime package, drive the episode, per-step handoff checks | `materialize_candidate`, `runner.run_scenario_episode`, `runner.evaluate_scenario_task`, `handoff.check` |
-| `skills/` | the skill primitives and their registry; turn one step into joint targets from the live scene | `@register`, `plan_segment`, `skill_phases`, `Skill`, `SkillContext`, `frames.resolve_frame` |
+| `skills/` | the skill primitives, their completion conditions and the registry; turn one step into joint targets from the live scene | `@register`, `SKILL_DEFS`, `plan_segment`, `skill_phases`, `Skill`, `SkillContext`, `frames.resolve_frame` |
 | `grasp/` | grasp and place plans; geometric candidates; grasps written back to assets; repair-loop tools | `GraspPlan`, `GeometricGraspPlanner`, `annotations`, `diagnostics/` (`request`, `tool`, `writeback`, `playbook.md`) |
 | `execution/` | compile a plan into a motion chain and a joint trajectory | `MotionExecutor` |
 | `motion/` | segment routing, IK and collision-aware planning, the collision world | `chain.execute_motion_chain`, `MotionPlanner`, `GenesisBackend`, `RocRoboBackend`, `rocrobo_world` |
@@ -228,15 +228,19 @@ sequenceDiagram
         R->>E: record_episode
         E-->>R: per-frame samples
         R->>H: check (recorded only)
+        opt last phase of a place
+            R->>E: recorded 0.5 s hold
+            R->>J: bound on / inside leaf
+        end
     end
     R-->>S: handoffs, final qpos
-    S->>E: settle_window 0.5 s
+    S->>E: settle_window 0.5 s (reused after a final place)
     S->>E: collect_world_state
     S->>J: evaluate_success
     J-->>S: success, judge_state
 ```
 
-The skill primitive stands for `skills/`, `grasp/`, `execution/` and `motion/` together. `plan_segment` finds the step's primitive in `SKILL_PRIMITIVES` (`skills/registry.py`) and calls it with a
+The skill primitive stands for `skills/`, `grasp/`, `execution/` and `motion/` together. `plan_segment` finds the step's primitive in `SKILL_DEFS` (`skills/registry.py`) and calls it with a
 `SkillContext` (step, grasp planner, executor, motion planner, live scene, current joint target). Only `place` onto
 an articulated target splits into `transport` and `descend`, so the descend re-reads the drawer after it recoils;
 every other step is one phase.
@@ -312,14 +316,19 @@ Three checks read the simulator; none trusts the plan.
 1. **Scene check (before the first step).** `SimEnv.reset` places objects, settles them and raises `SceneInvalid`
    if an object moved more than 5 cm, dropped more than 5 cm or tipped more than 30°. An invalid scene is not
    attempted or diagnosed.
-2. **Handoff check (after each step).** `scenario_runtime/handoff.py::check` judges the step from the per-frame
-   samples: `open` moved the joint at least half the requested stroke; `pick` ends with the object within 0.15 m of
-   the hand and at least 2 cm higher; `place` keeps the object within 0.15 m of the hand until the fingers open, then
-   it rests within 8 cm (xy) of the target; `close` returns the joint to within 2 cm. A failed place carries a
-   candidate cause (`motion?`, `grip?`, `release?`). A failed episode reports its first unfinished step as
-   `failed_step`, or `unknown` when every handoff passed. Handoffs do not decide episode success.
+2. **Handoff check (after each step).** A `place` is judged after its last phase by the relation its step binding
+   names (the same `on` / `inside` predicate as the task), on the world state after a 0.5 s hold that is recorded
+   into the episode; the verdict, its binding and the judged state are kept on the step. An unchecked binding
+   records why and claims nothing, and the `transport` phase of a two-phase place is not judged. The other steps are
+   still judged by `scenario_runtime/handoff.py::check` from the per-frame samples: `open` moved the joint at least
+   half the requested stroke; `pick` ends with the object within 0.15 m of the hand and at least 2 cm higher;
+   `close` returns the joint to within 2 cm. For a place, the samples are diagnostics: the frame the object left the
+   hand, the joint jump before it, and a candidate cause (`motion?`, `grip?`, `release?`). A failed episode reports
+   its first unfinished step as `failed_step`, or `unknown` when every step passed, plus the success-tree leaves
+   that failed. Steps do not decide episode success.
 3. **Task success (after the last step).** `runner.evaluate_scenario_task` holds the arm at its last command for
-   0.5 s (`sim/world_state.py::settle_window`, the only judging code that steps the simulator), reads one step with
+   0.5 s (`sim/world_state.py::settle_window`, the only judging code that steps the simulator; when the last step
+   is a place, its recorded hold is reused instead of a second one), reads one step with
    `collect_world_state` (positions, poses, world collision AABBs, entity-level contacts, joints), and evaluates the
    success tree with `tasks/predicates.py::evaluate_success`:
    - `on` / `inside` (`object_in_box`): the object's AABB against the place target's collision box (riding its
@@ -366,14 +375,15 @@ change build files (mass, collision, orientation) go through a rebuild and a new
 
 ### In progress: one vocabulary for step and task checks
 
-Handoff checks and the success tree still use two vocabularies (per-skill thresholds versus registered predicates).
-The migration, reviewed before implementation, makes both read one world state and one predicate set:
+`place` and the success tree now share one vocabulary; `pick`, `open` and `close` still use per-skill thresholds.
+The migration, reviewed before implementation, makes every step read one world state and one predicate set:
 
 1. One read-only world-state collector and an explicit settle window — done (`sim/world_state.py`).
 2. Bind each teacher step to the completion condition it can be judged by at load time (a place to the success
    tree's `on` / `inside` relation for the object the preceding pick took), with contradictions failing at load —
-   [#47](https://github.com/ZJLi2013/RoboSmith/pull/47).
-3. `place` judged by the shared predicates; a mid-episode settle is recorded; step and task results stay separate.
+   done (`scenario/adapters.py::to_step_bindings`).
+3. `place` judged by the shared predicates; a mid-episode settle is recorded; step and task results stay separate —
+   done (`SkillDef.post`, `runner._judge_completion`).
 4. `open` / `close` judged by the named joints the executor resolves.
 5. `pick` judged by finger-level contact (`grasped`) and lift from the step's start.
 
@@ -385,8 +395,8 @@ Per episode: reset objects to their resolved positions, settle for `settle_steps
 the initial state, run the steps, then judge the task. The run writes:
 
 - a LeRobot dataset with the `up` camera; articulated joint values are appended to `observation.environment_state`;
-- per-episode videos and `scenario_run_summary.json` (success, `judge_state`, handoffs and `failed_step` per
-  episode; `success_tree`; diagnostics and skill traces).
+- per-episode videos and `scenario_run_summary.json` (success, `judge_state`, handoffs, `failed_step` and
+  `failed_leaves` per episode; `success_tree` and `step_bindings`; diagnostics and skill traces).
 
 ## Current limits
 

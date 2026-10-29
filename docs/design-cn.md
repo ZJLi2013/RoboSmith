@@ -106,7 +106,7 @@ flowchart TD
 | `scenario/` | scenario YAML：schema、按 seed 的关系求解、成功判定树、teacher 计划；降到运行时 | `load.load_scenario`、`relations.solve`、`specs`（`SceneSpec`、`TaskSpec`、`SuccessSpec`）、`intents.SkillIntentSpec`、`adapters` |
 | `scenes/` | 场景配置与加载进 Genesis | `SceneConfig`、`ObjectPlacement`、`genesis_loader` |
 | `scenario_runtime/` | 一次 scenario 运行：实例化运行时包、驱动 episode、逐步交接检查 | `materialize_candidate`、`runner.run_scenario_episode`、`runner.evaluate_scenario_task`、`handoff.check` |
-| `skills/` | 技能原语及其注册表；按实时场景把一步变成关节目标 | `@register`、`plan_segment`、`skill_phases`、`Skill`、`SkillContext`、`frames.resolve_frame` |
+| `skills/` | 技能原语、完成条件及其注册表；按实时场景把一步变成关节目标 | `@register`、`SKILL_DEFS`、`plan_segment`、`skill_phases`、`Skill`、`SkillContext`、`frames.resolve_frame` |
 | `grasp/` | 抓取与放置计划；几何候选；写回资产的抓法；修复环工具 | `GraspPlan`、`GeometricGraspPlanner`、`annotations`、`diagnostics/`（`request`、`tool`、`writeback`、`playbook.md`） |
 | `execution/` | 把计划编译成运动链和关节轨迹 | `MotionExecutor` |
 | `motion/` | 按段路由、IK 与考虑碰撞的规划、碰撞世界 | `chain.execute_motion_chain`、`MotionPlanner`、`GenesisBackend`、`RocRoboBackend`、`rocrobo_world` |
@@ -207,15 +207,19 @@ sequenceDiagram
         R->>E: record_episode
         E-->>R: 逐帧采样
         R->>H: check（只记录）
+        opt place 的最后一段
+            R->>E: 录制的 0.5 s 静置
+            R->>J: 绑定的 on / inside 叶子
+        end
     end
     R-->>S: 交接记录、末条 qpos
-    S->>E: settle_window 0.5 s
+    S->>E: settle_window 0.5 s（末步是 place 时复用）
     S->>E: collect_world_state
     S->>J: evaluate_success
     J-->>S: 成败、judge_state
 ```
 
-图中「技能原语」合指 `skills/`、`grasp/`、`execution/`、`motion/`。`plan_segment` 在 `SKILL_PRIMITIVES`（`skills/registry.py`）里找到这一步的原语，用 `SkillContext`（步骤、抓取规划器、
+图中「技能原语」合指 `skills/`、`grasp/`、`execution/`、`motion/`。`plan_segment` 在 `SKILL_DEFS`（`skills/registry.py`）里找到这一步的原语，用 `SkillContext`（步骤、抓取规划器、
 执行器、运动规划器、实时场景、当前关节目标）调用它。只有放到关节体目标上的 `place` 拆成 `transport` 和 `descend` 两段，
 这样下降前会重读回弹后的抽屉；其他步骤都是一段。
 
@@ -280,12 +284,14 @@ sequenceDiagram
 
 1. **场景检查（第一步之前）。** `SimEnv.reset` 放置物体、静止，物体水平移动超过 5 cm、下落超过 5 cm 或倾斜超过 30°
    时抛 `SceneInvalid`。场景无效时不试抓、不诊断。
-2. **交接检查（每步之后）。** `scenario_runtime/handoff.py::check` 用逐帧采样判断这一步：`open` 关节位移达到请求行程的
-   一半；`pick` 结束时物体距手 ≤ 0.15 m 且比起点高 ≥ 2 cm；`place` 在手指张开前物体一直距手 ≤ 0.15 m，松手后落在目标
-   水平 8 cm 以内；`close` 关节回到 2 cm 以内。失败的 place 带候选原因（`motion?`、`grip?`、`release?`）。失败的 episode
-   把第一个未完成的步骤记为 `failed_step`；交接全过时记 `unknown`。交接检查不决定 episode 成败。
+2. **交接检查（每步之后）。** `place` 在最后一段之后，按步骤绑定指向的关系（与任务同一个 `on` / `inside` 谓词）判定；
+   判定前静置 0.5 s，这段静置录进 episode；结论、绑定与所判的状态都记在这一步上。未检查的绑定只记原因、不声称成功，
+   两段式 place 的 `transport` 段不判。其余步骤仍由 `scenario_runtime/handoff.py::check` 用逐帧采样判断：`open` 关节位移
+   达到请求行程的一半；`pick` 结束时物体距手 ≤ 0.15 m 且比起点高 ≥ 2 cm；`close` 关节回到 2 cm 以内。对 place，逐帧采样
+   只作诊断：物体离手的帧、离手前的关节跳变和候选原因（`motion?`、`grip?`、`release?`）。失败的 episode 把第一个未完成的
+   步骤记为 `failed_step`，步骤全过时记 `unknown`，并列出失败的判定树叶子。步骤结果不决定 episode 成败。
 3. **任务成功（最后一步之后）。** `runner.evaluate_scenario_task` 让手臂保持最后的指令静置 0.5 s
-   （`sim/world_state.py::settle_window`，判定代码里唯一推进仿真的地方），用 `collect_world_state` 读一步（位置、姿态、
+   （`sim/world_state.py::settle_window`，判定代码里唯一推进仿真的地方；末步是 place 时复用它录下的静置，不再静置第二次），用 `collect_world_state` 读一步（位置、姿态、
    世界碰撞包围盒、实体级接触、关节），再用 `tasks/predicates.py::evaluate_success` 求值成功判定树：
    - `on` / `inside`（`object_in_box`）：物体包围盒对放置目标碰撞盒（随关节运动）——`on` 要中心在盒内，`inside` 要整个
      水平范围落在容器底板内，下沿距盒顶 2 cm 以内——且与目标所属资产有接触、不碰机器人、静置窗口内每帧相对末帧都在
@@ -326,13 +332,14 @@ agent 可以提候选位姿与 IK 起点、提资产修正请求、标记场景�
 
 ### 进行中：逐步检查与任务判定用同一套词汇
 
-交接检查和成功判定树仍是两套词汇（按技能写死的阈值 vs 注册的谓词）。这次迁移在实施前先做了设计评审，目标是两者读同一份
-世界状态、用同一组谓词：
+`place` 与成功判定树已经共用一套词汇；`pick`、`open`、`close` 仍是按技能写死的阈值。这次迁移在实施前先做了设计评审，
+目标是每一步都读同一份世界状态、用同一组谓词：
 
 1. 一个只读的世界状态采集入口和显式静置窗口——已完成（`sim/world_state.py`）。
 2. 加载时把每个 teacher 步骤绑定到可判定的完成条件（place 绑定到成功判定树里、前一个 pick 拿起的物体对应的 `on` /
-   `inside` 关系），矛盾在加载时报错——[#47](https://github.com/ZJLi2013/RoboSmith/pull/47)。
-3. `place` 用共用谓词判定；中途静置走录制路径；步骤结果与任务结果分开输出。
+   `inside` 关系），矛盾在加载时报错——已完成（`scenario/adapters.py::to_step_bindings`）。
+3. `place` 用共用谓词判定；中途静置走录制路径；步骤结果与任务结果分开输出——已完成（`SkillDef.post`、
+   `runner._judge_completion`）。
 4. `open` / `close` 按执行器解析出的具名关节判定。
 5. `pick` 用手指级接触（`grasped`）加相对本步起点的抬升判定。
 
@@ -344,8 +351,8 @@ agent 可以提候选位姿与 IK 起点、提资产修正请求、标记场景�
 一次运行写出：
 
 - 带 `up` 相机的 LeRobot 数据集；关节值追加到 `observation.environment_state`；
-- 每个 episode 的视频，以及 `scenario_run_summary.json`（每个 episode 的成功与否、`judge_state`、交接与 `failed_step`；
-  `success_tree`；诊断与技能轨迹）。
+- 每个 episode 的视频，以及 `scenario_run_summary.json`（每个 episode 的成功与否、`judge_state`、交接、`failed_step` 与
+  `failed_leaves`；`success_tree` 与 `step_bindings`；诊断与技能轨迹）。
 
 ## 当前限制
 

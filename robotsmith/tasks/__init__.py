@@ -5,6 +5,7 @@ from robotsmith.tasks.predicates import (
     PREDICATE_REGISTRY,
     evaluate_predicate,
     evaluate_success,
+    failed_leaves,
     find_leaf,
 )
 
@@ -14,5 +15,6 @@ __all__ = [
     "PREDICATE_REGISTRY",
     "evaluate_predicate",
     "evaluate_success",
+    "failed_leaves",
     "find_leaf",
 ]

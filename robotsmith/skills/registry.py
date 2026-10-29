@@ -1,15 +1,16 @@
-"""Skill primitive registry + the generic execution loop.
+"""Skill registry + the generic execution loop.
 
 A task is an ordered list of ``Skill``s. ``run_skills`` executes them
-sequentially through the ``SKILL_PRIMITIVES`` registry (one implementation per
-action). Adding a new action means dropping a module with an ``@register("name")``
-primitive into this package — ``run_skills`` / ``plan_segment`` stay generic loops
-(no if/elif growth).
+sequentially through the ``SKILL_DEFS`` registry (one definition per action:
+its primitive and, once migrated, its completion condition). Adding a new action
+means dropping a module with an ``@register("name")`` primitive into this
+package — ``run_skills`` / ``plan_segment`` stay generic loops (no if/elif growth).
 """
 
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import Callable
 
 import numpy as np
@@ -22,11 +23,25 @@ from robotsmith.skills.base import Skill, SkillContext, _resolve_skill_category
 
 logger = logging.getLogger(__name__)
 
-SKILL_PRIMITIVES: dict[str, Callable[[SkillContext], list[np.ndarray]]] = {}
+@dataclass(frozen=True)
+class SkillDef:
+    """An action's primitive and, once migrated, the completion condition judged after its last phase.
+
+    ``post(skill, binding)`` returns the ``SuccessNode`` to judge, or ``None`` when the step's load-time
+    binding is unchecked; ``settle_s`` is the recorded hold before judging it.
+    """
+
+    primitive: Callable[[SkillContext], list[np.ndarray]]
+    post: Callable[[Skill, dict], object] | None = None
+    settle_s: float = 0.0
 
 
-def register(name: str) -> Callable[[Callable], Callable]:
-    """Register a primitive implementation under an action ``name``.
+SKILL_DEFS: dict[str, SkillDef] = {}
+
+
+def register(name: str, *, post: Callable[[Skill, dict], object] | None = None,
+             settle_s: float = 0.0) -> Callable[[Callable], Callable]:
+    """Register a primitive implementation (and optionally its completion condition) under an action ``name``.
 
     Used as a decorator on the per-action ``run_*`` functions so the registry is
     populated by simply importing the action module (done in this package's
@@ -34,12 +49,21 @@ def register(name: str) -> Callable[[Callable], Callable]:
     """
 
     def deco(fn: Callable[[SkillContext], list[np.ndarray]]):
-        if name in SKILL_PRIMITIVES:
+        if name in SKILL_DEFS:
             raise ValueError(f"skill primitive {name!r} already registered")
-        SKILL_PRIMITIVES[name] = fn
+        SKILL_DEFS[name] = SkillDef(fn, post, settle_s)
         return fn
 
     return deco
+
+
+def bound_leaf(skill: Skill, binding: dict):
+    """The step's load-time binding as one predicate leaf; ``None`` unless the binding is ``bound``."""
+    from robotsmith.tasks.task_spec import SuccessNode
+
+    if binding.get("status") != "bound":
+        return None
+    return SuccessNode.leaf(binding["predicate"], dict(binding["params"]))
 
 
 def skill_phases(skill: Skill, target_frame=None) -> list[str]:
@@ -84,8 +108,8 @@ def plan_segment(
     the world's actual current state (e.g. ``close`` to where the drawer really
     is); ``run_skills`` calls it over a static scene_state.
     """
-    primitive = SKILL_PRIMITIVES.get(skill.name)
-    if primitive is None:
+    skill_def = SKILL_DEFS.get(skill.name)
+    if skill_def is None:
         raise ValueError(f"Unknown skill: {skill.name!r}")
     # Single motion seam: wrap the bare Genesis ``solve_ik`` in the collision-blind
     # GenesisBackend when no collision-aware planner is wired, so primitives/executor
@@ -112,7 +136,7 @@ def plan_segment(
         index, skill.name, skill.target, phase,
         scene_state.get("joint_positions", {}),
     )
-    seg = primitive(ctx)
+    seg = skill_def.primitive(ctx)
     return seg, ctx.held_category, ctx.held_place_z
 
 

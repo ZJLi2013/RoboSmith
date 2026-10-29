@@ -40,15 +40,19 @@ def collect_world_state(env) -> dict:
     }
 
 
-def settle_window(env, hold, *, settle_s: float = 0.5, samples: int = 10) -> dict:
-    """Hold the arm at the ``hold`` command for ``settle_s`` (not recorded) and sample every entity's pose
-    at ``samples`` evenly spaced steps. ``settle_s == 0`` steps nothing and returns an empty window."""
+def settle_window(env, hold, *, settle_s: float = 0.5, samples: int = 10, step=None) -> dict:
+    """Hold the arm at the ``hold`` command for ``settle_s`` and sample every entity's pose at ``samples``
+    evenly spaced steps. Each step is ``step(hold)`` when given (e.g. one recorded frame), otherwise an
+    unrecorded control + sim step. ``settle_s == 0`` steps nothing and returns an empty window."""
     total = round(settle_s / float(env.scene.dt))
     marks = sorted({round((k + 1) * total / samples) for k in range(samples)}) if total > 0 else []
     window = {"steps": [], "poses": {n: [] for n in env.entity_map}}
     for i in range(1, total + 1):
-        env.franka.control_dofs_position(hold, env.motors_dof)
-        env.scene.step()
+        if step is None:
+            env.franka.control_dofs_position(hold, env.motors_dof)
+            env.scene.step()
+        else:
+            step(hold)
         if i in marks:
             window["steps"].append(getattr(env.scene, "t", i))
             for n, ent in env.entity_map.items():

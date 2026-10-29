@@ -20,18 +20,19 @@ def _place(n=20, release=15, loss=None, jump=0.0, end_xy=(0.5, 0.0)):
     return seg, samples
 
 
-@pytest.mark.parametrize("kw, done, cause", [
-    ({}, True, None),
-    ({"loss": 8, "jump": 0.07}, False, "motion?"),
-    ({"loss": 8, "jump": 0.0}, False, "grip?"),
-    ({"end_xy": (0.9, 0.3)}, False, "release?"),
+@pytest.mark.parametrize("kw, cause, to_target", [
+    ({}, None, 0.0),
+    ({"loss": 8, "jump": 0.07}, "motion?", 0.0),
+    ({"loss": 8, "jump": 0.0}, "grip?", 0.0),
+    ({"end_xy": (0.9, 0.3)}, None, 0.5),
 ])
-def test_place_handoff(kw, done, cause):
+def test_place_handoff_only_diagnoses(kw, cause, to_target):
     seg, samples = _place(**kw)
     h = handoff.check(Skill("place", "goal"), "all", seg, samples, held="die", target=[0.5, 0.0, 0.8])
-    assert h["done"] is done
+    assert "done" not in h
     assert h.get("cause") == cause
     assert h["release_frame"] == 15
+    assert h["to_target_xy_m"] == pytest.approx(to_target)
 
 
 def test_pick_and_open_handoff_and_first_failure():
