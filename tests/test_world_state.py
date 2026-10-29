@@ -5,6 +5,8 @@ from robotsmith.sim.world_state import collect_world_state, settle_window
 
 
 class _Ent:
+    links = ()
+
     def __init__(self, pos):
         self.pos = np.asarray(pos, dtype=float)
 
@@ -38,7 +40,7 @@ class _Franka(_Ent):
         self.commands = []
 
     def get_contacts(self, with_entity=None):
-        return {"link_a": np.zeros(0)}
+        return {"link_a": np.zeros(0), "link_b": np.zeros(0)}
 
     def control_dofs_position(self, q, dofs):
         self.commands.append(np.asarray(q))

@@ -40,7 +40,7 @@ def test_pick_and_open_handoff_and_first_failure():
     samples = [{"hand": hand, "obj": hand - [0, 0, 0.1], "q": np.zeros(7)}]
     pick = handoff.check(Skill("pick", "die"), "all", [np.zeros(9)], samples, held="die",
                          held_start=[0.5, 0.0, 0.8])
-    assert pick["done"] is True and pick["lift_m"] == pytest.approx(0.1)
+    assert "done" not in pick and pick["lift_m"] == pytest.approx(0.1) and pick["dist_end_m"] == pytest.approx(0.1)
 
     opened = handoff.check(Skill("open", "drawer"), "all", [], [], held=None,
                            joints_before={"drawer": {"slide": 0.0}},

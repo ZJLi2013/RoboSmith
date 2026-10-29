@@ -12,7 +12,6 @@ from robotsmith.scenario_runtime import materialize_candidate
 from robotsmith.tasks.task_spec import TaskSpec
 
 SCENARIOS = Path(__file__).resolve().parents[1] / "scenarios"
-UNMIGRATED = {"status": "unchecked", "reason": "not migrated"}
 
 
 def _steps(*pairs):
@@ -39,7 +38,7 @@ def test_drawer_binds_place_inside_and_the_drawer_joint_for_open_and_close():
     by_skill = {s.name: b for b, s in zip(task.step_bindings, task.skills)}
     assert {k: by_skill["place"]["params"][k] for k in ("object", "parent", "target", "mode")} == {
         "object": "die", "parent": "drawer", "target": "drawer_opening", "mode": "inside"}
-    assert by_skill["pick"] == UNMIGRATED
+    assert by_skill["pick"] == {"status": "bound", "predicate": "grasped", "params": {"object": "die", "lift": 0.02}}
     opened, closed = by_skill["open"], by_skill["close"]
     assert (opened["predicate"], closed["predicate"]) == ("joint_opened", "joint_closed")
     assert opened["params"]["object"] == closed["params"]["object"] == "drawer"
@@ -70,4 +69,4 @@ def test_object_placed_twice_stays_unchecked():
     steps = _steps(("pick", "die"), ("place", "supporter.shelf_upper"), ("pick", "die"),
                    ("place", "supporter.shelf_lower"))
     bindings = to_step_bindings(steps, _on("die", "supporter", "shelf_lower"))
-    assert [b.get("reason") for b in bindings] == ["not migrated", "object placed more than once"] * 2
+    assert [b.get("reason") for b in bindings] == [None, "object placed more than once"] * 2

@@ -17,6 +17,8 @@ MARKS = [2, 3, 4, 6, 8, 9, 10, 12, 14, 15]
 
 
 class _Ent:
+    links = ()
+
     def __init__(self, pos, robot=False):
         self.pos, self.robot = np.asarray(pos, dtype=float), robot
 
@@ -45,8 +47,13 @@ class _Scene:
 
 
 class _Franka:
+    links = ()
+
     def control_dofs_position(self, q, dofs):
         pass
+
+    def get_contacts(self, with_entity=None):
+        return {"link_a": np.zeros(0), "link_b": np.zeros(0)}
 
 
 class _Env:

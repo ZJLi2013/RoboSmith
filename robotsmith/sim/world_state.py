@@ -21,9 +21,24 @@ def _pose(ent) -> list[float]:
     return np.r_[_arr(ent.get_pos()).reshape(-1)[:3], _arr(ent.get_quat()).reshape(-1)[:4]].tolist()
 
 
+def _finger_contacts(env) -> dict[str, list[str]]:
+    """For every entity, the names of the gripper finger links touching it (each finger once)."""
+    fingers = {lk.idx: lk.name for lk in env.franka.links if "finger" in lk.name}
+    owner = {lk.idx: name for name, ent in env.entity_map.items() for lk in ent.links}
+    c = env.franka.get_contacts()
+    a, b = _arr(c["link_a"]).reshape(-1).astype(int), _arr(c["link_b"]).reshape(-1).astype(int)
+    valid = _arr(c["valid_mask"]).reshape(-1).astype(bool) if "valid_mask" in c else np.ones(len(a), dtype=bool)
+    touching = {name: set() for name in env.entity_map}
+    for la, lb, ok in zip(a, b, valid):
+        finger, other = (la, lb) if la in fingers else (lb, la)
+        if ok and finger in fingers and other in owner:
+            touching[owner[other]].add(fingers[finger])
+    return {name: sorted(links) for name, links in touching.items()}
+
+
 def collect_world_state(env) -> dict:
     """One simulator step's view of every entity: position, pose, world collision AABB, what it touches
-    (``"robot"`` for the arm), and the articulated joints. Reads only."""
+    (``"robot"`` for the arm), which finger links touch it, and the articulated joints. Reads only."""
     names = list(env.entity_map)
     ents = env.entity_map
     return {
@@ -36,6 +51,7 @@ def collect_world_state(env) -> dict:
             + (["robot"] if _touches(ents[n], env.franka) else [])
             for n in names
         },
+        "finger_contacts": _finger_contacts(env),
         "joint_positions": env.get_joint_positions() if hasattr(env, "get_joint_positions") else {},
     }
 

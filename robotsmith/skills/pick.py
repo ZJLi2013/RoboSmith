@@ -20,7 +20,7 @@ from robotsmith.motion.rocrobo_world import (
     build_payload_spheres,
 )
 from robotsmith.skills.base import Skill, SkillContext
-from robotsmith.skills.registry import register
+from robotsmith.skills.registry import bound_leaf, register
 
 logger = logging.getLogger(__name__)
 
@@ -208,7 +208,7 @@ def _pick_motion(ctx: SkillContext, plan: GraspPlan) -> list[np.ndarray]:
     return transit + seg
 
 
-@register("pick")
+@register("pick", post=bound_leaf)
 def run_pick(ctx: SkillContext) -> list[np.ndarray]:
     trial = ctx.scene_state.get("grasp_trial")
     if trial is not None:

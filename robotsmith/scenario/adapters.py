@@ -32,6 +32,8 @@ from robotsmith.skills.frames import resolve_drag_joint
 from robotsmith.scenes.config import ObjectPlacement, SceneConfig
 from robotsmith.tasks.task_spec import SuccessNode, TaskSpec as LegacyTaskSpec
 
+PICK_LIFT_M = 0.02
+
 
 def to_legacy_scene_config(scene: SceneSpec) -> SceneConfig:
     """Lower a scenario SceneSpec to the current simulator-agnostic SceneConfig.
@@ -226,12 +228,12 @@ def to_step_bindings(intents: SkillIntentSequenceSpec, success: SuccessSpec,
                      assets: dict | None = None) -> list[dict]:
     """Bind each teacher step to the completion condition it can be judged by, one entry per step.
 
-    ``open`` / ``close`` bind to their joint through ``_joint_binding`` (``assets`` maps scene object
+    A ``pick`` binds to ``grasped``: both fingers on its target and a lift of ``PICK_LIFT_M`` from the step's
+    start. ``open`` / ``close`` bind to their joint through ``_joint_binding`` (``assets`` maps scene object
     names to assets). A ``place`` binds when the object placed is the one the preceding ``pick`` took and
     the success tree has a single positive on / inside relation for that object. A relation whose parent
     or target disagrees with the place raises ``SolveError``; trees with ``any_of`` / ``not``, an object
-    placed twice, or several candidate relations stay ``unchecked`` rather than guessed. ``pick`` is not
-    migrated.
+    placed twice, or several candidate relations stay ``unchecked`` rather than guessed.
     """
     assets = assets or {}
     relations, conjunction = _placement_relations(success)
@@ -246,7 +248,8 @@ def to_step_bindings(intents: SkillIntentSequenceSpec, success: SuccessSpec,
     for i, intent in enumerate(intents.intents):
         if intent.name == "pick":
             held = intent.target
-            bindings.append(_unchecked("not migrated"))
+            bindings.append({"status": "bound", "predicate": "grasped",
+                             "params": {"object": intent.target, "lift": PICK_LIFT_M}})
             continue
         if intent.name in ("open", "close"):
             bindings.append(_joint_binding(intent, assets))
