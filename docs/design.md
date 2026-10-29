@@ -131,10 +131,13 @@ contract for agents is [`scenarios/AGENT_PROMPT.md`](../scenarios/AGENT_PROMPT.m
   scenario is a distribution of layouts; `variations` swap fields per seed and `split` reserves seed ranges for
   playground and test.
 - **Success** is a tree of `all_of` / `any_of` / `not` over predicates. `inside` / `on` judge what the simulator shows
-  after the arm holds still for 0.5 s (`collect_judge_state`): the object's world collision AABB against a place
+  after the arm holds its last command for 0.5 s (`robotsmith/sim/world_state.py`: `settle_window` advances the
+  simulator, `collect_world_state` only reads): the object's world collision AABB against a place
   target's collision box (riding its joint), contact with the target's asset and none with the robot, and no motion
   through the window. Orientation does not count, so a block standing on its end is on the shelf; a task that needs
-  the object upright states that separately. The tree is meant to be hidden from the executor.
+  the object upright states that separately. The tree is meant to be hidden from the executor. A missing or
+  non-finite observation raises `JudgeInputError` instead of reading as false. The run summary keeps the tree it
+  evaluated (`success_tree`) and each episode's judged state (`judge_state`), so a verdict re-judges offline.
 - **Teacher plans** (`scenarios/teacher/<name>.yaml`) hold the scripted `pick` / `place` / `open` / `close` steps
   for expert rollouts; they never write waypoints, control the gripper, or call Genesis. Place targets on an
   articulated fixture follow the joint as it opens.

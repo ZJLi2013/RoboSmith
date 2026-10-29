@@ -20,6 +20,7 @@ import numpy as np
 from robotsmith.grasp.geometric import GeometricGraspPlanner
 from robotsmith.scenario_runtime import handoff
 from robotsmith.sim.franka import HOME_QPOS, to_numpy_f32
+from robotsmith.sim.world_state import collect_world_state, settle_window
 from robotsmith.skills import plan_segment, resolve_frame, skill_phases
 from robotsmith.tasks import evaluate_success
 from robotsmith.tasks.task_spec import TaskSpec
@@ -52,6 +53,7 @@ class ScenarioEpisodeResult:
     skill_traces: list[dict]
     frame_count: int
     handoffs: list[dict]
+    final_qpos: np.ndarray
 
 
 def run_scenario_episode(
@@ -148,6 +150,7 @@ def run_scenario_episode(
         skill_traces=skill_traces,
         frame_count=frame_count,
         handoffs=handoffs,
+        final_qpos=qpos,
     )
 
 
@@ -157,56 +160,19 @@ def evaluate_scenario_task(
     *,
     initial_positions: dict[str, np.ndarray],
     reference_positions: dict[str, np.ndarray] | None = None,
-) -> bool:
-    """Evaluate a generated scenario task against the live state after the settle window."""
-
+    hold,
+    settle_s: float = 0.5,
+) -> tuple[bool, dict]:
+    """Settle for ``settle_s`` holding the arm at ``hold`` (the last commanded qpos), then judge the task.
+    Returns the verdict and the exact state it judged, which re-judges offline to the same verdict."""
+    window = settle_window(env, hold, settle_s=settle_s)
     env_state = {
-        **collect_judge_state(env),
-        "object_positions": collect_object_positions(env),
-        "initial_positions": initial_positions,
-        "target_positions": reference_positions or {},
-        "joint_positions": (
-            env.get_joint_positions() if hasattr(env, "get_joint_positions") else {}
-        ),
-    }
-    return evaluate_success(task_spec.success, env_state)
-
-
-def _arr(x) -> np.ndarray:
-    return np.asarray(x.cpu().numpy() if hasattr(x, "cpu") else x, dtype=np.float64)
-
-
-def _touches(ent, other) -> bool:
-    return _arr(ent.get_contacts(with_entity=other)["link_a"]).size > 0
-
-
-def collect_judge_state(env, *, settle_s: float = 0.5, samples: int = 10) -> dict:
-    """Hold the arm for ``settle_s`` (stepping, not recording) and read what success predicates judge:
-    each entity's pose at ``samples`` points of the window, its final world collision AABB, and which
-    entities (``"robot"`` for the arm) it touches at the end."""
-    names = list(env.entity_map)
-    q = env.franka.get_dofs_position(env.motors_dof)
-    steps = max(1, round(settle_s / samples / float(env.scene.dt)))
-    window: dict[str, list] = {name: [] for name in names}
-    for _ in range(samples):
-        for _ in range(steps):
-            env.franka.control_dofs_position(q, env.motors_dof)
-            env.scene.step()
-        for name in names:
-            ent = env.entity_map[name]
-            window[name].append(np.r_[_arr(ent.get_pos()).reshape(-1)[:3],
-                                      _arr(ent.get_quat()).reshape(-1)[:4]].tolist())
-    contacts = {
-        name: [other for other in names if other != name
-               and _touches(env.entity_map[name], env.entity_map[other])]
-        + (["robot"] if _touches(env.entity_map[name], env.franka) else [])
-        for name in names
-    }
-    return {
-        "aabbs": {name: _arr(env.entity_map[name].get_AABB()).reshape(2, 3).tolist() for name in names},
-        "contacts": contacts,
+        **collect_world_state(env),
         "window": window,
+        "initial_positions": {k: np.asarray(v).tolist() for k, v in initial_positions.items()},
+        "target_positions": {k: np.asarray(v).tolist() for k, v in (reference_positions or {}).items()},
     }
+    return evaluate_success(task_spec.success, env_state), env_state
 
 
 def collect_object_positions(env) -> dict[str, np.ndarray]:

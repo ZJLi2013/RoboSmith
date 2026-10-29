@@ -20,6 +20,7 @@ from robotsmith.scenario.predicates import object_lifted
 from robotsmith.scenario.scene_api import layout, obj, region, scene
 from robotsmith.scenario.task_api import task
 from robotsmith.sim.franka import HOME_QPOS, to_numpy_f32
+from robotsmith.sim.world_state import collect_world_state
 from robotsmith.rollout.episode_layout import (
     build_episode_positions,
     derive_skill_targets,
@@ -193,14 +194,7 @@ def _evaluate_asset_pick_task(
     *,
     initial_positions: dict[str, np.ndarray],
 ) -> bool:
-    object_positions = {
-        name: to_numpy_f32(ent.get_pos()).copy()
-        for name, ent in env.entity_map.items()
-    }
-    env_state = {
-        "object_positions": object_positions,
-        "initial_positions": initial_positions,
-    }
+    env_state = {**collect_world_state(env), "initial_positions": initial_positions}
     return evaluate_success(task_spec.success, env_state)
 
 

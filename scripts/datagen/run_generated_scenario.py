@@ -108,16 +108,18 @@ def run_scenario_smoke(
             env_state_names=env_state_names,
         )
         episode_frame_counts[ep] = result.frame_count
-        success = evaluate_scenario_task(
+        success, judge_state = evaluate_scenario_task(
             env,
             package.legacy_task,
             initial_positions=result.initial_positions,
             reference_positions=target_positions,
+            hold=result.final_qpos,
         )
         final_positions = collect_object_positions(env)
         episodes.append({
             "episode_index": ep,
             "success": bool(success),
+            "judge_state": _json_safe(judge_state),
             "frame_count": result.frame_count,
             "diagnostics": episode_diagnostics(
                 initial_positions=result.initial_positions,
@@ -156,6 +158,7 @@ def run_scenario_smoke(
         else "datagen_failed",
         "n_episodes": config.n_episodes,
         "success_count": sum(1 for ep in episodes if ep["success"]),
+        "success_tree": package.legacy_task.success.to_dict(),
         "output_dir": str(config.output_dir),
         "dataset_root": str(dataset_root),
         "env_state_names": list(env_state_names),

@@ -83,9 +83,20 @@ def object_above(env_state: dict, *, object: str, reference: str, z_margin: floa
     return float(pos[2] - initial_z) >= z_margin
 
 
-def _settled(window: list, max_move: float, max_turn_deg: float) -> bool:
+class JudgeInputError(ValueError):
+    """The state a predicate needs is missing or not finite; a verdict would be a guess."""
+
+
+def _observed(env_state: dict, key: str, name: str):
+    value = env_state.get(key, {}).get(name)
+    if value is None or not np.all(np.isfinite(np.asarray(value, dtype=np.float64))):
+        raise JudgeInputError(f"{key}[{name!r}] is missing or not finite")
+    return value
+
+
+def _settled(frames: list, max_move: float, max_turn_deg: float) -> bool:
     """Every sampled frame (xyz + wxyz quat) stays within the limits of the last one."""
-    frames = np.asarray(window, dtype=np.float64)
+    frames = np.asarray(frames, dtype=np.float64)
     last = frames[-1]
     moved = np.linalg.norm(frames[:, :3] - last[:3], axis=1).max()
     dots = np.clip(np.abs(frames[:, 3:] @ last[3:]), 0.0, 1.0)
@@ -120,8 +131,13 @@ def object_in_box(
     if joint is not None:
         shift = np.asarray(axis, dtype=np.float64) * float(env_state["joint_positions"][parent][joint])
         lo, hi = lo + shift, hi + shift
-    a_lo, a_hi = (np.asarray(v, dtype=np.float64) for v in env_state["aabbs"][object])
-    base = np.asarray(env_state["object_positions"][parent], dtype=np.float64)
+    a_lo, a_hi = (np.asarray(v, dtype=np.float64) for v in _observed(env_state, "aabbs", object))
+    base = np.asarray(_observed(env_state, "object_positions", parent), dtype=np.float64)
+    frames = env_state.get("window", {}).get("poses", {}).get(object)
+    if not frames:
+        raise JudgeInputError(f"no settle window for {object!r}")
+    if object not in env_state.get("contacts", {}):
+        raise JudgeInputError(f"contacts[{object!r}] is missing")
     c, s = np.cos(np.radians(yaw_deg)), np.sin(np.radians(yaw_deg))
 
     def local(x: float, y: float) -> tuple[float, float]:
@@ -139,7 +155,7 @@ def object_in_box(
     rests = abs(a_lo[2] - (base[2] + hi[2])) <= tol
     touching = env_state["contacts"][object]
     return bool(placed and rests and parent in touching and "robot" not in touching
-                and _settled(env_state["window"][object], max_move, max_turn_deg))
+                and _settled(frames, max_move, max_turn_deg))
 
 
 @register_predicate("joint_opened")
