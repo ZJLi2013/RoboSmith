@@ -433,7 +433,7 @@ class SimEnv:
         margin to avoid interpenetration). ``object_heights`` is the
         quaternion-aware world-frame Z extent computed by
         ``PlacedObject.object_height_m``. The primary path is the resolver's
-        world z carried through ``reset`` (docs/design.md §5.1); this assumes
+        world z carried through ``reset``; this assumes
         "object spawns on the table", which is wrong for shelved/in-drawer
         starts, so it must remain a fallback only.
         """
@@ -452,7 +452,7 @@ class SimEnv:
         ``z`` is the spawn height. When the caller supplies it (3-tuple), it is
         the resolver's already-resolved world Z (single source of truth); the
         sim must not recompute it. Only fall back to the table-relative
-        ``get_initial_z`` when z is omitted (2-tuple). See docs/design.md §5.1.
+        ``get_initial_z`` when z is omitted (2-tuple).
         """
         self.franka.set_dofs_position(HOME_QPOS, self.motors_dof)
         self.franka.control_dofs_position(HOME_QPOS, self.motors_dof)

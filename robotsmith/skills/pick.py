@@ -228,8 +228,7 @@ def run_pick(ctx: SkillContext) -> list[np.ndarray]:
     # surface* (object bottom = center − half-height), NOT above the table. A
     # later place re-adds this to the destination marker's world z so the object
     # bottom lands on that surface — correct for table→table AND shelf→shelf.
-    # For a tabletop pick this equals the old (grasp_z − table_z). See
-    # docs/features/feature12_pick_place_into_drawer.md (§5 W2).
+    # For a tabletop pick this equals the old (grasp_z − table_z).
     obj_h = float(ctx.scene_state.get("object_heights", {}).get(ctx.skill.target, 0.0) or 0.0)
     support_z = float(ctx.obj_pos[2]) - obj_h / 2.0
     ctx.held_place_z = max(float(plan.grasp_pos[2]) - support_z, 0.0)

@@ -136,7 +136,7 @@ def _close_drag_waypoints(
             label="push", cartesian=True,
             # Dwell in contact so the drawer's velocity decays before the
             # gripper backs off, else stored contact energy springs it open
-            # again (drawer_feature.md).
+            # again.
             hold_after_steps=params.contact_settle_steps,
         ),
         RuntimeMotionWaypoint(
@@ -306,7 +306,7 @@ class MotionExecutor:
         # route descend/retreat through plan_motion (cartesian=False + world) so a
         # rigid-fixture side-insert weaves under the upper shelf without the
         # near-singular wrist flip a forced straight line produces. release stays
-        # finger-only. See docs/features/place_insertion_strategy.md.
+        # finger-only.
         insert_cartesian = insert_strategy != "planned"
         descend_wps = [
             RuntimeMotionWaypoint(
