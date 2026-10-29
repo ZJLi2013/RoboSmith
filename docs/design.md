@@ -24,22 +24,23 @@ simulator rather than trusting the plan.
 
 ## Data flow
 
-```text
-one-sentence task request
-  └─► agent writes the scenario YAML from the asset catalog (scenarios/AGENT_PROMPT.md)
-        └─ asset missing ─► agent generates it (Blender script, scene reconstruction, or image-to-3D)
-                              └─► LLM review + checks ──pass──► admitted to the asset library
-
-asset library + scenario YAML (scene relations + task + success) + teacher plan
-  └─► relations solved per seed (scenario/load.py), lowered to the runtime (scenario/adapters.py)
-        └─► SimEnv (Genesis + Franka): place, settle; reject the scene if an object rolled, dropped or tipped
-              └─► per teacher step (open / pick / place / close)
-                    pick:  candidates (grasps written back to the asset first, then geometric)
-                           ─► try each in simulation ─► execute the first that lifts
-                           all fail ─► diagnosis request ─► repair agent ─► re-trial ─► write back to the asset
-                    every skill: GraspPlan ─► MotionExecutor ─► MotionPlanner (Genesis IK or rocRobo)
-                    after each step: handoff check (did it leave the world the way the next step needs it?)
-              └─► settle 0.5 s ─► success tree on the simulator state ─► LeRobot dataset, videos, run summary
+```mermaid
+flowchart TD
+    REQ["one-sentence task request"] --> AG["agent writes scenario YAML + teacher plan<br/>from the asset catalog"]
+    AG -->|asset missing| GEN["agent generates the asset<br/>Blender script / reconstruction / image-to-3D"]
+    GEN --> REV{"LLM review + checks"}
+    REV -->|pass| LIB[("asset library")]
+    LIB --> AG
+    AG --> LOAD["solve relations per seed<br/>lower to the runtime task"]
+    LOAD --> RESET["SimEnv: place objects, settle"]
+    RESET -->|rolled, dropped or tipped| INV["scene invalid: not attempted"]
+    RESET --> STEP["next teacher step<br/>open / pick / place / close"]
+    STEP --> EXEC["plan from the live scene<br/>execute in Genesis, record frames"]
+    EXEC --> HO["handoff check<br/>recorded, does not stop the episode"]
+    HO -->|more steps| STEP
+    HO -->|last step done| SETTLE["hold 0.5 s"]
+    SETTLE --> JUDGE{"success tree<br/>on the simulator state"}
+    JUDGE --> OUT[("LeRobot dataset, videos,<br/>run summary")]
 ```
 
 Each arrow is one typed contract, and each layer has one owner in the code:
@@ -56,6 +57,49 @@ Each arrow is one typed contract, and each layer has one owner in the code:
 | Simulator / recorder | `robotsmith/sim/sim_env.py`, `robotsmith/sim/recorder.py` (the only adapters) |
 
 ## Modules
+
+Main call direction during a scenario run (lazy imports go both ways and are not drawn):
+
+```mermaid
+flowchart LR
+    subgraph Data["authoring data"]
+        YAML["scenario YAML<br/>+ teacher plan"]
+        LIB["assets/<br/>asset library"]
+    end
+    subgraph Load["load"]
+        SC["scenario/<br/>solve relations, lower"]
+        SCN["scenes/<br/>SceneConfig"]
+    end
+    subgraph Teacher["teacher run"]
+        RT["scenario_runtime/<br/>runner, handoff"]
+        SK["skills/<br/>primitives + registry"]
+        GR["grasp/<br/>candidates, repair"]
+        EX["execution/<br/>MotionExecutor"]
+        MO["motion/<br/>routing, IK, planning"]
+    end
+    SIM["sim/<br/>SimEnv, recorder, world_state"]
+    TA["tasks/<br/>success predicates"]
+    RR["rocRobo sidecar<br/>(JAX)"]
+    RO["rollout/<br/>single-asset validation"]
+    OUT[("dataset +<br/>run summary")]
+
+    YAML --> SC
+    LIB --> SC
+    SC --> SCN
+    SC --> RT
+    RT --> SK
+    SK --> GR
+    SK --> EX
+    EX --> MO
+    MO -.->|docker exec, JSONL| RR
+    GR -->|trial_from_here| SIM
+    MO --> SIM
+    RT -->|record_episode| SIM
+    SIM -->|world state| TA
+    RT --> TA
+    SIM --> OUT
+    RO --> SK
+```
 
 | Package | Owns | Main entry points |
 |---|---|---|
@@ -159,19 +203,42 @@ role.
 
 ## Teacher execution
 
-`scenario_runtime/runner.py::run_scenario_episode` drives one episode as a segment-level closed loop. For each teacher
-step (and each phase of a two-phase place) it re-reads the live scene, plans that step only, steps it in the
-simulator while recording frames, and checks the handoff:
+`scenario_runtime/runner.py::run_scenario_episode` drives one episode as a segment-level closed loop: every step
+re-reads the live scene and plans only that step.
 
-1. `plan_segment` looks up the step's primitive in `SKILL_PRIMITIVES` (`skills/registry.py`) and calls it with a
-   `SkillContext`: the step, the grasp planner, the executor, the motion planner, the live `scene_state` and the
-   current joint target. The primitive returns joint targets.
-2. `record_episode` steps those targets into the simulator, writes LeRobot frames, and returns per-frame samples
-   (hand position, actual arm joints, the held object's position).
-3. `handoff.check` judges the step from those samples (see [Verification](#verification)).
+```mermaid
+sequenceDiagram
+    participant S as run_generated_scenario
+    participant R as runner
+    participant E as SimEnv
+    participant K as skills.plan_segment
+    participant G as grasp
+    participant M as execution + motion
+    participant H as handoff
+    participant J as tasks.predicates
+    S->>R: run_scenario_episode(task: steps + success tree)
+    R->>E: reset: place, settle (SceneInvalid if an object moved)
+    loop each teacher step, each phase
+        R->>E: read live scene (positions, joints, target frames)
+        R->>K: step, scene_state, current qpos
+        K->>G: pick / place plan
+        G->>E: trial_from_here: snapshot, try candidate, restore
+        K->>M: waypoints
+        M-->>K: joint targets (per-segment routing)
+        R->>E: record_episode: step targets, write frames
+        E-->>R: per-frame samples
+        R->>H: check(step, samples), recorded only
+    end
+    R-->>S: handoffs, final qpos
+    S->>E: settle_window(hold final qpos, 0.5 s), collect_world_state
+    S->>J: evaluate_success(success tree, world state)
+    J-->>S: success, judge_state
+```
 
-Only `place` onto an articulated target splits into `transport` and `descend`, so the descend re-reads the drawer
-after it recoils; every other step is one phase.
+`plan_segment` finds the step's primitive in `SKILL_PRIMITIVES` (`skills/registry.py`) and calls it with a
+`SkillContext` (step, grasp planner, executor, motion planner, live scene, current joint target). Only `place` onto
+an articulated target splits into `transport` and `descend`, so the descend re-reads the drawer after it recoils;
+every other step is one phase.
 
 ### Grasp: geometric candidates, chosen by trial
 
@@ -266,13 +333,15 @@ Known approximations: contacts are entity-level (touching a cabinet's side wall 
 
 When every pick candidate fails, the diagnosis tools let an agent fix what candidates cannot:
 
-```text
-all candidates fail ─► diagnosis request: evidence of this run + the playbook
-  └─► agent attributes the failure (≤ 4 try_grasp calls of ≤ 8 candidates each)
-        ├─ asset (a missing candidate, an IK start) ─► independent re-trial ─lifts─► written back to the asset
-        ├─ scene (object rolled, layout) ─► reported to the scene side
-        ├─ primitive (shared by every asset) ─► reported, not patched per asset
-        └─ insufficient evidence ─► reported as unknown
+```mermaid
+flowchart TD
+    FAIL["all pick candidates fail"] --> REQ["diagnosis request<br/>evidence of this run + playbook"]
+    REQ --> AG{"agent attributes the failure<br/>≤ 4 try_grasp calls, ≤ 8 candidates each"}
+    AG -->|asset: missing candidate, IK start| RT{"independent re-trial"}
+    RT -->|lifts| WB[("written back to asset.json<br/>tried first next time")]
+    AG -->|scene: object rolled, layout| SCN["reported to the scene side"]
+    AG -->|primitive: shared by every asset| PRIM["reported, not patched per asset"]
+    AG -->|insufficient evidence| UNK["reported as unknown"]
 ```
 
 Experience is stored in three places, each only after it was verified:

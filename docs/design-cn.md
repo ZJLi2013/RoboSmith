@@ -19,22 +19,23 @@ scenario 层以下的一切都为 teacher 服务：让它的 episode 成功，�
 
 ## 数据流
 
-```text
-一句话任务请求
-  └─► agent 按资产目录写出 scenario YAML（scenarios/AGENT_PROMPT.md）
-        └─ 缺资产 ─► agent 生成它（Blender 脚本、场景重建或图生 3D）
-                        └─► LLM 评审 + 检查 ──通过──► 进入资产库
-
-资产库 + scenario YAML（场景关系 + 任务 + 成功判据）+ teacher 计划
-  └─► 按 seed 求解摆放关系（scenario/load.py），降到运行时（scenario/adapters.py）
-        └─► SimEnv（Genesis + Franka）：放置、静止；物体滚走、下落或倾倒就判场景无效
-              └─► 逐个 teacher 步骤（open / pick / place / close）
-                    pick：候选（资产里写回的抓法排第一，然后是几何候选）
-                          ─► 逐个在仿真里试抓 ─► 执行第一个抬起物体的候选
-                          全失败 ─► 诊断请求 ─► 修复 agent ─► 复核 ─► 写回资产
-                    所有技能：GraspPlan ─► MotionExecutor ─► MotionPlanner（Genesis IK 或 rocRobo）
-                    每步之后：交接检查（这一步是否让世界处于下一步需要的状态？）
-              └─► 静置 0.5 s ─► 在仿真状态上判成功判定树 ─► LeRobot 数据集、视频、运行汇总
+```mermaid
+flowchart TD
+    REQ["一句话任务请求"] --> AG["agent 按资产目录写出<br/>scenario YAML + teacher 计划"]
+    AG -->|缺资产| GEN["agent 生成资产<br/>Blender 脚本 / 场景重建 / 图生 3D"]
+    GEN --> REV{"LLM 评审 + 检查"}
+    REV -->|通过| LIB[("资产库")]
+    LIB --> AG
+    AG --> LOAD["按 seed 求解摆放关系<br/>降到运行时任务"]
+    LOAD --> RESET["SimEnv：放置物体、静止"]
+    RESET -->|滚走、下落或倾倒| INV["场景无效：不执行"]
+    RESET --> STEP["下一个 teacher 步骤<br/>open / pick / place / close"]
+    STEP --> EXEC["按实时场景规划<br/>在 Genesis 执行并录帧"]
+    EXEC --> HO["交接检查<br/>只记录，不中断 episode"]
+    HO -->|还有步骤| STEP
+    HO -->|最后一步完成| SETTLE["静置 0.5 s"]
+    SETTLE --> JUDGE{"在仿真状态上<br/>判成功判定树"}
+    JUDGE --> OUT[("LeRobot 数据集、视频、<br/>运行汇总")]
 ```
 
 每个箭头是一份有类型的契约，每一层在代码里只有一个归属：
@@ -51,6 +52,49 @@ scenario 层以下的一切都为 teacher 服务：让它的 episode 成功，�
 | 仿真 / 录制 | `robotsmith/sim/sim_env.py`、`robotsmith/sim/recorder.py`（唯一的两个适配层） |
 
 ## 模块
+
+一次 scenario 运行中的主要调用方向（延迟导入双向都有，不画）：
+
+```mermaid
+flowchart LR
+    subgraph Data["编写的数据"]
+        YAML["scenario YAML<br/>+ teacher 计划"]
+        LIB["assets/<br/>资产库"]
+    end
+    subgraph Load["加载"]
+        SC["scenario/<br/>求解关系、降级"]
+        SCN["scenes/<br/>SceneConfig"]
+    end
+    subgraph Teacher["teacher 执行"]
+        RT["scenario_runtime/<br/>runner、handoff"]
+        SK["skills/<br/>原语 + 注册表"]
+        GR["grasp/<br/>候选、修复"]
+        EX["execution/<br/>MotionExecutor"]
+        MO["motion/<br/>路由、IK、规划"]
+    end
+    SIM["sim/<br/>SimEnv、recorder、world_state"]
+    TA["tasks/<br/>成功谓词"]
+    RR["rocRobo sidecar<br/>（JAX）"]
+    RO["rollout/<br/>单资产验证"]
+    OUT[("数据集 +<br/>运行汇总")]
+
+    YAML --> SC
+    LIB --> SC
+    SC --> SCN
+    SC --> RT
+    RT --> SK
+    SK --> GR
+    SK --> EX
+    EX --> MO
+    MO -.->|docker exec, JSONL| RR
+    GR -->|trial_from_here| SIM
+    MO --> SIM
+    RT -->|record_episode| SIM
+    SIM -->|世界状态| TA
+    RT --> TA
+    SIM --> OUT
+    RO --> SK
+```
 
 | 包 | 负责什么 | 主要入口 |
 |---|---|---|
@@ -139,15 +183,40 @@ scenario 层有自己的 `TaskSpec`（只有任务、没有动作），在 `scen
 
 ## Teacher 执行
 
-`scenario_runtime/runner.py::run_scenario_episode` 以分段闭环驱动一个 episode。对每个 teacher 步骤（以及两段式 place
-的每一段），它重读实时场景、只规划这一步、在仿真里执行并录帧，然后检查交接：
+`scenario_runtime/runner.py::run_scenario_episode` 以分段闭环驱动一个 episode：每一步都重读实时场景、只规划这一步。
 
-1. `plan_segment` 在 `SKILL_PRIMITIVES`（`skills/registry.py`）里找到这一步的原语，用一个 `SkillContext` 调用它：步骤、
-   抓取规划器、执行器、运动规划器、实时 `scene_state` 和当前关节目标。原语返回关节目标。
-2. `record_episode` 把这些目标推进仿真、写 LeRobot 帧，并返回逐帧采样（手的位置、实际手臂关节、手里物体的位置）。
-3. `handoff.check` 用这些采样判断这一步（见[验证](#验证)）。
+```mermaid
+sequenceDiagram
+    participant S as run_generated_scenario
+    participant R as runner
+    participant E as SimEnv
+    participant K as skills.plan_segment
+    participant G as grasp
+    participant M as execution + motion
+    participant H as handoff
+    participant J as tasks.predicates
+    S->>R: run_scenario_episode（任务：步骤 + 成功判定树）
+    R->>E: reset：放置、静止（物体移动则 SceneInvalid）
+    loop 每个 teacher 步骤、每一段
+        R->>E: 读实时场景（位置、关节、目标坐标系）
+        R->>K: 步骤、scene_state、当前 qpos
+        K->>G: pick / place 计划
+        G->>E: trial_from_here：存快照、试候选、恢复
+        K->>M: 路点
+        M-->>K: 关节目标（按段路由）
+        R->>E: record_episode：推进目标、写帧
+        E-->>R: 逐帧采样
+        R->>H: check（步骤、采样），只记录
+    end
+    R-->>S: 交接记录、末条 qpos
+    S->>E: settle_window（保持末条 qpos 0.5 s）、collect_world_state
+    S->>J: evaluate_success（成功判定树、世界状态）
+    J-->>S: 成败、judge_state
+```
 
-只有放到关节体目标上的 `place` 拆成 `transport` 和 `descend` 两段，这样下降前会重读回弹后的抽屉；其他步骤都是一段。
+`plan_segment` 在 `SKILL_PRIMITIVES`（`skills/registry.py`）里找到这一步的原语，用 `SkillContext`（步骤、抓取规划器、
+执行器、运动规划器、实时场景、当前关节目标）调用它。只有放到关节体目标上的 `place` 拆成 `transport` 和 `descend` 两段，
+这样下降前会重读回弹后的抽屉；其他步骤都是一段。
 
 ### 抓取：几何候选，由试抓选出
 
@@ -225,13 +294,15 @@ scenario 层有自己的 `TaskSpec`（只有任务、没有动作），在 `scen
 
 所有抓取候选都失败时，诊断工具让 agent 修复候选覆盖不到的情况：
 
-```text
-候选全失败 ─► 诊断请求：本次证据 + playbook
-  └─► agent 归因（≤ 4 次 try_grasp，每次 ≤ 8 个候选）
-        ├─ 资产（缺候选、IK 起点）─► 独立复核 ─抬起─► 写回资产
-        ├─ 场景（物体滚走、摆放）─► 上报给场景侧
-        ├─ 原语（所有资产共有）─► 上报，不按资产打补丁
-        └─ 证据不足 ─► 上报 unknown
+```mermaid
+flowchart TD
+    FAIL["抓取候选全失败"] --> REQ["诊断请求<br/>本次证据 + playbook"]
+    REQ --> AG{"agent 归因<br/>≤ 4 次 try_grasp，每次 ≤ 8 个候选"}
+    AG -->|资产：缺候选、IK 起点| RT{"独立复核"}
+    RT -->|抬起| WB[("写回 asset.json<br/>下次优先试")]
+    AG -->|场景：物体滚走、摆放| SCN["上报给场景侧"]
+    AG -->|原语：所有资产共有| PRIM["上报，不按资产打补丁"]
+    AG -->|证据不足| UNK["上报 unknown"]
 ```
 
 经验存三处，每处只存验证过的：
