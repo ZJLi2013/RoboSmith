@@ -12,9 +12,9 @@ set -eu
 # Requires the rocrobo_dev serve sidecar to be running.
 
 NAME="${NAME:-f1_m1}"
-SCENARIO="${SCENARIO:-scenarios/pick_place_into_drawer.yaml}"
+SCENARIO="${SCENARIO:-scenarios/pick_place_onto_supporter.yaml}"
 IMAGE="${IMAGE:-robotsmith:gfx942-rocm6.4.3-genesis0.4.5}"
-SEED="${SEED:-42}"
+SEED="${SEED:-0}"
 EPISODES="${EPISODES:-1}"
 REPO="${REPO:-$(cd "$(dirname "$0")/../.." && pwd)}"
 HF_CACHE="${HF_CACHE:-$HOME/.cache/huggingface}"
