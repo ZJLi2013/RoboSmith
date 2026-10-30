@@ -67,6 +67,12 @@ class GenesisPlanBackend:
         self._franka = env.franka
         self._max_joint_vel = (params or MotionParams()).max_joint_vel
         self._links = {link.idx: link.name for link in self._franka.links}
+        names = {id(e): n for n, e in env.entity_map.items()}
+        self._owners = [(e.geom_start, e.geom_end, names.get(id(e), f"entity{e.idx}"))
+                        for e in self._franka._solver.entities]
+
+    def _owner(self, geom: int) -> str | None:
+        return next((n for s, e, n in self._owners if s <= geom < e), None)
 
     def solve_ik(self, pos, quat, finger_pos, *, init_qpos=None, world=None, attach=None):
         return self._env.solve_ik(pos, quat, finger_pos, init_qpos=init_qpos)
@@ -107,7 +113,9 @@ class GenesisPlanBackend:
                     continue
                 if robot_side and held_side and names & set(FINGER_LINKS):
                     continue
-                found.append({"links": sorted(n for n in names if n), "penetration_m": round(float(d), 5)})
+                other = b if a in robot_geoms or a in held_geoms else a
+                found.append({"links": sorted(n for n in names if n), "other": self._owner(int(other)),
+                              "penetration_m": round(float(d), 5)})
         return found
 
     def first_contact(self, trajectory, attach=None) -> dict | None:

@@ -23,7 +23,7 @@ class _Franka:
 
     def __init__(self, solved=True, contact_at=None):
         self.solved, self.contact_at, self.q, self.plan_kwargs = solved, contact_at, None, None
-        self._solver = SimpleNamespace(_kernel_detect_collision=lambda: None)
+        self._solver = SimpleNamespace(_kernel_detect_collision=lambda: None, entities=[])
 
     def set_qpos(self, q, zero_velocity=False):
         self.q = np.asarray(q, dtype=np.float64)
