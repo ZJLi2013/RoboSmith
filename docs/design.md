@@ -308,8 +308,8 @@ is a cost with a 0.02 m margin, and each world obstacle is a constraint with a *
 to the previous configuration. `plan_motion` then judges the whole segment: the endpoint must be within 10 mm and 5°
 of the target, the path within joint limits, and clearances above their thresholds. Two consequences:
 
-- An `endpoint` miss means the solver traded position for something else. It does not say what. It may be the world
-  margin, or a frame convention the two sides disagree on. The recorded lower_shelf misses have not separated them.
+- An `endpoint` miss only says that the segment's end failed that check, not why. Candidate causes include the world
+  margin and a frame convention the two sides disagree on; the recorded lower_shelf misses have not separated them.
 - `world_min_m` is the minimum clearance over the whole planned segment. A negative value says the segment touches an
   obstacle somewhere; it does not place that contact at the endpoint.
 
@@ -410,10 +410,10 @@ the initial state, run the steps, then judge the task. The run writes:
 - **Collision awareness covers free segments only.** Contact segments are straight lines, and a failed plan falls back
   to an unchecked straight line. The rocRobo service can fail on some requests (it does on the drawer place), which
   silently produces that fallback. Most fallbacks are `endpoint` misses at pick waypoints. Seeding the endpoint IK
-  with a converged solution does not clear them. In the three recorded lower_shelf misses that were replayed, the
-  collision-aware IK left no candidate within 10 mm and 5° of the endpoint: orientation was close and position was
-  off by about 6 cm, so the cause is not seed selection. This does not show that the pose is geometrically
-  unreachable; which cost term produces the residual is not yet isolated.
+  with a converged solution does not clear them. Three recorded lower_shelf misses were replayed. In the IK candidate
+  pools, before selection, no candidate was within 10 mm and 5° of the endpoint, so the miss is not a selection
+  problem. Replaying each whole segment, it ended about 65 mm from the target position with about 2° of orientation
+  error. This does not show that the pose is geometrically unreachable, and the cause is not yet identified.
 - Articulation supports prismatic joints only; revolute open / close, push / press, and bimanual tasks are not
   implemented.
 - Holding is position-controlled; heavier objects slip (see [Grasp](#grasp-geometric-candidates-chosen-by-trial)).
