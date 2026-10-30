@@ -50,7 +50,7 @@ def scene_objects(scene, assets: dict, positions: dict) -> list[dict]:
 
 def render_request(instruction: str, objects: list[dict], *, success: dict | None = None,
                    done: list[dict] | None = None, failure: dict | None = None, held: str | None = None) -> str:
-    lines = [f"Task: {instruction}", "Objects (world frame, metres):"]
+    lines = [f"Task: {instruction}", "Objects (id  asset  kind  position  size; world frame, metres):"]
     for o in objects:
         extra = []
         if o["place_targets"]:
@@ -60,6 +60,7 @@ def render_request(instruction: str, objects: list[dict], *, success: dict | Non
         lines.append(f"  {o['id']}  {o['asset']}  {o['kind']}  pos {o['pos']}  size {o['size']}"
                      + (f"  ({'; '.join(extra)})" if extra else ""))
     lines.append(f"Skills: {SKILLS_DOC}")
+    lines.append("Name objects by id (the first column) and place targets exactly as listed.")
     if success is not None:
         lines.append(f"Success condition: {json.dumps(success)}")
     if done is not None:
