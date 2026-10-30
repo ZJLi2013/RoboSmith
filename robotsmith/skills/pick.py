@@ -148,6 +148,7 @@ def _capture_payload_aco(ctx: SkillContext, plan: GraspPlan) -> None:
     T_ee_obj = np.linalg.inv(T_world_ee) @ T_world_obj
     ctx.executor.held_attach = {
         "ee_link": "hand",
+        "target": skill.target,
         "T_ee_obj": [[float(v) for v in row] for row in T_ee_obj],
         "spheres": payload_spheres,
         "exempt_self_links": list(PANDA_FINGER_LINKS),
