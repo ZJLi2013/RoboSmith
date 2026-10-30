@@ -301,6 +301,18 @@ joints; the client adds the two finger joints back.
 If `plan_motion` fails, the segment falls back to a straight line **without collision checks**; the log line
 `straight-line fallback` marks it.
 
+How rocRobo's IK trades pose against clearance matters for reading those failures. rocRobo builds IK on PyRoki's
+least-squares problem: the end-effector pose is a soft cost (position weight 5, orientation weight 1), self-collision
+is a cost with a 0.02 m margin, and each world obstacle is a constraint with a **0.05 m margin**
+(`pipeline._ik_problem`). It solves from many seeds and keeps a solution within 1 cm of the target position, closest
+to the previous configuration. `plan_motion` then judges the whole segment: the endpoint must be within 10 mm and 5°
+of the target, the path within joint limits, and clearances above their thresholds. Two consequences:
+
+- An `endpoint` miss only says that the segment's end failed that check, not why. Candidate causes include the world
+  margin and a frame convention the two sides disagree on; the recorded lower_shelf misses have not separated them.
+- `world_min_m` is the minimum clearance over the whole planned segment. A negative value says the segment touches an
+  obstacle somewhere; it does not place that contact at the endpoint.
+
 ### Articulation
 
 Articulated assets load as URDF joint bodies, reset to joint value 0 (or the scene's `joint_init`), and expose joint values in
@@ -397,7 +409,11 @@ the initial state, run the steps, then judge the task. The run writes:
 
 - **Collision awareness covers free segments only.** Contact segments are straight lines, and a failed plan falls back
   to an unchecked straight line. The rocRobo service can fail on some requests (it does on the drawer place), which
-  silently produces that fallback.
+  silently produces that fallback. Most fallbacks are `endpoint` misses at pick waypoints. Seeding the endpoint IK
+  with a converged solution does not clear them. Three recorded lower_shelf misses were replayed. In the IK candidate
+  pools, before selection, no candidate was within 10 mm and 5° of the endpoint, so the miss is not a selection
+  problem. Replaying each whole segment, it ended about 65 mm from the target position with about 2° of orientation
+  error. This does not show that the pose is geometrically unreachable, and the cause is not yet identified.
 - Articulation supports prismatic joints only; revolute open / close, push / press, and bimanual tasks are not
   implemented.
 - Holding is position-controlled; heavier objects slip (see [Grasp](#grasp-geometric-candidates-chosen-by-trial)).
