@@ -25,6 +25,17 @@ def test_upward_halfspace_becomes_a_slab_whose_top_is_the_table():
     assert p["center"][2] + p["half_extents"][2] == pytest.approx(0.0)
 
 
+def test_table_with_a_base_cutout_keeps_its_top_and_leaves_the_base_square_open():
+    slabs = vb.to_vamp_primitives([{"type": "halfspace", "point": [0, 0, 0.775], "normal": [0.0, 0.0, 1.0]}],
+                                  base_z=0.775, base_cutout=0.12)
+    assert len(slabs) == 4
+    for s in slabs:
+        assert s["center"][2] + s["half_extents"][2] == pytest.approx(0.0)
+        lo = np.array(s["center"][:2]) - s["half_extents"][:2]
+        hi = np.array(s["center"][:2]) + s["half_extents"][:2]
+        assert not (np.all(lo < [0.11, 0.11]) and np.all(hi > [-0.11, -0.11]))
+
+
 def test_quaternion_round_trip():
     q = np.array([0.8, 0.2, -0.3, 0.4]) / np.linalg.norm([0.8, 0.2, -0.3, 0.4])
     x, y, z, w = vb.matrix_to_quat_xyzw(vb.quat_wxyz_to_matrix(q))
@@ -44,6 +55,9 @@ class _FakeRobot:
 
     def halton(self):
         return None
+
+    def fk(self, q):
+        return []
 
     def validate(self, q, env):
         return self.goal_ok or not np.allclose(q, 1.0)

@@ -38,7 +38,9 @@ def _maybe_motion_planner(env):
         from robotsmith.motion.vamp_backend import VampBackend
 
         logger.info("[vamp] collision-aware backend enabled (ROBOSMITH_MOTION_BACKEND=vamp)")
-        return VampBackend(env.solve_ik, base_z=float(getattr(env, "table_surface_z", 0.0)))
+        franka = getattr(env, "franka", None)
+        limits = None if franka is None else tuple(to_numpy_f32(v) for v in franka.get_dofs_limit())
+        return VampBackend(env.solve_ik, base_z=float(getattr(env, "table_surface_z", 0.0)), joint_limits=limits)
     if not os.environ.get("ROCROBO_BACKEND"):
         return None
     from robotsmith.motion.rocrobo_backend import RocRoboBackend
