@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from robotsmith.scenario.adapters import (
@@ -13,7 +13,7 @@ from robotsmith.scenario.adapters import (
 )
 from robotsmith.assets.library import AssetLibrary
 from robotsmith.scenario.intents import SkillIntentSequenceSpec
-from robotsmith.scenario.load import DEFAULT_ASSETS
+from robotsmith.scenario.load import DEFAULT_ASSETS, all_place_target_frames
 from robotsmith.scenario.specs import SceneSpec, TaskSpec
 from robotsmith.scenario_runtime.loader import ScenarioCandidate, load_candidate
 from robotsmith.scenes.config import SceneConfig
@@ -36,26 +36,32 @@ def materialize_candidate(
     candidate_or_path: ScenarioCandidate | str | Path,
     *,
     seed: int | None = None,
+    agent_plan: bool = False,
 ) -> ScenarioRuntimePackage:
-    """Reconstruct runtime objects; a path is loaded with ``seed``."""
+    """Reconstruct runtime objects; a path is loaded with ``seed``. With ``agent_plan`` the teacher file is
+    ignored and every place target gets a frame, since an agent writes the steps at run time."""
 
     candidate = (
         load_candidate(candidate_or_path, seed=seed)
         if isinstance(candidate_or_path, (str, Path))
         else candidate_or_path
     )
-    legacy_scene = to_legacy_scene_config(candidate.scene)
-    legacy_task = to_legacy_task_spec(candidate.task)
-    if candidate.intents is not None:
-        legacy_task.skills = to_legacy_skills(candidate.intents, candidate.task)
-        library = AssetLibrary(DEFAULT_ASSETS)
-        assets = {o.name: library.get(o.asset) for o in candidate.scene.objects}
-        legacy_task.step_bindings = to_step_bindings(candidate.intents, candidate.task.success, assets)
+    library = AssetLibrary(DEFAULT_ASSETS)
+    assets = {o.name: library.get(o.asset) for o in candidate.scene.objects}
+    scene, task, intents = candidate.scene, candidate.task, candidate.intents
+    if agent_plan:
+        scene = replace(scene, target_positions=tuple(all_place_target_frames(assets).values()))
+        task, intents = replace(task, scene=scene), None
+    legacy_scene = to_legacy_scene_config(scene)
+    legacy_task = to_legacy_task_spec(task)
+    if intents is not None:
+        legacy_task.skills = to_legacy_skills(intents, task)
+        legacy_task.step_bindings = to_step_bindings(intents, task.success, assets)
     return ScenarioRuntimePackage(
         source_path=candidate.source_path,
-        scenario_scene=candidate.scene,
-        scenario_task=candidate.task,
-        scenario_intents=candidate.intents,
+        scenario_scene=scene,
+        scenario_task=task,
+        scenario_intents=intents,
         legacy_scene=legacy_scene,
         legacy_task=legacy_task,
     )
