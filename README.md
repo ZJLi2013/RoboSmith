@@ -30,26 +30,7 @@ lift, the place by the scenario's own `on` relation after a recorded 0.5 s hold,
 
 ## How it works
 
-```mermaid
-flowchart LR
-    subgraph Gen["agentic assets and scenes"]
-        REQ["one-sentence request"] --> YAML["agent writes the scenario YAML<br/>from the asset catalog"]
-        YAML -->|asset missing| PROD["agent generates it<br/>Blender script / image-to-3D /<br/>reconstructed room"]
-        PROD --> REV{"LLM review in simulation<br/>+ license + duplicates"}
-        REV -->|admitted| LIB[("asset library")]
-        LIB --> YAML
-    end
-    subgraph Act["agentic manipulation"]
-        SOLVE["layout solved per seed"] --> STEP["teacher step<br/>open / pick / place / close"]
-        STEP --> CHECK{"step judged in simulation"}
-        CHECK -->|all grasp candidates fail| FIX["repair loop: agent proposes,<br/>simulation re-trials, write back"]
-        FIX --> STEP
-        CHECK -->|next step| STEP
-        CHECK -->|last step| TASK{"task success tree"}
-    end
-    YAML --> SOLVE
-    TASK --> OUT[("LeRobot dataset, videos,<br/>run summary")]
-```
+<p align="center"><img src="docs/images/pipeline.png" width="100%" alt="RoboSmith pipeline: agentic assets and scenes feed agentic manipulation"></p>
 
 ## What it does today
 
