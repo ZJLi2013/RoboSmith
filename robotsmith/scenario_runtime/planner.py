@@ -73,14 +73,16 @@ def render_request(instruction: str, objects: list[dict], *, success: dict | Non
 
 def call_llm(prompt: str) -> tuple[str, int]:
     """One Anthropic Messages call; returns the text and the tokens used."""
-    base = os.environ["ANTHROPIC_BASE_URL"].rstrip("/")
+    env = {k: os.environ.get(k, "").strip() for k in
+           ("ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "ANTHROPIC_CUSTOM_HEADERS")}
     headers = {"content-type": "application/json", "anthropic-version": "2023-06-01",
-               "x-api-key": os.environ["ANTHROPIC_API_KEY"]}
-    for line in os.environ.get("ANTHROPIC_CUSTOM_HEADERS", "").splitlines():
+               "x-api-key": env["ANTHROPIC_API_KEY"]}
+    for line in env["ANTHROPIC_CUSTOM_HEADERS"].splitlines():
         if ":" in line:
             k, v = line.split(":", 1)
             headers[k.strip()] = v.strip()
-    body = {"model": os.environ["ANTHROPIC_MODEL"], "max_tokens": 1024,
+    base = env["ANTHROPIC_BASE_URL"].rstrip("/")
+    body = {"model": env["ANTHROPIC_MODEL"], "max_tokens": 1024,
             "messages": [{"role": "user", "content": prompt}]}
     req = urllib.request.Request(f"{base}/v1/messages", data=json.dumps(body).encode(), headers=headers)
     with urllib.request.urlopen(req, timeout=120) as resp:

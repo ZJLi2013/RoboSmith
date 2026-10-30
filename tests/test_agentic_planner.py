@@ -102,14 +102,18 @@ def _episode(monkeypatch, verdicts, replies, role="baseline", mug=(0.7, 0.0, 0.8
     return result, record, prompts
 
 
-def test_plan_level_failure_replans_and_continues_with_the_object_still_held(monkeypatch):
-    result, record, prompts = _episode(monkeypatch, [True, False, True],
-                                       [PLAN, '{"steps": [{"place": {"target": "shelf.top"}}]}'])
+def test_plan_level_failure_replans_and_continues_in_the_same_episode(monkeypatch):
+    result, record, prompts = _episode(monkeypatch, [True, False, True, True], [PLAN, PLAN])
     assert record.stopped == "plan completed" and len(record.plans) == 2 and record.tokens == 200
     assert record.routing[0]["route"] == "plan"
-    assert "Held now: die" in prompts[1] and '"pick": "die"' in prompts[1]
-    assert [h["skill"] for h in result.handoffs] == ["pick", "place", "place"]
+    assert "Held now: nothing" in prompts[1] and '"pick": "die"' in prompts[1]
+    assert [h["skill"] for h in result.handoffs] == ["pick", "place", "pick", "place"]
     assert all("Success condition" not in p for p in prompts)
+
+
+def test_an_invalid_reply_uses_a_replan(monkeypatch):
+    _, record, prompts = _episode(monkeypatch, [True, True], ['{"steps": [{"pick": "cup"}]}', PLAN])
+    assert record.stopped == "plan completed" and record.plans[0] == [] and len(prompts) == 2
 
 
 def test_physical_failure_is_reported_without_replanning(monkeypatch):
