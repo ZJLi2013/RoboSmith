@@ -2,12 +2,11 @@
 
 > 中文版：[design-cn.md](design-cn.md).
 
-RoboSmith turns **assets plus a declarative task** into **successful expert episodes recorded as a LeRobot
-dataset**. You write *what* should happen; RoboSmith decides *how*: it builds the scene, plans a grasp for every
-episode, generates a joint trajectory, rolls it out in Genesis, and keeps the success verdict next to the data.
-
-It is data infrastructure, not a policy-training framework. The one training entry, `scripts/train_smolvla.py`,
-consumes the dataset RoboSmith writes.
+RoboSmith evaluates agentic robots and VLAs in a simulated twin of a real scene; the goal, the minimum viable product
+and what is out of scope are in the [README](../README.md#goal). This document describes the layers that exist today:
+assets and scenes, scenarios with a hidden success tree, the teacher (RoboSmith's own manipulation, which will certify
+that each task is solvable and records its episodes as a LeRobot dataset), and verification from the simulator state.
+The evaluation layer for a system under test is not built yet.
 
 ## Teacher and student
 
