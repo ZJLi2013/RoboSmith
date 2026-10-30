@@ -72,24 +72,18 @@ def render_request(instruction: str, objects: list[dict], *, success: dict | Non
 
 
 def call_llm(prompt: str) -> tuple[str, int]:
-    """One Anthropic Messages call; returns the text and the tokens used."""
-    env = {k: os.environ.get(k, "").strip() for k in
-           ("ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "ANTHROPIC_CUSTOM_HEADERS")}
-    headers = {"content-type": "application/json", "anthropic-version": "2023-06-01",
-               "x-api-key": env["ANTHROPIC_API_KEY"]}
-    for line in env["ANTHROPIC_CUSTOM_HEADERS"].splitlines():
-        if ":" in line:
-            k, v = line.split(":", 1)
-            headers[k.strip()] = v.strip()
-    base = env["ANTHROPIC_BASE_URL"].rstrip("/")
-    body = {"model": env["ANTHROPIC_MODEL"], "max_tokens": 1024,
-            "messages": [{"role": "user", "content": prompt}]}
-    req = urllib.request.Request(f"{base}/v1/messages", data=json.dumps(body).encode(), headers=headers)
-    with urllib.request.urlopen(req, timeout=120) as resp:
+    """One OpenAI Responses call through the gateway named by ``ROBOSMITH_LLM_*``; returns the text and tokens."""
+    base = os.environ["ROBOSMITH_LLM_BASE_URL"].rstrip("/")
+    url = f"{base}/responses?api-version={os.environ['ROBOSMITH_LLM_API_VERSION']}"
+    headers = {"content-type": "application/json", "Ocp-Apim-Subscription-Key": os.environ["ROBOSMITH_LLM_KEY"]}
+    body = {"model": os.environ["ROBOSMITH_LLM_MODEL"], "input": prompt, "max_output_tokens": 4000,
+            "reasoning": {"effort": "low"}}
+    req = urllib.request.Request(url, data=json.dumps(body).encode(), headers=headers)
+    with urllib.request.urlopen(req, timeout=180) as resp:
         data = json.loads(resp.read())
-    text = "".join(part.get("text", "") for part in data.get("content", []))
-    usage = data.get("usage", {})
-    return text, int(usage.get("input_tokens", 0)) + int(usage.get("output_tokens", 0))
+    text = "".join(part.get("text", "") for item in data.get("output", []) if item.get("type") == "message"
+                   for part in item.get("content", []))
+    return text, int(data.get("usage", {}).get("total_tokens", 0))
 
 
 def parse_steps(text: str, assets: dict, yaw_deg: dict, held: str | None = None):
