@@ -301,6 +301,18 @@ joints; the client adds the two finger joints back.
 If `plan_motion` fails, the segment falls back to a straight line **without collision checks**; the log line
 `straight-line fallback` marks it.
 
+How rocRobo's IK trades pose against clearance matters for reading those failures. rocRobo builds IK on PyRoki's
+least-squares problem: the end-effector pose is a soft cost (position weight 5, orientation weight 1), self-collision
+is a cost with a 0.02 m margin, and each world obstacle is a constraint with a **0.05 m margin**
+(`pipeline._ik_problem`). It solves from many seeds and keeps a solution within 1 cm of the target position, closest
+to the previous configuration. `plan_motion` then judges the whole segment: the endpoint must be within 10 mm and 5°
+of the target, the path within joint limits, and clearances above their thresholds. Two consequences:
+
+- An `endpoint` miss means the solver traded position for something else. It does not say what. It may be the world
+  margin, or a frame convention the two sides disagree on. The recorded lower_shelf misses have not separated them.
+- `world_min_m` is the minimum clearance over the whole planned segment. A negative value says the segment touches an
+  obstacle somewhere; it does not place that contact at the endpoint.
+
 ### Articulation
 
 Articulated assets load as URDF joint bodies, reset to joint value 0 (or the scene's `joint_init`), and expose joint values in
