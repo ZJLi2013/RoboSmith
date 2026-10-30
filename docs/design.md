@@ -397,7 +397,11 @@ the initial state, run the steps, then judge the task. The run writes:
 
 - **Collision awareness covers free segments only.** Contact segments are straight lines, and a failed plan falls back
   to an unchecked straight line. The rocRobo service can fail on some requests (it does on the drawer place), which
-  silently produces that fallback.
+  silently produces that fallback. Most fallbacks are `endpoint` misses at pick waypoints. Seeding the endpoint IK
+  with a converged solution does not clear them. In the three recorded lower_shelf misses that were replayed, the
+  collision-aware IK left no candidate within 10 mm and 5° of the endpoint: orientation was close and position was
+  off by about 6 cm, so the cause is not seed selection. This does not show that the pose is geometrically
+  unreachable; which cost term produces the residual is not yet isolated.
 - Articulation supports prismatic joints only; revolute open / close, push / press, and bimanual tasks are not
   implemented.
 - Holding is position-controlled; heavier objects slip (see [Grasp](#grasp-geometric-candidates-chosen-by-trial)).
