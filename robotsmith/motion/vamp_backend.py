@@ -45,14 +45,6 @@ def matrix_to_euler_xyz(r: np.ndarray) -> list[float]:
     return [roll, pitch, yaw]
 
 
-def matrix_to_quat_xyzw(r: np.ndarray) -> list[float]:
-    w = math.sqrt(max(0.0, 1 + r[0, 0] + r[1, 1] + r[2, 2])) / 2
-    x = math.copysign(math.sqrt(max(0.0, 1 + r[0, 0] - r[1, 1] - r[2, 2])) / 2, r[2, 1] - r[1, 2])
-    y = math.copysign(math.sqrt(max(0.0, 1 - r[0, 0] + r[1, 1] - r[2, 2])) / 2, r[0, 2] - r[2, 0])
-    z = math.copysign(math.sqrt(max(0.0, 1 - r[0, 0] - r[1, 1] + r[2, 2])) / 2, r[1, 0] - r[0, 1])
-    return [x, y, z, w]
-
-
 def table_slabs(top: float, cutout: float) -> list[dict]:
     """The table under ``top`` as four slabs around a square hole of half-size ``cutout`` at the robot base."""
     h, t, c = TABLE_HALF_EXTENT_M, TABLE_HALF_THICKNESS_M, cutout
@@ -142,7 +134,7 @@ class VampBackend:
             env.add_cuboid(self._vamp.Cuboid(p["center"], p["euler_xyz"], p["half_extents"]))
         if attach:
             t = hand_to_grasptarget() @ np.asarray(attach["T_ee_obj"], dtype=np.float64)
-            att = self._vamp.Attachment(t[:3, 3].tolist(), matrix_to_quat_xyzw(t[:3, :3]))
+            att = self._vamp.Attachment(np.asfortranarray(t, dtype=np.float32))
             for s in attach["spheres"]:
                 att.add_sphere(self._vamp.Sphere(list(s["center"]), float(s["radius"])))
             env.attach(att)

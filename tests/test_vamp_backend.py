@@ -36,12 +36,6 @@ def test_table_with_a_base_cutout_keeps_its_top_and_leaves_the_base_square_open(
         assert not (np.all(lo < [0.11, 0.11]) and np.all(hi > [-0.11, -0.11]))
 
 
-def test_quaternion_round_trip():
-    q = np.array([0.8, 0.2, -0.3, 0.4]) / np.linalg.norm([0.8, 0.2, -0.3, 0.4])
-    x, y, z, w = vb.matrix_to_quat_xyzw(vb.quat_wxyz_to_matrix(q))
-    assert np.allclose(np.sign(w) * np.array([w, x, y, z]), np.sign(q[0]) * q, atol=1e-9)
-
-
 def test_timing_bounds_every_step_and_keeps_the_endpoints():
     path = np.array([[0.0] * 7, [0.01] * 7, [1.5, -1.0, 0, 0, 0, 0, 0.2], [1.6, -1.0, 0, 0, 0, 0, 0.2]])
     traj = vb.time_parameterize(path, max_joint_vel=1.0, control_dt=0.02)
