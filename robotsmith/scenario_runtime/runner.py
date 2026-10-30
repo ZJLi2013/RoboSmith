@@ -79,8 +79,15 @@ def run_scenario_episode(
     evaluates success and calls ``dataset.save_episode()`` once after this
     returns, so a task records as a single continuous episode/video.
     """
-    target_frames = target_frames or {}
+    reset_scene(env, settle_steps)
+    run = EpisodeRun(env, task_spec, executor=executor, motion_params=motion_params, dataset=dataset,
+                     record_fn=record_fn, target_frames=target_frames or {}, camera_names=camera_names,
+                     env_state_names=env_state_names)
+    run.run_steps(list(task_spec.skills), list(task_spec.step_bindings))
+    return run.result()
 
+
+def reset_scene(env, settle_steps: int) -> None:
     # Reset free bodies to their resolved world pose (full xyz, not just XY) and
     # settle. The resolver is the single source of truth for the spawn z (shelf /
     # in-drawer starts keep their height); the sim must not recompute it from the
@@ -97,84 +104,106 @@ def run_scenario_episode(
     }
     env.reset(obj_xyz_map, settle_steps=settle_steps)
 
-    initial_positions = collect_object_positions(env)
-    skill_traces: list[dict] = []
-    handoffs: list[dict] = []
-    qpos = HOME_QPOS.copy()
-    held_category: str | None = None
-    held_place_z: float | None = None
-    held: str | None = None
-    frame_count = 0
-    motion_planner = _maybe_motion_planner(env)
 
-    planner_kw = {"motion_planner": motion_planner} if motion_planner is not None else {}
-    window = None
+class EpisodeRun:
+    """The live state of one episode after reset: ``run_steps`` executes skills from wherever the arm and the held
+    object are, so a caller can stop at a failed step and continue with new steps in the same world."""
 
-    def record_step(q):
-        record_fn(env, dataset, [q], task_spec, camera_names=camera_names, env_state_names=env_state_names)
+    def __init__(self, env, task_spec: TaskSpec, *, executor, motion_params, dataset, record_fn: Callable,
+                 target_frames: dict, camera_names, env_state_names):
+        self.env, self.task_spec, self.executor, self.motion_params = env, task_spec, executor, motion_params
+        self.dataset, self.record_fn, self.target_frames = dataset, record_fn, target_frames
+        self.camera_names, self.env_state_names = camera_names, env_state_names
+        self.initial_positions = collect_object_positions(env)
+        self.skill_traces: list[dict] = []
+        self.handoffs: list[dict] = []
+        self.skills: list = []
+        self.qpos = HOME_QPOS.copy()
+        self.held_category: str | None = None
+        self.held_place_z: float | None = None
+        self.held: str | None = None
+        self.frame_count = 0
+        self.window = None
+        self.motion_planner = _maybe_motion_planner(env)
 
-    for i, skill in enumerate(task_spec.skills):
-        skill_def = SKILL_DEFS.get(skill.name)
-        # Per-phase closed loop: re-sense + re-anchor before each phase, not just
-        # at the subtask boundary. ``skill_phases`` returns one phase for static
-        # anchors (== legacy per-subtask loop) and splits dynamic-anchor places
-        # into transport/descend so descend re-reads the recoiled drawer.
-        phases = skill_phases(skill, target_frames.get(skill.target))
-        step_start = None
-        for phase in phases:
-            scene_state = _live_scene_state(env, target_frames, skill_traces)
-            if step_start is None:
-                step_start = {n: np.asarray(p).tolist() for n, p in collect_object_positions(env).items()}
-            obj = skill.target if skill.name == "pick" else held
-            seg, held_category, held_place_z = plan_segment(
-                skill, i, task_spec.skills, env.planner, executor, env.solve_ik,
-                scene_state, motion_params, qpos, held_category, held_place_z,
-                phase=phase, **planner_kw,
-            )
-            samples = record_fn(
-                env,
-                dataset,
-                seg,
-                task_spec,
-                primary_entity=env.entity_map.get(obj) if obj else None,
-                camera_names=camera_names,
-                env_state_names=env_state_names,
-            )
-            entry = handoff.check(
-                skill, phase, seg, samples or [], held=obj,
-                held_start=scene_state["positions"].get(obj) if obj else None,
-                target=scene_state["positions"].get(skill.target),
-                joints_before=scene_state["joint_positions"],
-                joints_after=env.get_joint_positions() if hasattr(env, "get_joint_positions") else {},
-                trace=skill_traces[-1] if skill_traces else None,
-                rocrobo=motion_planner is not None,
-            )
-            handoffs.append(entry)
-            if skill.name == "pick":
-                held = skill.target
-            elif skill.name == "place" and phase != "transport":
-                held = None
-            frame_count += len(seg)
-            if seg:
-                qpos = seg[-1]
-            window = None
-            if skill_def is not None and skill_def.post is not None:
-                if phase != phases[-1]:
-                    entry["done"] = None
-                else:
-                    binding = (task_spec.step_bindings[i] if i < len(task_spec.step_bindings)
-                               else {"status": "unchecked", "reason": "no step binding"})
-                    window = _judge_completion(env, entry, skill, skill_def, binding, qpos, record_step, step_start)
-                    frame_count += entry["completion"].get("settle_frames", 0)
+    def _record_step(self, q):
+        self.record_fn(self.env, self.dataset, [q], self.task_spec, camera_names=self.camera_names,
+                       env_state_names=self.env_state_names)
 
-    return ScenarioEpisodeResult(
-        initial_positions=initial_positions,
-        skill_traces=skill_traces,
-        frame_count=frame_count,
-        handoffs=handoffs,
-        final_qpos=qpos,
-        final_window=window,
-    )
+    def run_steps(self, skills: list, bindings: list[dict], *, stop_on_fail: bool = False) -> dict | None:
+        """Execute ``skills`` with their ``bindings``; with ``stop_on_fail`` return the handoff of the first step
+        judged false (the remaining steps are not run), else ``None``."""
+        env = self.env
+        planner_kw = {"motion_planner": self.motion_planner} if self.motion_planner is not None else {}
+        for k, (skill, binding) in enumerate(zip(skills, list(bindings) + [None] * (len(skills) - len(bindings)))):
+            i = len(self.skills)
+            self.skills.append(skill)
+            planned = self.skills + list(skills[k + 1:])
+            skill_def = SKILL_DEFS.get(skill.name)
+            # Per-phase closed loop: re-sense + re-anchor before each phase, not just
+            # at the subtask boundary. ``skill_phases`` returns one phase for static
+            # anchors (== legacy per-subtask loop) and splits dynamic-anchor places
+            # into transport/descend so descend re-reads the recoiled drawer.
+            phases = skill_phases(skill, self.target_frames.get(skill.target))
+            step_start = None
+            for phase in phases:
+                scene_state = _live_scene_state(env, self.target_frames, self.skill_traces)
+                if step_start is None:
+                    step_start = {n: np.asarray(p).tolist() for n, p in collect_object_positions(env).items()}
+                obj = skill.target if skill.name == "pick" else self.held
+                seg, self.held_category, self.held_place_z = plan_segment(
+                    skill, i, planned, env.planner, self.executor, env.solve_ik,
+                    scene_state, self.motion_params, self.qpos, self.held_category, self.held_place_z,
+                    phase=phase, **planner_kw,
+                )
+                samples = self.record_fn(
+                    env,
+                    self.dataset,
+                    seg,
+                    self.task_spec,
+                    primary_entity=env.entity_map.get(obj) if obj else None,
+                    camera_names=self.camera_names,
+                    env_state_names=self.env_state_names,
+                )
+                entry = handoff.check(
+                    skill, phase, seg, samples or [], held=obj,
+                    held_start=scene_state["positions"].get(obj) if obj else None,
+                    target=scene_state["positions"].get(skill.target),
+                    joints_before=scene_state["joint_positions"],
+                    joints_after=env.get_joint_positions() if hasattr(env, "get_joint_positions") else {},
+                    trace=self.skill_traces[-1] if self.skill_traces else None,
+                    rocrobo=self.motion_planner is not None,
+                )
+                self.handoffs.append(entry)
+                if skill.name == "pick":
+                    self.held = skill.target
+                elif skill.name == "place" and phase != "transport":
+                    self.held = None
+                self.frame_count += len(seg)
+                if seg:
+                    self.qpos = seg[-1]
+                self.window = None
+                if skill_def is not None and skill_def.post is not None:
+                    if phase != phases[-1]:
+                        entry["done"] = None
+                    else:
+                        b = binding or {"status": "unchecked", "reason": "no step binding"}
+                        self.window = _judge_completion(env, entry, skill, skill_def, b, self.qpos,
+                                                        self._record_step, step_start)
+                        self.frame_count += entry["completion"].get("settle_frames", 0)
+                        if stop_on_fail and entry["done"] is False:
+                            return entry
+        return None
+
+    def result(self) -> ScenarioEpisodeResult:
+        return ScenarioEpisodeResult(
+            initial_positions=self.initial_positions,
+            skill_traces=self.skill_traces,
+            frame_count=self.frame_count,
+            handoffs=self.handoffs,
+            final_qpos=self.qpos,
+            final_window=self.window,
+        )
 
 
 def _judge_completion(env, entry: dict, skill, skill_def, binding: dict, hold, record_step,

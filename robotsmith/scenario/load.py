@@ -223,20 +223,55 @@ def load_scenario(
 def _teacher(path: Path, assets: dict) -> tuple[SkillIntentSequenceSpec, dict[str, TargetPositionSpec]]:
     data = _read(path)
     jsonschema.validate(data, TEACHER_SCHEMA)
+    return steps_to_intents(data["steps"], assets)
+
+
+def steps_to_intents(steps: list[dict], assets: dict) -> tuple[SkillIntentSequenceSpec, dict[str, TargetPositionSpec]]:
+    """Teacher-schema steps -> intents, plus a frame for every place target they use."""
+    jsonschema.validate(steps, TEACHER_SCHEMA["properties"]["steps"])
     intents, targets = [], {}
-    for step in data["steps"]:
+    for step in steps:
         (name, arg), = step.items()
         if name != "place":
+            if arg not in assets:
+                raise relations.SolveError(f"{name}: unknown object '{arg}'")
             intents.append(SkillIntentSpec(name=name, target=arg))
             continue
         ref = arg["target"]
         parent, target = relations.split_ref(ref)
+        if parent not in assets:
+            raise relations.SolveError(f"place: unknown object '{parent}'")
         if target is not None:
-            spec = relations.place_target(assets[parent], target)
-            kind = "articulated_opening" if "joint" in spec else "placement"
-            targets[ref] = TargetPositionSpec(name=ref, anchor=FrameRef(kind=kind, parent=parent, opening=target))
+            targets[ref] = place_target_frame(ref, assets)
         intents.append(SkillIntentSpec(name="place", target=ref))
     return SkillIntentSequenceSpec(intents=tuple(intents)), targets
+
+
+def all_place_target_frames(assets: dict) -> dict[str, TargetPositionSpec]:
+    """A frame for every place target of every scene object, for steps not known at load."""
+    return {f"{obj}.{t['name']}": place_target_frame(f"{obj}.{t['name']}", assets)
+            for obj, asset in assets.items() for t in asset.metadata.place_targets}
+
+
+def place_target_frame(ref: str, assets: dict) -> TargetPositionSpec:
+    parent, target = relations.split_ref(ref)
+    spec = relations.place_target(assets[parent], target)
+    kind = "articulated_opening" if "joint" in spec else "placement"
+    return TargetPositionSpec(name=ref, anchor=FrameRef(kind=kind, parent=parent, opening=target))
+
+
+def relation_params(mode: str, obj: str, ref: str, assets: dict, yaw_deg: float) -> dict:
+    """``object_in_box`` params for ``obj`` on / inside the place target ``ref``."""
+    parent, target = relations.split_ref(ref)
+    if target is None:
+        raise relations.SolveError(f"{mode}: '{parent}' must name a place target as <id>.<target>")
+    spec = relations.place_target(assets[parent], target)
+    params = {"object": obj, "parent": parent, "box": spec["box"], "target": target,
+              "yaw_deg": yaw_deg, "mode": mode, "tol": CONTACT_TOL_M}
+    if "joint" in spec:
+        params["joint"] = spec["joint"]
+        params["axis"] = list(assets[parent].get_joint(spec["joint"]).axis)
+    return params
 
 
 def _success(node: dict, assets: dict, placements: dict) -> SuccessSpec:
@@ -249,22 +284,9 @@ def _success(node: dict, assets: dict, placements: dict) -> SuccessSpec:
         return Not(term=_success(val, assets, placements))
     if key in ("inside", "on"):
         obj = val["object"]
-        parent, target = relations.split_ref(val["container" if key == "inside" else "surface"])
-        if target is None:
-            raise relations.SolveError(f"{key}: '{parent}' must name a place target as <id>.<target>")
-        spec = relations.place_target(assets[parent], target)
-        params = {
-            "object": obj,
-            "parent": parent,
-            "box": spec["box"],
-            "target": target,
-            "yaw_deg": placements[parent].yaw_deg,
-            "mode": key,
-            "tol": CONTACT_TOL_M,
-        }
-        if "joint" in spec:
-            params["joint"] = spec["joint"]
-            params["axis"] = list(assets[parent].get_joint(spec["joint"]).axis)
+        ref = val["container" if key == "inside" else "surface"]
+        parent, _ = relations.split_ref(ref)
+        params = relation_params(key, obj, ref, assets, placements[parent].yaw_deg)
         return TaskSuccessCfg(predicate="object_in_box", params=params, refs=(obj, parent))
     if key == "lifted":
         return object_lifted(val["object"], z_margin=val["height"])
