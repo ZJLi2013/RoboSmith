@@ -71,8 +71,18 @@ The layers below the evaluation exist and run on curated scenes. These clips are
 | `pick_one_of_three` | pick | ❌ the grasp fails (candidates rejected for IK branch jumps, or the apple slips) |
 | `behavior_living_radio`, `office48_desk`, `office48_phone` (imported scenes) | pick | ❌ the scene fails the rest check: objects are pushed about 0.1 m or lifted 6–15 cm when placed, although they settled when first imported |
 
-What the MVP still needs:
+What the MVP still needs, in order:
 
+- **Basic agentic manipulation.** An agent writes the step list from the instruction and the scene's objects, the
+  existing skills execute it, and each step is judged; plan-level failures go back to the agent (at most two
+  re-plans), physical failures go to the repair loop or are reported, so tokens are not spent on trial and error.
+  The skills themselves need hardening first: free segments without collision-blind fallbacks, and reliable grasps of
+  regular objects in clutter. No cross-episode memory; setups that need memory, a VLA or perception use an external
+  framework such as RPent.
+- **Primitive coverage** for about 80% of common indoor tabletop tasks: press, push, rotate (knobs, levers) and
+  revolute open / close on top of pick, place and prismatic open / close.
+- **Annotation by agents.** Openings, handles and functional points of reconstructed objects are proposed by an agent
+  and verified by simulation probes; only the certifier reads them, a system under test does not.
 - **A real video in.** The reconstruction path (video → reference → agent-built room → snapshot import) has only been
   run on a simulated BEHAVIOR video with ground-truth depth and poses; with a real video, fidelity is measured against
   the reconstruction instead.
