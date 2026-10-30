@@ -150,16 +150,21 @@ class TestPlaceMotionChain:
 class _RecordingPlanner:
     """Collision-aware backend stub that records the targets sent to plan_motion."""
 
-    def __init__(self):
+    def __init__(self, succeed=True):
         self.collision_aware = True
+        self.succeed = succeed
         self.plan_motion_targets: list[list[float]] = []
+        self.goal_seeds: list = []
 
     def solve_ik(self, pos, quat, finger_width, init_qpos=None, **_kw):
         return _trivial_ik(pos, quat, finger_width)
 
-    def plan_motion(self, q_start, waypoints, *, world=None, control_dt=None, attach=None):
+    def plan_motion(self, q_start, waypoints, *, world=None, control_dt=None, attach=None, goal_seeds=None):
         wp = waypoints[-1]
         self.plan_motion_targets.append([float(v) for v in wp.pos])
+        self.goal_seeds.append(goal_seeds)
+        if not self.succeed:
+            return PlanResult(success=False, reason="endpoint")
         return PlanResult(success=True, trajectory=[self.solve_ik(wp.pos, wp.quat, wp.finger_width)])
 
 
@@ -179,6 +184,18 @@ class TestPickCollisionWorld:
         planner = _RecordingPlanner()
         MotionExecutor().pick(_pick_plan(), planner, np.zeros(9), MotionParams(), world=None)
         assert planner.plan_motion_targets == []
+
+    def test_free_segments_send_their_endpoint_ik_as_the_goal_seed(self):
+        planner = _RecordingPlanner()
+        MotionExecutor().pick(_pick_plan(), planner, np.zeros(9), MotionParams(), world=[{"type": "halfspace"}])
+        for target, seeds in zip(planner.plan_motion_targets, planner.goal_seeds):
+            assert len(seeds) == 1
+            assert np.allclose(seeds[0], _trivial_ik(np.array(target), IDENTITY, seeds[0][7]))
+
+    def test_a_miss_falls_back_to_the_same_seed(self):
+        planner = _RecordingPlanner(succeed=False)
+        traj = MotionExecutor().pick(_pick_plan(), planner, np.zeros(9), MotionParams(), world=[{"type": "halfspace"}])
+        assert any(np.allclose(q[:7], planner.goal_seeds[0][0][:7]) for q in traj)
 
 
 def test_same_pose_ignores_finger_width():

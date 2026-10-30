@@ -239,12 +239,14 @@ def _solve_segment(
         segment_path = path.path
         return segment_path[-1].copy(), segment_path, path.max_joint_step
     elif world is not None:
+        q_seed = _ik(q_from)
         plan = motion_planner.plan_motion(
             q_from,
             [Waypoint(wp.pos, wp.quat, wp.finger_width)],
             world=world,
             control_dt=params.dt,
             attach=attach,
+            goal_seeds=[q_seed],
         )
         if plan.success and plan.trajectory:
             segment_path = [np.asarray(q, dtype=np.float64) for q in plan.trajectory]
@@ -261,7 +263,7 @@ def _solve_segment(
                 wp.label,
                 plan.reason,
             )
-            q_to = _ik(q_from)
+            q_to = q_seed
     else:
         q_to = _ik(q_from)
 

@@ -308,7 +308,7 @@ class RocRoboBackend:
         return self._pad(resp["q"], finger_pos)
 
     def plan_motion(
-        self, q_start, waypoints, *, world=None, control_dt=None, attach=None
+        self, q_start, waypoints, *, world=None, control_dt=None, attach=None, goal_seeds=None
     ):
         wps: list[Waypoint] = list(waypoints)
         if world is None or not self._client.available or not wps:
@@ -331,6 +331,10 @@ class RocRoboBackend:
         # ``attach`` (spheres + T_ee_obj) is EE/object-relative — no base shift.
         if attach:
             payload["attach"] = attach
+        if goal_seeds is not None:
+            payload["goal_seeds"] = [
+                [float(v) for v in np.asarray(s, dtype=np.float64)[:_N_ARM_JOINTS]] for s in goal_seeds
+            ]
         try:
             resp = self._client.request(payload)
         except (RuntimeError, ValueError) as exc:

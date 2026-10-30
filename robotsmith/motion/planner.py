@@ -80,11 +80,14 @@ class MotionPlanner(Protocol):
         world: Sequence[dict] | None = None,
         control_dt: float | None = None,
         attach: dict | None = None,
+        goal_seeds: Sequence | None = None,
     ) -> PlanResult:
         """Return a collision-free joint trajectory through ``waypoints``.
 
         ``attach`` (grasped-payload spheres + ``T_ee_obj``) rides on the EE so the
         carried object stays clear of ``world`` along the path, not just the arm.
+        ``goal_seeds`` gives one arm configuration (joints 1–7, ``q_start`` order) per waypoint as an IK seed for
+        that endpoint; it is read for this request only.
         """
         ...
 
@@ -106,5 +109,5 @@ class GenesisBackend:
         # Genesis IK is collision-blind; ``world``/``attach`` accepted but ignored.
         return self._solve_ik(pos, quat, finger_pos, init_qpos=init_qpos)
 
-    def plan_motion(self, q_start, waypoints, *, world=None, control_dt=None, attach=None):
+    def plan_motion(self, q_start, waypoints, *, world=None, control_dt=None, attach=None, goal_seeds=None):
         return PlanResult(success=False, reason="genesis-backend-no-trajopt")

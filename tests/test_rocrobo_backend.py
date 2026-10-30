@@ -212,6 +212,22 @@ def test_plan_motion_success_pads_and_resamples():
     assert len(res.trajectory) == 5  # resampled 0.2s @ 0.05
 
 
+def test_plan_motion_sends_seven_joint_goal_seeds_only_when_given():
+    client = _FakeClient({"ok": False, "reason": "endpoint"})
+    backend = RocRoboBackend(_fake_genesis_solve_ik, client=client)
+    wps = [Waypoint(np.zeros(3), np.array([1, 0, 0, 0]), 0.0)]
+    backend.plan_motion(np.zeros(9), wps, world=[{"type": "box"}])
+    backend.plan_motion(np.zeros(9), wps, world=[{"type": "box"}], goal_seeds=[np.arange(9.0)])
+    assert "goal_seeds" not in client.requests[0]
+    assert client.requests[1]["goal_seeds"] == [[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0]]
+
+
+def test_genesis_backend_accepts_and_ignores_goal_seeds():
+    res = GenesisBackend(_fake_genesis_solve_ik).plan_motion(
+        np.zeros(9), [Waypoint(np.zeros(3), np.array([1, 0, 0, 0]), 0.0)], goal_seeds=[np.zeros(9)])
+    assert not res.success
+
+
 def test_plan_motion_uses_raw_traj_when_no_timing():
     traj7 = [[0.0] * 7, [1.0] * 7]
     client = _FakeClient({"ok": True, "traj": traj7, "timed": None})
