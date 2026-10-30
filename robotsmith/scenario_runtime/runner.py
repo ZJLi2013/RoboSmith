@@ -29,11 +29,16 @@ logger = logging.getLogger(__name__)
 
 
 def _maybe_motion_planner(env):
-    """Construct the rocRobo collision-free backend when enabled (else None).
+    """Construct the collision-aware backend when enabled (else None).
 
-    Gated by ``ROCROBO_BACKEND``. The backend degrades to Genesis IK when the
-    warm serve is unreachable.
+    ``ROBOSMITH_MOTION_BACKEND=vamp`` selects VAMP; otherwise ``ROCROBO_BACKEND``
+    selects rocRobo, which degrades to Genesis IK when the warm serve is unreachable.
     """
+    if os.environ.get("ROBOSMITH_MOTION_BACKEND") == "vamp":
+        from robotsmith.motion.vamp_backend import VampBackend
+
+        logger.info("[vamp] collision-aware backend enabled (ROBOSMITH_MOTION_BACKEND=vamp)")
+        return VampBackend(env.solve_ik, base_z=float(getattr(env, "table_surface_z", 0.0)))
     if not os.environ.get("ROCROBO_BACKEND"):
         return None
     from robotsmith.motion.rocrobo_backend import RocRoboBackend
