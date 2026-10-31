@@ -12,6 +12,7 @@ import pytest
 
 from robotsmith.assets.schema import UrdfJoint
 from robotsmith.execution.executor import MotionExecutor
+from robotsmith.motion.chain import MotionInfeasible
 from robotsmith.motion.params import MotionParams
 from robotsmith.motion.planner import GenesisBackend
 from robotsmith.skills import Skill, run_skills
@@ -225,6 +226,20 @@ class TestRegistryDispatch:
         _, trace, calls = self._trial_run([True, True, True])
         assert calls == [] and trace["no_trial_success"]
         assert [t["motion_error"] for t in trace["trials"]] == ["wp1 IK discontinuity"] * 3
+
+    def test_trial_moves_past_a_candidate_whose_free_segment_is_infeasible(self, monkeypatch):
+        original, picks = _FakeExecutor.pick, []
+
+        def first_infeasible(self, *a, **k):
+            picks.append(1)
+            if len(picks) == 1:
+                raise MotionInfeasible("wp0", "endpoint")
+            return original(self, *a, **k)
+
+        monkeypatch.setattr(_FakeExecutor, "pick", first_infeasible)
+        _, trace, calls = self._trial_run([True, True, True])
+        assert calls == ["die"] and trace["selected_candidate_index"] == 1
+        assert trace["trials"][0]["motion_error"] == "plan_motion miss on wp0 (endpoint)"
 
     def test_trial_all_tries_every_candidate_and_no_success_holds(self):
         _, trace, calls = self._trial_run([False, True, True], try_all=True)

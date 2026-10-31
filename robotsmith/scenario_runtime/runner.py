@@ -18,6 +18,7 @@ from typing import Callable
 import numpy as np
 
 from robotsmith.grasp.geometric import GeometricGraspPlanner
+from robotsmith.motion.chain import MotionInfeasible
 from robotsmith.scenario_runtime import handoff
 from robotsmith.sim.franka import HOME_QPOS, to_numpy_f32
 from robotsmith.sim.world_state import collect_world_state, settle_window
@@ -151,11 +152,20 @@ class EpisodeRun:
                 if step_start is None:
                     step_start = {n: np.asarray(p).tolist() for n, p in collect_object_positions(env).items()}
                 obj = skill.target if skill.name == "pick" else self.held
-                seg, self.held_category, self.held_place_z = plan_segment(
-                    skill, i, planned, env.planner, self.executor, env.solve_ik,
-                    scene_state, self.motion_params, self.qpos, self.held_category, self.held_place_z,
-                    phase=phase, **planner_kw,
-                )
+                try:
+                    seg, self.held_category, self.held_place_z = plan_segment(
+                        skill, i, planned, env.planner, self.executor, env.solve_ik,
+                        scene_state, self.motion_params, self.qpos, self.held_category, self.held_place_z,
+                        phase=phase, **planner_kw,
+                    )
+                except MotionInfeasible as exc:
+                    entry = {"skill": skill.name, "phase": phase, "target": skill.target, "object": obj,
+                             "done": False, "cause": "infeasible", "label": exc.label, "reason": exc.reason}
+                    self.handoffs.append(entry)
+                    self.window = None
+                    if stop_on_fail:
+                        return entry
+                    break
                 samples = self.record_fn(
                     env,
                     self.dataset,

@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from robotsmith.motion.chain import MotionInfeasible
 from robotsmith.scenario_runtime import planner, runner
 from robotsmith.scenario_runtime.planner import PlanError, parse_steps, render_request, route_failure
 from robotsmith.skills import Skill
@@ -56,9 +57,11 @@ PLACE_BINDING = {"status": "bound", "predicate": "object_in_box",
 @pytest.mark.parametrize("entry, positions, expected", [
     ({"skill": "pick"}, {}, "physical"),
     ({"skill": "place", "cause": "grip?"}, {}, "physical"),
+    ({"skill": "place", "cause": "infeasible"}, {"shelf": [0.6, 0, 0.8], "mug": [0.7, 0, 0.8]}, "physical"),
     ({"skill": "place"}, {"shelf": [0.6, 0, 0.8], "mug": [0.7, 0, 0.8], "die": [0.3, 0, 0.8]}, "plan"),
     ({"skill": "place"}, {"shelf": [0.6, 0, 0.8], "mug": [1.2, 0, 0.8], "die": [0.3, 0, 0.8]}, "unknown"),
-], ids=["pick fails", "dropped in transport", "target occupied", "no evidence"])
+], ids=["pick fails", "dropped in transport", "infeasible even with target occupied", "target occupied",
+        "no evidence"])
 def test_failures_are_routed_by_evidence(entry, positions, expected):
     assert route_failure(entry, positions, PLACE_BINDING) == expected
 
@@ -71,12 +74,13 @@ class _Ent:
         return self.pos
 
 
-def _episode(monkeypatch, verdicts, replies, role="baseline", mug=(0.7, 0.0, 0.8)):
+def _episode(monkeypatch, verdicts, replies, role="baseline", mug=(0.7, 0.0, 0.8),
+             segment=lambda skill: ([np.zeros(9)], None, None)):
     """Each step's verdict comes from ``verdicts`` in order; the LLM answers ``replies`` in order."""
     env = SimpleNamespace(entity_map={"die": _Ent([0.3, 0, 0.8]), "mug": _Ent(mug), "shelf": _Ent([0.6, 0, 0.8])},
                           placed_map={}, articulated_joint_dofs={}, planner=object(), solve_ik=None,
                           reset=lambda *a, **k: None, get_joint_positions=lambda: {})
-    monkeypatch.setattr(runner, "plan_segment", lambda *a, **k: ([np.zeros(9)], None, None))
+    monkeypatch.setattr(runner, "plan_segment", lambda skill, *a, **k: segment(skill))
     monkeypatch.setattr(runner, "_live_scene_state",
                         lambda *a, **k: {"positions": {}, "joint_positions": {}})
     monkeypatch.setattr(planner, "to_legacy_skills", lambda intents, task: [Skill(i.name, i.target) for i in intents.intents])
@@ -119,6 +123,19 @@ def test_an_invalid_reply_uses_a_replan(monkeypatch):
 def test_physical_failure_is_reported_without_replanning(monkeypatch):
     _, record, prompts = _episode(monkeypatch, [False], [PLAN])
     assert record.stopped == "physical failure reported" and len(prompts) == 1
+
+
+def test_an_infeasible_free_segment_fails_its_step_and_is_reported(monkeypatch):
+    def segment(skill):
+        if skill.name == "place":
+            raise MotionInfeasible("descend", "endpoint,world_clear")
+        return [np.zeros(9)], None, None
+
+    result, record, prompts = _episode(monkeypatch, [True], [PLAN], segment=segment)
+    assert record.stopped == "physical failure reported" and len(prompts) == 1
+    last = result.handoffs[-1]
+    assert (last["skill"], last["done"], last["cause"], last["label"], last["reason"]) == (
+        "place", False, "infeasible", "descend", "endpoint,world_clear")
 
 
 def test_unknown_failure_is_reported_without_replanning(monkeypatch):

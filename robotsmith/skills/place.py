@@ -57,8 +57,8 @@ def _author_transport_hover(ctx: SkillContext, place_plan, seed, world, approach
     and stops at the first clearance whose single-waypoint ``plan_motion`` succeeds
     (all serve gates pass). Mutates and returns ``place_plan`` (``pre_grasp_pos`` /
     ``retreat_pos`` share the authored standoff). No-op when nothing clears — the
-    template standoff is left in place and the executor's straight-line fallback
-    runs. For top-down approach this is the original lowest-reachable vertical hover.
+    template standoff is left in place and its transport segment fails as infeasible.
+    For top-down approach this is the original lowest-reachable vertical hover.
     """
     mp = ctx.motion_planner
     drop = np.asarray(place_plan.grasp_pos, dtype=np.float64)
@@ -84,7 +84,7 @@ def _author_transport_hover(ctx: SkillContext, place_plan, seed, world, approach
         d += _PLACE_STANDOFF_AUTHOR_STEP
     logger.warning(
         "[skills] no place standoff cleared in [%.2f, %.2f] m along −approach "
-        "(%.2f,%.2f,%.2f); keeping template standoff (fallback handles it)",
+        "(%.2f,%.2f,%.2f); keeping template standoff",
         _PLACE_STANDOFF_AUTHOR_MIN, _PLACE_STANDOFF_AUTHOR_MAX,
         a[0], a[1], a[2],
     )

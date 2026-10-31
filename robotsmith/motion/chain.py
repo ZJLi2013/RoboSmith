@@ -38,6 +38,14 @@ logger = logging.getLogger(__name__)
 _FRANKA_Q_RANGE = _FRANKA_Q_UPPER - _FRANKA_Q_LOWER
 
 
+class MotionInfeasible(RuntimeError):
+    """A free segment the collision-aware planner could not plan: the segment is not executable as asked."""
+
+    def __init__(self, label: str, reason: str):
+        super().__init__(f"plan_motion miss on {label} ({reason})")
+        self.label, self.reason = label, reason
+
+
 @dataclass(frozen=True)
 class MotionChainMetrics:
     """Diagnostics from solving a waypoint chain without running a rollout."""
@@ -206,8 +214,8 @@ def _solve_segment(
 
     Routing: finger-only locks the arm; cartesian walks a continuity-checked
     Cartesian path (and reports its per-step continuity metric); a free segment
-    with a ``world`` tries collision-free ``plan_motion`` (straight-line fallback
-    on miss); otherwise plain per-pose IK.
+    with a ``world`` goes through collision-free ``plan_motion`` and raises
+    ``MotionInfeasible`` on a miss; otherwise plain per-pose IK.
     """
 
     def _ik(q_seed: np.ndarray) -> np.ndarray:
@@ -246,22 +254,10 @@ def _solve_segment(
             control_dt=params.dt,
             attach=attach,
         )
-        if plan.success and plan.trajectory:
-            segment_path = [np.asarray(q, dtype=np.float64) for q in plan.trajectory]
-            q_to = segment_path[-1].copy()
-        else:
-            # Collision-blind straight-line last resort. Endpoint geometry is
-            # authored to be reachable upstream (adaptive transport hover +
-            # lift-then-swing), so a miss here means the goal itself is
-            # unreachable/inside a keep-out — loud, because this segment then
-            # loses its collision guarantee.
-            logger.warning(
-                "[MotionExecutor] plan_motion miss on %s (%s); "
-                "collision-blind straight-line fallback",
-                wp.label,
-                plan.reason,
-            )
-            q_to = _ik(q_from)
+        if not (plan.success and plan.trajectory):
+            raise MotionInfeasible(wp.label, plan.reason)
+        segment_path = [np.asarray(q, dtype=np.float64) for q in plan.trajectory]
+        q_to = segment_path[-1].copy()
     else:
         q_to = _ik(q_from)
 
@@ -370,8 +366,8 @@ def execute_motion_chain(
     With a ``world``, each free-space arm segment (not finger-only, not the
     contact-drag cartesian path) is routed through ``motion_planner.plan_motion``
     for a **collision-free** sub-path that avoids ``world`` (the cabinet/drawer
-    envelope) instead of straight-line interpolation. A segment the planner cannot
-    solve (incl. the collision-blind fallback) uses ``solve_ik`` + interpolation.
+    envelope) instead of straight-line interpolation; a segment the planner cannot
+    solve raises ``MotionInfeasible``. Without a ``world`` segments use ``solve_ik`` + interpolation.
     """
     q_targets = [np.asarray(start_qpos, dtype=np.float64).copy()]
     segment_paths: list[list[np.ndarray] | None] = []

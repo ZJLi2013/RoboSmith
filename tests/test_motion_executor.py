@@ -5,7 +5,7 @@ import math
 import numpy as np
 import pytest
 
-from robotsmith.motion.chain import _compute_steps, _same_pose
+from robotsmith.motion.chain import MotionInfeasible, _compute_steps, _same_pose
 from robotsmith.execution.executor import MotionExecutor
 from robotsmith.motion.planner import GenesisBackend, PlanResult
 from robotsmith.motion.params import MotionParams
@@ -174,6 +174,13 @@ class TestPickCollisionWorld:
         assert len(traj) > 0
         # Only pre-approach (wp0) and retreat (wp3) are free arm segments.
         assert planner.plan_motion_targets == [[0.5, 0.0, 0.22], [0.5, 0.0, 0.30]]
+
+    def test_a_free_segment_the_planner_misses_is_infeasible(self):
+        planner = _RecordingPlanner()
+        planner.plan_motion = lambda *a, **k: PlanResult(success=False, reason="endpoint")
+        with pytest.raises(MotionInfeasible) as exc:
+            MotionExecutor().pick(_pick_plan(), planner, np.zeros(9), MotionParams(), world=[{"type": "halfspace"}])
+        assert (exc.value.label, exc.value.reason) == ("wp0", "endpoint")
 
     def test_no_world_never_calls_plan_motion(self):
         planner = _RecordingPlanner()

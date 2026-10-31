@@ -339,8 +339,8 @@ class RocRoboBackend:
         if not resp.get("ok", False) or "traj" not in resp:
             reason = resp.get("reason") or resp.get("error") or "no-traj"
             # Debug-level: a miss is an expected, recoverable outcome here (e.g. the
-            # adaptive hover sweep probes heights until one clears). The caller that
-            # actually degrades to a collision-blind fallback logs loudly. Metrics
+            # adaptive hover sweep probes heights until one clears); the motion chain
+            # turns a miss into ``MotionInfeasible``. Metrics
             # map an aggregate reason to a sub-check (end_pos_mm / world_min_m).
             logger.debug(
                 "[rocrobo] plan_motion miss (%s) metrics=%s",
