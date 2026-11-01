@@ -2,10 +2,9 @@
 
 > 英文版：[design.md](design.md)。两者不一致时以英文版为准。
 
-RoboSmith 把**资产加一个声明式任务**变成**录成 LeRobot 数据集的成功专家 episode**。你只写要发生*什么*，RoboSmith
-决定*怎么做*：搭场景、为每个 episode 选抓取、生成关节轨迹、在 Genesis 里执行，并把成功判定和数据存在一起。
-
-它是数据基础设施，不是策略训练框架。唯一的训练入口 `scripts/train_smolvla.py` 消费 RoboSmith 写出的数据集。
+RoboSmith 在真实场景的仿真孪生里评测 agentic 机器人与 VLA；Goal、最小 MVP 与不做的事见 [README](../README.zh-CN.md#goal)。
+本文描述现在已有的几层：资产与场景、带隐藏成功判定树的 scenario、teacher（RoboSmith 自带的操作，将用来证明每道任务
+可解，并把 episode 录成 LeRobot 数据集），以及读仿真状态的验证。面向被测方的评测层还没有建。
 
 ## Teacher 与学生
 
