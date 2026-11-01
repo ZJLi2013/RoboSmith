@@ -28,26 +28,7 @@ RoboSmith 分两半，都由 agent 操作、由仿真验证。**资产与场景*
 
 ## 工作流程
 
-```mermaid
-flowchart LR
-    subgraph Gen["agentic 资产与场景"]
-        REQ["一句话请求"] --> YAML["agent 按资产目录<br/>写出 scenario YAML"]
-        YAML -->|缺资产| PROD["agent 生成资产<br/>Blender 脚本 / 图生 3D /<br/>重建的房间"]
-        PROD --> REV{"LLM 在仿真里评审<br/>+ 许可证 + 查重"}
-        REV -->|准入| LIB[("资产库")]
-        LIB --> YAML
-    end
-    subgraph Act["agentic 操作"]
-        SOLVE["按 seed 求解布局"] --> STEP["teacher 步骤<br/>open / pick / place / close"]
-        STEP --> CHECK{"在仿真里判这一步"}
-        CHECK -->|抓取候选全失败| FIX["修复环：agent 提修法，<br/>仿真复核，写回资产"]
-        FIX --> STEP
-        CHECK -->|下一步| STEP
-        CHECK -->|最后一步| TASK{"任务成功判定树"}
-    end
-    YAML --> SOLVE
-    TASK --> OUT[("LeRobot 数据集、视频、<br/>运行汇总")]
-```
+![RoboSmith 流程：agentic 资产与场景喂给 agentic 操作](docs/images/pipeline-zh.svg)
 
 ## 现在能做什么
 
