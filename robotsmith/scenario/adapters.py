@@ -8,8 +8,8 @@ SceneConfig and TaskSpec(success: SuccessNode). The scenario success tree
 from __future__ import annotations
 
 from robotsmith.scenario.intents import SkillIntentSequenceSpec
-from robotsmith.scenario.load import CONTACT_TOL_M
-from robotsmith.scenario.relations import SolveError, split_ref
+from robotsmith.scenario.load import CONTACT_TOL_M, relation_params
+from robotsmith.scenario.relations import SolveError, place_target, split_ref
 from robotsmith.scenario.specs import (
     AllOf,
     AnyOf,
@@ -274,6 +274,30 @@ def to_step_bindings(intents: SkillIntentSequenceSpec, success: SuccessSpec,
                 raise SolveError(f"teacher step {i} places {obj} at {intent.target}, but success wants "
                                  f"{rel['mode']} {rel['parent']}.{rel.get('target')}")
             bindings.append({"status": "bound", "predicate": "object_in_box", "params": rel})
+    return bindings
+
+
+def bindings_from_steps(intents: SkillIntentSequenceSpec, assets: dict, yaw_deg: dict[str, float],
+                        held: str | None = None) -> list[dict]:
+    """Bind each step to its own completion condition, without reading the success tree: a ``place`` binds to
+    the object held at that point being on its target (inside when the target opens on a joint). ``held`` is
+    the object already in hand when the steps start."""
+    bindings = []
+    for intent in intents.intents:
+        if intent.name == "pick":
+            held = intent.target
+            bindings.append({"status": "bound", "predicate": "grasped",
+                             "params": {"object": intent.target, "lift": PICK_LIFT_M}})
+        elif intent.name in ("open", "close"):
+            bindings.append(_joint_binding(intent, assets))
+        elif intent.name == "place" and held is not None:
+            parent, target = split_ref(intent.target)
+            mode = "inside" if "joint" in place_target(assets[parent], target) else "on"
+            bindings.append({"status": "bound", "predicate": "object_in_box",
+                             "params": relation_params(mode, held, intent.target, assets, yaw_deg.get(parent, 0.0))})
+            held = None
+        else:
+            bindings.append(_unchecked("no preceding pick"))
     return bindings
 
 

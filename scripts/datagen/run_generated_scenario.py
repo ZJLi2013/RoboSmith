@@ -15,10 +15,13 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
+from robotsmith.assets.library import AssetLibrary
 from robotsmith.scenario.adapters import resolved_target_positions, target_frames
+from robotsmith.scenario.load import DEFAULT_ASSETS
 from robotsmith.rollout.video_export import copy_episode_videos
 from robotsmith.scenario_runtime import handoff, materialize_candidate
 from robotsmith.scenario_runtime.materialize import ScenarioRuntimePackage
+from robotsmith.scenario_runtime.planner import run_agentic_episode
 from robotsmith.tasks import failed_leaves
 from robotsmith.scenario_runtime.runner import (
     collect_object_positions,
@@ -35,6 +38,7 @@ class ScenarioSmokeConfig:
     seed: int = 42
     settle_steps: int = 30
     fps: int = 30
+    role: str | None = None
 
 
 def parse_args() -> argparse.Namespace:
@@ -46,6 +50,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--n-episodes", type=int, default=1)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--settle-steps", type=int, default=30)
+    parser.add_argument("--planner", choices=("teacher", "agent"), default="teacher")
+    parser.add_argument("--role", choices=("certifier", "baseline"), default="certifier",
+                        help="with --planner agent: certifier sees the success tree, baseline does not")
     return parser.parse_args()
 
 
@@ -96,18 +103,28 @@ def run_scenario_smoke(
     episodes = []
     episode_frame_counts: dict[int, int] = {}
     for ep in range(config.n_episodes):
-        result = run_scenario_episode(
-            env,
-            package.legacy_task,
-            executor=executor,
-            motion_params=motion_params,
-            dataset=dataset,
-            record_fn=record_episode,
-            settle_steps=config.settle_steps,
-            target_frames=scene_frames,
-            camera_names=camera_names,
-            env_state_names=env_state_names,
-        )
+        planner_record = None
+        if config.role is not None:
+            library = AssetLibrary(DEFAULT_ASSETS)
+            result, planner_record = run_agentic_episode(
+                env, package, {o.name: library.get(o.asset) for o in package.scenario_scene.objects},
+                role=config.role, executor=executor, motion_params=motion_params, dataset=dataset,
+                record_fn=record_episode, settle_steps=config.settle_steps, target_frames=scene_frames,
+                camera_names=camera_names, env_state_names=env_state_names,
+            )
+        else:
+            result = run_scenario_episode(
+                env,
+                package.legacy_task,
+                executor=executor,
+                motion_params=motion_params,
+                dataset=dataset,
+                record_fn=record_episode,
+                settle_steps=config.settle_steps,
+                target_frames=scene_frames,
+                camera_names=camera_names,
+                env_state_names=env_state_names,
+            )
         episode_frame_counts[ep] = result.frame_count
         success, judge_state = evaluate_scenario_task(
             env,
@@ -132,6 +149,7 @@ def run_scenario_smoke(
             "handoffs": _json_safe(result.handoffs),
             "failed_step": None if success else _json_safe(handoff.first_failure(result.handoffs)),
             "failed_leaves": [] if success else failed_leaves(package.legacy_task.success, judge_state),
+            **({"planner": planner_record.to_dict()} if planner_record is not None else {}),
         })
         dataset.save_episode()
 
@@ -227,7 +245,7 @@ def _json_safe(value):
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
     args = parse_args()
-    package = materialize_candidate(args.scenario, seed=args.seed)
+    package = materialize_candidate(args.scenario, seed=args.seed, agent_plan=args.planner == "agent")
     if args.materialize_only:
         print(json.dumps(_materialize_summary(package), indent=2))
         return
@@ -242,6 +260,7 @@ def main() -> None:
             n_episodes=args.n_episodes,
             seed=args.seed,
             settle_steps=args.settle_steps,
+            role=args.role if args.planner == "agent" else None,
         ),
     )
     print(json.dumps(summary, indent=2))
