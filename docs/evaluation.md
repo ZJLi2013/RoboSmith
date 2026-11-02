@@ -25,7 +25,10 @@ put the cup on the tray       10/10      6/10     never: grasped ×3 · lost: on
 - 没有被测方接口：只能跑 RoboSmith 自己的技能。
 - 运行时绑着数据录制（每个控制步写数据集），输出状态还叫「数据生成成功 / 失败」。
 - 只有「哪些条件没成立」，没有 never / lost 归因，没有报告。
-- 渲染在 MI300X 上走软件（约 28 s / episode），还不适合 VLA；一个进程只能跑一个场景。
+- 渲染在 MI300X 上是 CPU 光栅：Genesis 物理在 GPU，渲染经光栅器落到 Mesa llvmpipe，约 28 s / episode
+  （320 px 比 640 px 快 2–4×），没有光追，还不适合 VLA。Instinct（CDNA）没有光追硬件，
+  [HIP RT](https://github.com/GPUOpen-LibrariesAndSDKs/HIPRT) 在其上只能软件遍历；Genesis 光追器未在 MI300X 上试过。
+  一个进程只能跑一个场景。
 
 ## 设计
 
