@@ -66,13 +66,13 @@ MVP 还要做的，按顺序：
 - **验证：** 每一步和整个任务用同一组谓词读仿真状态判定，可离线复判。
 
 主要限制：单台 Franka、一张桌子；手指位置控制（约 0.2 kg 以上会滑脱）；MI300X 上是软件渲染，还不适合评测 VLA；一个进程一个场景。
-细节见 [`docs/design-cn.md`](docs/design-cn.md#当前限制)。
+细节见 [`docs/system-design.md`](docs/system-design.md)。
 
 MVP 之后：房间尺度场景与移动操作、外观保真度与 VLA、外部 agent 框架适配器、有真机时做一次孪生与真机对照、其他具身。
 
 ## 上手
 
-[Quick start](docs/quick-start.md) · [设计](docs/design-cn.md) · [编写 scenario](scenarios/README.md) ·
+[Quick start](docs/quick-start.md) · [设计](docs/system-design.md) · [编写 scenario](scenarios/README.md) ·
 [技术博客](https://andyluo7.github.io/rocm/amd/mi300x/robotics/embodiedai/sdg/2026/07/01/robosmith-rocm-native-synthetic-data-pipeline/)（写于数据管线时期）
 
 改动经 pull request 合入：[CONTRIBUTING.md](CONTRIBUTING.md)、[AI_POLICY.md](AI_POLICY.md)、[SECURITY.md](SECURITY.md)。License：Apache-2.0。

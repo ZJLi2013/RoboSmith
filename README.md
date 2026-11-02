@@ -77,14 +77,14 @@ What the MVP needs, in order:
   offline.
 
 Main limits: one Franka at a table; position-controlled fingers (objects above about 0.2 kg slip); software rendering
-on MI300X, not yet suitable for VLAs; one scene per process. Details in [`docs/design.md`](docs/design.md#current-limits).
+on MI300X, not yet suitable for VLAs; one scene per process. Details in [`docs/system-design.md`](docs/system-design.md).
 
 After the MVP: room-scale scenes with mobile manipulation, appearance fidelity for VLAs, adapters for external agent
 frameworks, one twin-versus-real comparison when a robot is available, other embodiments.
 
 ## Get started
 
-[Quick start](docs/quick-start.md) · [Design](docs/design.md) · [Writing scenarios](scenarios/README.md) ·
+[Quick start](docs/quick-start.md) · [Design](docs/system-design.md) · [Writing scenarios](scenarios/README.md) ·
 [Blog post](https://andyluo7.github.io/rocm/amd/mi300x/robotics/embodiedai/sdg/2026/07/01/robosmith-rocm-native-synthetic-data-pipeline/) (from the data-pipeline days)
 
 Changes land through pull requests: [CONTRIBUTING.md](CONTRIBUTING.md), [AI_POLICY.md](AI_POLICY.md),
