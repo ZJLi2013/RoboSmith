@@ -423,6 +423,11 @@ the initial state, run the steps, then judge the task. The run writes:
 - One asset per process: `SimEnv.build` initialises Genesis every time, so a second build in the same process fails.
 - The first `plan_motion` of a new scene shape compiles for about 10 minutes; later runs reuse the JAX disk cache.
 - Data comes from scripted IK replay only; there is no DAgger-style or closed-loop evaluation backend yet.
+- **Rendering on Instinct GPUs is CPU rasterization.** On MI300X, Genesis steps physics on the GPU but renders through
+  its rasterizer, which falls back to Mesa llvmpipe: about 28 s per episode, 2–4× faster at 320 px than at 640 px.
+  No ray tracing is used. Instinct (CDNA) GPUs have no ray-tracing hardware;
+  [HIP RT](https://github.com/GPUOpen-LibrariesAndSDKs/HIPRT) runs there only as software traversal. Genesis's ray
+  tracer was not tried on MI300X.
 
 ## Built on
 
