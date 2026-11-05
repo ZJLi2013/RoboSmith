@@ -91,10 +91,9 @@ agent 写步骤表（pick X、place X on Y…），技能执行，每步判定�
 - `SimEnv` 的三个查询已在 Genesis 0.4.5（MI300X、F1 场景）上实测，测试在 `tests/test_sim_queries_gpu.py`：
   - `set_dofs_position` 摆好构型后，`rigid_solver.detect_collision()` 直接反映新构型；交替查询相交 / 分离构型不沿用上一次结果。
     持物按 `set_pos` / `set_quat` 摆到手位姿 · T 后同样即时生效。
-  - 快照事务 `scene.get_state()` / `scene.reset(state)` 还原后指纹不变，查询抛异常时也还原。同值 `reset` 两次后关节值只差
-    3e-8，内容哈希分不出来，所以指纹里要带 `SimEnv` 的真实写入代次。
-  - 单点耗时（预热 5 次、各 50 次）中位数：无接触 10 ms，有接触 20 ms，带持物 32 ms，`hand_pose` 7.5 ms。
-    几百个稠密点的轨迹过一次门要几秒；第一版接受，不抽样。
+  - 快照事务 `scene.get_state()` / `scene.reset(state)` 还原后指纹不变，查询抛异常时也还原。指纹带 `SimEnv` 的真实写入代次，
+    这样即使 `reset` 后状态与之前完全相同，旧验证也会失效。
+  - 单点耗时在 10 ms 量级，几百个稠密点的轨迹过一次门要几秒；第一版接受，不抽样（读数在实验记录里）。
 
 ## 下一步
 
