@@ -29,23 +29,45 @@
 四族的任务相同：把 die 放到垫子（`mat_01.top`）上；步骤表在 `scenarios/acceptance/teacher/`。被测的是技能层以下，
 所以不让 LLM 写步骤。split：`playground` 0–9，`test` 100–119。
 
-物体相对障碍的摆位用关系 `offset_from: {of: <固定件>, x: [lo, hi], y: [lo, hi]}`：在固定件自己的坐标系里均匀采样，
-不做足迹避让（罩子里的物体需要这一点）。
+### `offset_from`
+
+物体相对障碍的摆位用关系 `offset_from: {of: <固定件 id>, x: [lo, hi], y: [lo, hi]}`，由
+`robotsmith/scenario/relations.py` 求解：
+
+- 在 `of` 的局部坐标系（含它的 yaw）里对 x、y 各自均匀采样，z 由 `on: support` 决定；
+- 不做足迹避让，所以物体可以放在固定件里面（F4 的罩子需要这一点）；
+- 求解顺序：带 `anchor_xy` 或 `on: <id>.<target>` 的先放，再放 `offset_from` 的，最后放 `near: robot` 的；
+- `of` 不是已放置的固定件（还没放、或不是 fixture）时报 `SolveError`。
 
 ## 可解性见证
 
-`scripts/acceptance/witness.py` 不调 `skills/`、`grasp/`、`execution/`、`motion/`，按族写死俯抓朝向与越障高度，
-用 Genesis IK 求笛卡尔路点、带物理执行，每一步读接触：
-
-- 机器人只能用手指碰 die，且只在闭合到张开之间；
-- die 只能碰桌面、垫子和手指；
-- 末态用场景自己的成功谓词判。
+`scripts/acceptance/witness.py` 不调 `skills/`、`grasp/`、`execution/`、`motion/`。它按族写死俯抓朝向（F2 转 90°，
+手指平行于墙）和搬运高度（F2 的 TCP 在桌面上方 0.34 m，其余 0.20 m），用 Genesis IK 求笛卡尔路点，再带物理执行。
 
 ```text
 python scripts/acceptance/witness.py --family f2_over_barrier --seeds 100 119 --out out/f2.json
 ```
 
-负例只确认 die 静止后仍在罩内。
+每个物理步读一次接触。正例通过 = 全程没有违规接触且末态的任务谓词成立；遇到第一处违规接触就判不通过并停下。
+违规接触按下面的规则判，这就是读数的含义：
+
+- **机器人**碰到任何东西（桌面、固定件、die）都算违规，唯一例外是闭合到张开之间手指（`left_finger` /
+  `right_finger`）碰 die。机器人自身连杆之间的接触不检查。
+- **die** 碰到桌面、垫子或手指都放行，**任何阶段都放行**；碰到其他固定件（墙、罩子）算违规。
+  所以见证比「die 只在起止时碰桌 / 垫」更宽：它证明 die 没碰障碍、机器人没碰任何东西，不证明 die 在搬运中没擦过桌面。
+
+负例（F4）不执行抓放，只确认 die 静止后仍在罩内（xy 偏离罩心 < 25 mm），它的 `witness_ok` 不表示任何执行成功。
+
+### 约束真的起作用：对照
+
+同一见证改掉该族所需的动作，在 test seed 上读到的结果（只对这些实例和这些动作成立）：
+
+| 族 | 对照动作 | 实例 | 结果 |
+|---|---|---|---|
+| F1 | 手指垂直于墙（转 90°） | 100–119 | 20/20 违规，`hand-wall` 或 `left_finger-wall` |
+| F2 | 搬运高度降到 0.20 m（低于墙顶） | 100–101 | 2/2 违规，`die-barrier` |
+
+F2 只跑了 2 个实例：穿透接触让求解器变慢，批次在第 3 个实例前超时。
 
 ## 不在这一版
 
