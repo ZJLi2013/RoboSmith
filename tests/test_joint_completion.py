@@ -116,6 +116,9 @@ class _Env:
     def reset(self, obj_xyz_map, *, settle_steps):
         pass
 
+    def state_fingerprint(self):
+        return "s"
+
     def get_joint_positions(self):
         return {} if self.q is None else {"drawer": {"slide": self.q}}
 
@@ -129,7 +132,8 @@ INSIDE = SuccessNode.leaf("object_in_box", {"object": "die", "parent": "drawer",
 
 
 def _close(monkeypatch, env, success, on_record=None):
-    monkeypatch.setattr(runner, "plan_segment", lambda skill, *a, **kw: ([np.zeros(9)] * 2, None, None))
+    monkeypatch.setattr(runner, "plan_segment",
+                        lambda skill, *a, **kw: (kw["gate"].ungated([np.zeros(9)] * 2), None, None))
     recorded = []
 
     def record(env, dataset, seg, task_spec, **kw):

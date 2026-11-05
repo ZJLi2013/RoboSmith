@@ -7,15 +7,14 @@ Cartesian drag itself runs in ``MotionExecutor``.
 
 from __future__ import annotations
 
-import numpy as np
-
+from robotsmith.execution.gate import VerifiedMotion
 from robotsmith.grasp.transforms import TOP_DOWN_QUAT
 from robotsmith.skills.base import SkillContext
 from robotsmith.skills.frames import _resolve_handle_drag
 from robotsmith.skills.registry import bound_leaf, register
 
 
-def _run_drag(ctx: SkillContext, *, opening: bool) -> list[np.ndarray]:
+def _run_drag(ctx: SkillContext, *, opening: bool) -> VerifiedMotion:
     handle_world, move_vec, _ = _resolve_handle_drag(ctx, opening=opening)
     action = "open" if opening else "close"
     # Top-down grasp on the knob neck: fingers close across the thin stem and the
@@ -41,14 +40,14 @@ def _run_drag(ctx: SkillContext, *, opening: bool) -> list[np.ndarray]:
             "motion_trace": getattr(ctx.executor, "last_motion_trace", None),
         }
     )
-    return seg
+    return ctx.gate.ungated(seg)
 
 
 @register("open", post=bound_leaf)
-def run_open(ctx: SkillContext) -> list[np.ndarray]:
+def run_open(ctx: SkillContext) -> VerifiedMotion:
     return _run_drag(ctx, opening=True)
 
 
 @register("close", post=bound_leaf)
-def run_close(ctx: SkillContext) -> list[np.ndarray]:
+def run_close(ctx: SkillContext) -> VerifiedMotion:
     return _run_drag(ctx, opening=False)

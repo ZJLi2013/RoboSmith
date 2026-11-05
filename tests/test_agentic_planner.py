@@ -73,10 +73,10 @@ class _Ent:
 
 def _episode(monkeypatch, verdicts, replies, role="baseline", mug=(0.7, 0.0, 0.8)):
     """Each step's verdict comes from ``verdicts`` in order; the LLM answers ``replies`` in order."""
-    env = SimpleNamespace(entity_map={"die": _Ent([0.3, 0, 0.8]), "mug": _Ent(mug), "shelf": _Ent([0.6, 0, 0.8])},
+    env = SimpleNamespace(state_fingerprint=lambda: "s", entity_map={"die": _Ent([0.3, 0, 0.8]), "mug": _Ent(mug), "shelf": _Ent([0.6, 0, 0.8])},
                           placed_map={}, articulated_joint_dofs={}, planner=object(), solve_ik=None,
                           reset=lambda *a, **k: None, get_joint_positions=lambda: {})
-    monkeypatch.setattr(runner, "plan_segment", lambda *a, **k: ([np.zeros(9)], None, None))
+    monkeypatch.setattr(runner, "plan_segment", lambda *a, **k: (k["gate"].ungated([np.zeros(9)]), None, None))
     monkeypatch.setattr(runner, "_live_scene_state",
                         lambda *a, **k: {"positions": {}, "joint_positions": {}})
     monkeypatch.setattr(planner, "to_legacy_skills", lambda intents, task: [Skill(i.name, i.target) for i in intents.intents])

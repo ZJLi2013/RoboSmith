@@ -14,6 +14,7 @@ from robotsmith.assets.schema import UrdfJoint
 from robotsmith.execution.executor import MotionExecutor
 from robotsmith.motion.params import MotionParams
 from robotsmith.motion.planner import GenesisBackend
+from robotsmith.execution.gate import Infeasible
 from robotsmith.skills import Skill, run_skills
 from robotsmith.assets.geometry import rotate_vec_wxyz
 from robotsmith.skills.frames import (
@@ -132,6 +133,15 @@ class _FakePlanner:
         return _FakePlan()
 
 
+def _chain(traj, holding=False, allow=None):
+    return SimpleNamespace(trajectory=traj, segments=[
+        {"label": "seg", "span": [0, len(traj)], "holding": holding, "allow": allow}])
+
+
+def _frames(motions):
+    return [q for m in motions for q in m.trajectory]
+
+
 class _FakeExecutor:
     def __init__(self):
         self.calls = []
@@ -139,11 +149,11 @@ class _FakeExecutor:
 
     def pick(self, *a, **k):
         self.calls.append("pick")
-        return [np.full(9, 1.0)]
+        return _chain([np.full(9, 1.0)])
 
     def place(self, *a, **k):
         self.calls.append("place")
-        return [np.full(9, 2.0)]
+        return _chain([np.full(9, 2.0)], holding=True)
 
     def drag_handle(self, *a, **k):
         self.calls.append(("drag", k.get("action")))
@@ -161,7 +171,7 @@ def _scene_state():
 
 
 class TestRegistryDispatch:
-    def test_dispatch_pick_place_open_close(self):
+    def test_dispatch_pick_place_open_close(self, gate):
         ex = _FakeExecutor()
         skills = [
             Skill("pick", "die"),
@@ -169,16 +179,18 @@ class TestRegistryDispatch:
             Skill("open", "drawer"),
             Skill("close", "drawer"),
         ]
-        traj = run_skills(skills, _FakePlanner(), ex, lambda *a, **k: np.zeros(9),
-                          _scene_state(), MotionParams())
+        motions = run_skills(skills, _FakePlanner(), ex, lambda *a, **k: np.zeros(9),
+                             _scene_state(), MotionParams(), gate=gate)
+        traj = _frames(motions)
         assert ex.calls == ["pick", "place", ("drag", "open"), ("drag", "close")]
+        assert [m.gated for m in motions] == [True, True, False, False]
         # Each fake segment is tagged by a distinct constant qpos (pick=1, place=2,
         # drag=3). place may prepend a base-aim transit, so assert the markers and
         # their order rather than an exact length.
         markers = [t[-1] for t in traj if np.allclose(t, t[-1])]
         assert markers == [1.0, 2.0, 3.0, 3.0]
 
-    def test_pick_with_every_candidate_filtered_out_records_counts_and_holds(self):
+    def test_pick_with_every_candidate_filtered_out_records_counts_and_is_infeasible(self, gate):
         class EmptyPlanner(_FakePlanner):
             last_filter_counts = {"raw": 8, "z_reject": 8, "accepted": 0}
 
@@ -186,13 +198,14 @@ class TestRegistryDispatch:
                 return []
 
         ex, state = _FakeExecutor(), _scene_state()
-        traj = run_skills([Skill("pick", "die")], EmptyPlanner(), ex, lambda *a, **k: np.zeros(9),
-                          state, MotionParams())
-        assert ex.calls == [] and len(traj) > 0
+        with pytest.raises(Infeasible):
+            run_skills([Skill("pick", "die")], EmptyPlanner(), ex, lambda *a, **k: np.zeros(9),
+                       state, MotionParams(), gate=gate)
+        assert ex.calls == []
         trace = state["skill_traces"][0]
         assert trace["no_candidates"] and trace["filter_counts"]["z_reject"] == 8
 
-    def _trial_run(self, lifted, try_all=False):
+    def _trial_run(self, gate, lifted, try_all=False):
         class ThreePlans(_FakePlanner):
             def plan(self, *a, **k):
                 plans = [_FakePlan() for _ in range(3)]
@@ -204,39 +217,93 @@ class TestRegistryDispatch:
 
         def trial(traj, target):
             calls.append(target)
+            gate.env.writes += 1
             return {"lifted": lifted[len(calls) - 1], "lift_m": 0.1, "seconds": 0.5}
 
         ex, state = _FakeExecutor(), _scene_state()
         state["grasp_trial"], state["grasp_trial_all"] = trial, try_all
-        traj = run_skills([Skill("pick", "die")], ThreePlans(), ex, lambda *a, **k: np.zeros(9), state, MotionParams())
-        return traj, state["skill_traces"][0], calls
+        try:
+            motions = run_skills([Skill("pick", "die")], ThreePlans(), ex, lambda *a, **k: np.zeros(9), state,
+                                 MotionParams(), gate=gate)
+        except Infeasible:
+            motions = None
+        return motions, state["skill_traces"][0], calls
 
-    def test_trial_keeps_the_first_candidate_that_lifts(self):
-        traj, trace, calls = self._trial_run([False, True, True])
+    def test_trial_keeps_the_first_candidate_that_lifts(self, gate):
+        motions, trace, calls = self._trial_run(gate, [False, True, True])
         assert calls == ["die", "die"] and trace["selected_candidate_index"] == 1
         assert [t["lifted"] for t in trace["trials"]] == [False, True] and trace["trial_seconds"] == 1.0
-        assert np.allclose(traj[-1], 1.0)
+        assert np.allclose(motions[0].trajectory[-1], 1.0)
 
-    def test_trial_counts_a_candidate_whose_motion_fails_as_not_lifted(self, monkeypatch):
+    def test_trial_runs_between_two_gate_passes(self, gate):
+        motions, _, _ = self._trial_run(gate, [True])
+        assert motions[0].fingerprint == gate.env.state_fingerprint() == "1"
+        gate.check_current(motions[0])
+
+    def test_trial_counts_a_candidate_whose_motion_fails_as_not_lifted(self, gate, monkeypatch):
         def broken(*a, **k):
             raise RuntimeError("wp1 IK discontinuity")
 
         monkeypatch.setattr(_FakeExecutor, "pick", broken)
-        _, trace, calls = self._trial_run([True, True, True])
-        assert calls == [] and trace["no_trial_success"]
+        motions, trace, calls = self._trial_run(gate, [True, True, True])
+        assert motions is None and calls == [] and trace["no_trial_success"]
         assert [t["motion_error"] for t in trace["trials"]] == ["wp1 IK discontinuity"] * 3
 
-    def test_trial_all_tries_every_candidate_and_no_success_holds(self):
-        _, trace, calls = self._trial_run([False, True, True], try_all=True)
-        assert len(calls) == 3 and trace["selected_candidate_index"] == 1
-        traj, trace, _ = self._trial_run([False, False, False])
-        assert trace["no_trial_success"] and trace["selected_candidate_index"] is None
-        assert not np.allclose(traj[-1], 1.0)
+    def test_a_candidate_the_gate_rejects_is_not_tried(self, gate, monkeypatch):
+        seen = []
 
-    def test_unknown_skill_raises(self):
+        def contacts_at(q, held=None, placed=None):
+            seen.append(float(q[0]))
+            return [(("robot", "hand"), ("wall", "base"))] if len(seen) == 1 else []
+
+        monkeypatch.setattr(gate.env, "contacts_at", contacts_at, raising=False)
+        motions, trace, calls = self._trial_run(gate, [True, True, True])
+        assert calls == ["die"] and trace["selected_candidate_index"] == 1
+        assert trace["trials"][0]["gate"] == {"segment": "seg", "index": 0,
+                                              "pair": [["robot", "hand"], ["wall", "base"]]}
+
+    def test_trial_all_tries_every_candidate_and_none_lifting_is_infeasible(self, gate):
+        _, trace, calls = self._trial_run(gate, [False, True, True], try_all=True)
+        assert len(calls) == 3 and trace["selected_candidate_index"] == 1
+        motions, trace, _ = self._trial_run(gate, [False, False, False])
+        assert motions is None and trace["no_trial_success"] and trace["selected_candidate_index"] is None
+
+    def test_place_takes_the_lowest_carry_height_that_passes(self, gate, monkeypatch):
+        heights = []
+
+        def place(self, *a, carry_height=0.0, **k):
+            heights.append(carry_height)
+            return _chain([np.full(9, carry_height)], holding=True)
+
+        def contacts_at(q, held=None, placed=None):
+            below = held and np.allclose(q, q[0]) and q[0] < 0.1
+            return [(("die", "base"), ("barrier", "base"))] if below else []
+
+        monkeypatch.setattr(_FakeExecutor, "place", place)
+        monkeypatch.setattr(gate.env, "contacts_at", contacts_at, raising=False)
+        motions = run_skills([Skill("pick", "die"), Skill("place", "mat")], _FakePlanner(), _FakeExecutor(),
+                             lambda *a, **k: np.zeros(9), {**_scene_state(), "positions": {
+                                 "die": np.array([0.5, 0.0, 0.0]), "mat": np.array([0.4, -0.2, 0.0])}},
+                             MotionParams(), gate=gate)
+        assert heights == [0.0, 0.05, 0.10] and np.allclose(motions[1].trajectory[-1], 0.10)
+
+    def test_place_lets_the_held_object_rest_on_the_target_entity_of_a_surface(self, gate, monkeypatch):
+        monkeypatch.setattr(_FakeExecutor, "place",
+                            lambda self, *a, **k: _chain([np.full(9, 0.3)], holding=True, allow="rest"))
+        monkeypatch.setattr(gate.env, "contacts_at",
+                            lambda q, held=None, placed=None:
+                            [(("die", "base"), ("mat", "base"))] if np.allclose(q, 0.3) else [],
+                            raising=False)
+        motions = run_skills([Skill("pick", "die"), Skill("place", "mat.top")], _FakePlanner(), _FakeExecutor(),
+                             lambda *a, **k: np.zeros(9), {**_scene_state(), "positions": {
+                                 "die": np.array([0.5, 0.0, 0.0]), "mat.top": np.array([0.4, -0.2, 0.0])}},
+                             MotionParams(), gate=gate)
+        assert len(motions) == 2
+
+    def test_unknown_skill_raises(self, gate):
         with pytest.raises(ValueError):
             run_skills([Skill("teleport", "die")], _FakePlanner(), _FakeExecutor(),
-                       lambda *a, **k: np.zeros(9), _scene_state(), MotionParams())
+                       lambda *a, **k: np.zeros(9), _scene_state(), MotionParams(), gate=gate)
 
 
 class TestDragHandleMotion:

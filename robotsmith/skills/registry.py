@@ -17,6 +17,7 @@ import numpy as np
 
 from robotsmith.grasp.planner import GraspPlanner
 from robotsmith.execution.executor import MotionExecutor
+from robotsmith.execution.gate import ExecutionGate, VerifiedMotion
 from robotsmith.motion.params import MotionParams
 from robotsmith.motion.planner import GenesisBackend, MotionPlanner
 from robotsmith.skills.base import Skill, SkillContext, _resolve_skill_category
@@ -31,7 +32,7 @@ class SkillDef:
     binding is unchecked; ``settle_s`` is the recorded hold before judging it.
     """
 
-    primitive: Callable[[SkillContext], list[np.ndarray]]
+    primitive: Callable[[SkillContext], VerifiedMotion]
     post: Callable[[Skill, dict], object] | None = None
     settle_s: float = 0.0
 
@@ -48,7 +49,7 @@ def register(name: str, *, post: Callable[[Skill, dict], object] | None = None,
     ``__init__``).
     """
 
-    def deco(fn: Callable[[SkillContext], list[np.ndarray]]):
+    def deco(fn: Callable[[SkillContext], VerifiedMotion]):
         if name in SKILL_DEFS:
             raise ValueError(f"skill primitive {name!r} already registered")
         SKILL_DEFS[name] = SkillDef(fn, post, settle_s)
@@ -99,10 +100,14 @@ def plan_segment(
     held_place_z: float | None = None,
     motion_planner: MotionPlanner | None = None,
     phase: str = "all",
-) -> tuple[list[np.ndarray], str | None, float | None]:
-    """Plan one skill's joint-target segment from the given (live) scene_state.
+    *,
+    gate: ExecutionGate,
+    held: str | None = None,
+) -> tuple[VerifiedMotion, str | None, float | None]:
+    """Plan one skill's motion from the given (live) scene_state, verified by ``gate`` against the
+    current scene (``held`` names the object in the hand). Raises ``Infeasible`` when no candidate passes.
 
-    Returns ``(segment, held_category, held_place_z)``; the carry-over state is
+    Returns ``(motion, held_category, held_place_z)``; the carry-over state is
     threaded into the next segment. The segment-level runtime re-reads object and
     joint poses into ``scene_state`` before each call so each subtask anchors to
     the world's actual current state (e.g. ``close`` to where the drawer really
@@ -127,6 +132,8 @@ def plan_segment(
         category=_resolve_skill_category(
             skill, scene_state.get("assets", {}), held_category
         ),
+        gate=gate,
+        held=held,
         held_category=held_category,
         held_place_z=held_place_z,
         phase=phase,
@@ -147,8 +154,13 @@ def run_skills(
     solve_ik: Callable,
     scene_state: dict,
     params: MotionParams,
-) -> list[np.ndarray]:
+    *,
+    gate: ExecutionGate,
+) -> list[VerifiedMotion]:
     """Plan a full skill sequence open-loop over one static ``scene_state``.
+
+    Every motion is verified against the scene as it is now, so only the first one is still
+    current when it starts; the rest go stale as soon as it runs.
 
     Thin loop over ``plan_segment``. Genesis-free tests use this; the simulator
     runtime calls ``plan_segment`` per subtask with a live-refreshed scene_state.
@@ -157,17 +169,20 @@ def run_skills(
     ``"object_heights"``, ``"assets"``, ``"object_quats"``,
     ``"table_surface_z"``, ``"joint_positions"``.
     """
-    traj: list[np.ndarray] = []
+    motions: list[VerifiedMotion] = []
     qpos = scene_state["home_qpos"].copy()
+    held: str | None = None
     held_category: str | None = None
     held_place_z: float | None = None
 
     for i, skill in enumerate(skills):
-        seg, held_category, held_place_z = plan_segment(
+        motion, held_category, held_place_z = plan_segment(
             skill, i, skills, planner, executor, solve_ik, scene_state, params,
-            qpos, held_category, held_place_z,
+            qpos, held_category, held_place_z, gate=gate, held=held,
         )
-        traj += seg
-        qpos = traj[-1]
+        motions.append(motion)
+        if motion.trajectory:
+            qpos = motion.trajectory[-1]
+        held = skill.target if skill.name == "pick" else None if skill.name == "place" else held
 
-    return traj
+    return motions

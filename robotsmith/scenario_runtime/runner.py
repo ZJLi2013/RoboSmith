@@ -16,6 +16,7 @@ from typing import Callable
 
 import numpy as np
 
+from robotsmith.execution.gate import ExecutionGate, Infeasible
 from robotsmith.grasp.geometric import GeometricGraspPlanner
 from robotsmith.scenario_runtime import handoff
 from robotsmith.sim.franka import HOME_QPOS, to_numpy_f32
@@ -39,6 +40,8 @@ class ScenarioEpisodeResult:
     # The settle the last step recorded and judged, still the world's current state; None when the
     # episode ended on a step that did not settle.
     final_window: dict | None = None
+    # The handoff of the infeasible step the episode stopped at; nothing was executed for it.
+    infeasible: dict | None = None
 
 
 def run_scenario_episode(
@@ -90,12 +93,15 @@ def reset_scene(env, settle_steps: int) -> None:
 
 class EpisodeRun:
     """The live state of one episode after reset: ``run_steps`` executes skills from wherever the arm and the held
-    object are, so a caller can stop at a failed step and continue with new steps in the same world."""
+    object are, so a caller can stop at a failed step and continue with new steps in the same world.
+
+    Only motions the execution gate verified against the current scene are executed."""
 
     def __init__(self, env, task_spec: TaskSpec, *, executor, motion_params, dataset, record_fn: Callable,
                  target_frames: dict, camera_names, env_state_names):
         self.env, self.task_spec, self.executor, self.motion_params = env, task_spec, executor, motion_params
         self.dataset, self.record_fn, self.target_frames = dataset, record_fn, target_frames
+        self.gate = ExecutionGate(env)
         self.camera_names, self.env_state_names = camera_names, env_state_names
         self.initial_positions = collect_object_positions(env)
         self.skill_traces: list[dict] = []
@@ -107,6 +113,7 @@ class EpisodeRun:
         self.held: str | None = None
         self.frame_count = 0
         self.window = None
+        self.infeasible = None
 
     def _record_step(self, q):
         self.record_fn(self.env, self.dataset, [q], self.task_spec, camera_names=self.camera_names,
@@ -114,8 +121,10 @@ class EpisodeRun:
 
     def run_steps(self, skills: list, bindings: list[dict], *, stop_on_fail: bool = False) -> dict | None:
         """Execute ``skills`` with their ``bindings``; with ``stop_on_fail`` return the handoff of the first step
-        judged false (the remaining steps are not run), else ``None``."""
+        judged false (the remaining steps are not run), else ``None``. An infeasible step records no frames
+        and always ends the run; its handoff is returned."""
         env = self.env
+        self.infeasible = None
         for k, (skill, binding) in enumerate(zip(skills, list(bindings) + [None] * (len(skills) - len(bindings)))):
             i = len(self.skills)
             self.skills.append(skill)
@@ -132,11 +141,20 @@ class EpisodeRun:
                 if step_start is None:
                     step_start = {n: np.asarray(p).tolist() for n, p in collect_object_positions(env).items()}
                 obj = skill.target if skill.name == "pick" else self.held
-                seg, self.held_category, self.held_place_z = plan_segment(
-                    skill, i, planned, env.planner, self.executor, env.solve_ik,
-                    scene_state, self.motion_params, self.qpos, self.held_category, self.held_place_z,
-                    phase=phase,
-                )
+                try:
+                    motion, self.held_category, self.held_place_z = plan_segment(
+                        skill, i, planned, env.planner, self.executor, env.solve_ik,
+                        scene_state, self.motion_params, self.qpos, self.held_category, self.held_place_z,
+                        phase=phase, gate=self.gate, held=self.held,
+                    )
+                except Infeasible as exc:
+                    entry = {"skill": skill.name, "phase": phase, "target": skill.target, "object": obj,
+                             "done": False, "cause": "infeasible", "infeasible": {"reason": exc.reason, **exc.detail}}
+                    self.handoffs.append(entry)
+                    self.infeasible = entry
+                    return entry
+                self.gate.check_current(motion)
+                seg = motion.trajectory
                 samples = self.record_fn(
                     env,
                     self.dataset,
@@ -183,6 +201,7 @@ class EpisodeRun:
             handoffs=self.handoffs,
             final_qpos=self.qpos,
             final_window=self.window,
+            infeasible=self.infeasible,
         )
 
 

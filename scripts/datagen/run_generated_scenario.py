@@ -126,14 +126,18 @@ def run_scenario_smoke(
                 env_state_names=env_state_names,
             )
         episode_frame_counts[ep] = result.frame_count
-        success, judge_state = evaluate_scenario_task(
-            env,
-            package.legacy_task,
-            initial_positions=result.initial_positions,
-            reference_positions=target_positions,
-            hold=result.final_qpos,
-            window=result.final_window,
-        )
+        if result.infeasible is not None:
+            # Judging would settle, i.e. step physics the gate never saw; an infeasible episode fails as it stands.
+            success, judge_state = False, {"infeasible": _json_safe(result.infeasible)}
+        else:
+            success, judge_state = evaluate_scenario_task(
+                env,
+                package.legacy_task,
+                initial_positions=result.initial_positions,
+                reference_positions=target_positions,
+                hold=result.final_qpos,
+                window=result.final_window,
+            )
         final_positions = collect_object_positions(env)
         episodes.append({
             "episode_index": ep,
@@ -148,10 +152,12 @@ def run_scenario_smoke(
             ),
             "handoffs": _json_safe(result.handoffs),
             "failed_step": None if success else _json_safe(handoff.first_failure(result.handoffs)),
-            "failed_leaves": [] if success else failed_leaves(package.legacy_task.success, judge_state),
+            "failed_leaves": ([] if success or result.infeasible is not None
+                              else failed_leaves(package.legacy_task.success, judge_state)),
             **({"planner": planner_record.to_dict()} if planner_record is not None else {}),
         })
-        dataset.save_episode()
+        if result.frame_count:
+            dataset.save_episode()
 
     if hasattr(dataset, "consolidate"):
         dataset.consolidate(run_compute_stats=True)
@@ -160,7 +166,7 @@ def run_scenario_smoke(
     dataset_root = Path(dataset.root)
     videos = copy_episode_videos(
         dataset_root,
-        [ep["episode_index"] for ep in episodes],
+        [ep["episode_index"] for ep in episodes if ep["frame_count"]],
         config.output_dir / "videos",
         package.legacy_task.name,
         None,

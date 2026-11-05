@@ -1,13 +1,15 @@
 """``place`` primitive: transport the held object and release it at the target.
 
 Supports tabletop places (explicit/held ``place_z``) and articulated-opening
-places (live tray-floor anchor).
+places (live tray-floor anchor). The transport is tried at increasing carry heights; the
+lowest whose whole trajectory passes the execution gate is executed.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
+from robotsmith.execution.gate import Infeasible, MotionRejected, Span, VerifiedMotion, spans_of
 from robotsmith.grasp.planner import GraspPlan
 from robotsmith.skills.base import SkillContext
 from robotsmith.skills.frames import (
@@ -22,6 +24,8 @@ from robotsmith.skills.registry import bound_leaf, register
 # held payload settles just above the floor instead of being driven through it.
 # Robot/gripper property (not asset geometry), so it lives here, not in metadata.
 _DRAWER_PLACE_EE_CLEARANCE = 0.10
+# Extra height the held object is carried at, lowest first (0: straight joint-space transport).
+CARRY_HEIGHTS = (0.0, 0.05, 0.10, 0.15, 0.20)
 
 
 def _resolve_place_plan(
@@ -90,7 +94,7 @@ def _place_transport_seed(ctx: SkillContext, q0: np.ndarray) -> tuple[np.ndarray
 
 
 @register("place", post=bound_leaf, settle_s=0.5)
-def run_place(ctx: SkillContext) -> list[np.ndarray]:
+def run_place(ctx: SkillContext) -> VerifiedMotion:
     # Phase split (live re-anchoring): "transport" moves to straight above the
     # target; "descend" re-reads the (recoiled) target and goes vertical. "all" is
     # the single-pass legacy path for static anchors. ``obj_pos`` is already
@@ -98,14 +102,23 @@ def run_place(ctx: SkillContext) -> list[np.ndarray]:
     place_plan, requested_place_z, resolved_place_z = _resolve_place_plan(ctx)
     q0 = np.asarray(ctx.qpos, dtype=np.float64)
     start, transit = _place_transport_seed(ctx, q0)
-    place_seg = ctx.executor.place(
-        place_plan,
-        ctx.motion_planner,
-        start,
-        ctx.params,
-        phase=ctx.phase,
-    )
-    seg = transit + place_seg
+    heights = CARRY_HEIGHTS if ctx.phase in ("all", "transport") else (0.0,)
+    carry = ctx.gate.env.hand_pose(start) if len(heights) > 1 else None
+    tries, motion = [], None
+    for h in heights:
+        try:
+            result = ctx.executor.place(place_plan, ctx.motion_planner, start, ctx.params, phase=ctx.phase,
+                                        carry=carry, carry_height=h)
+            spans = [Span("transit", 0, len(transit), holding=True)] + spans_of(result.segments, len(transit))
+            motion = ctx.gate.verify(transit + result.trajectory, spans, target=ctx.held,
+                                       q_start=q0, rest={ctx.skill.target.split(".")[0]})
+        except MotionRejected as exc:
+            tries.append({"carry_height": h, "gate": exc.to_dict()})
+        except RuntimeError as exc:
+            tries.append({"carry_height": h, "motion_error": str(exc)})
+        else:
+            tries.append({"carry_height": h, "gate": "passed"})
+            break
     ctx.trace(
         {
             "skill": ctx.skill.name,
@@ -117,12 +130,15 @@ def run_place(ctx: SkillContext) -> list[np.ndarray]:
             "place_z_source": (
                 "requested" if requested_place_z is not None else "selected_grasp"
             ),
+            "carry_tries": tries,
             "motion_trace": getattr(ctx.executor, "last_motion_trace", None),
         }
     )
+    if motion is None:
+        raise Infeasible("no carry height passed the gate", {"tries": tries})
     # The object is only released on the descend phase; transport still carries it,
     # so hold-state carry-over must survive into descend.
     if ctx.phase in ("all", "descend"):
         ctx.held_category = None
         ctx.held_place_z = None
-    return seg
+    return motion

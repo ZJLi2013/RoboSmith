@@ -33,44 +33,52 @@ agent 写步骤表（pick X、place X on Y…），技能执行，每步判定�
 4. **失败显式**：任一步不过就结构化失败（阶段、候选、原因、证据）；试下一个候选是显式搜索，不是放行。
 5. **状态有唯一主人**：运行时持有实际的关节、物体与持物状态；试抓与正式执行共享同一道门。
 
-### 执行门的接口与契约（proposed，尚未实现）
+### 执行门的接口与契约
 
-每个概念一个 owner：
+门在 `robotsmith/execution/gate.py`。每个概念一个 owner：
 
 | 概念 | Owner |
 |---|---|
 | Genesis 场景状态：快照、构型、状态指纹 | `SimEnv` |
-| 「这条轨迹能不能执行」与接触许可规则 | `ExecutionGate`（新增，许可规则只在一处） |
+| 「这条轨迹能不能执行」、持物生命周期与接触许可规则 | `ExecutionGate`（许可规则只在 `permitted` 一处） |
 | 候选及其顺序（抓取、搬运高度） | 技能层（`run_pick` / `run_place`） |
 | 航点模板与每段的持物 / 允许接触 | `MotionExecutor` |
-| 关键位姿到稠密关节路径 | `motion.chain.execute_motion_chain` |
+| 关键位姿到稠密关节路径与段边界 | `motion.chain.execute_motion_chain` |
 | 抓取的物理是否成立（抬得起） | `SimEnv.trial_from_here`，只在过门之后调用 |
 | 执行 | `EpisodeRun`，只回放验证过的轨迹，不解 IK |
 
 接口：
 
-- `ExecutionGate.verify(path, waypoints, q_start, held=None)` 返回 `VerifiedMotion(trajectory, segments, fingerprint)`；
-  任何一个轨迹点违规就抛 `MotionRejected(segment, pair)`。门检查的是**会被执行的每一个稠密轨迹点**，不抽样；性能优化
-  不得减少被检查的点。
-- `SimEnv.contacts_at(qpos, held=None)` 与 `SimEnv.hand_pose(qpos)` 在一个快照事务里摆构型、跑碰撞检测或正运动学，
-  返回前还原快照。`SimEnv.state_fingerprint()` 是真实写入代次与全部刚体关节位置、速度的哈希：代次由 `SimEnv.step()`
-  与 `SimEnv.reset()` 递增，录制与 settle 窗口都经 `SimEnv.step()` 步进；快照事务内的还原不递增，所以同值 reset 也会让旧验证失效。
-- 航点多两个字段：`holding`（这一段手里有没有被抓物）与 `allow`（取自 `grip` / `rest`）。
+- `ExecutionGate.verify(trajectory, spans, *, target, q_start, rest=())` 返回
+  `VerifiedMotion(trajectory, spans, fingerprint, checked)`；任何一个轨迹点违规就抛 `MotionRejected(span, index, pair)`。
+  `spans` 是 `Span(label, start, end, holding, allow)`，必须无缝铺满整条轨迹，门检查的是**会被执行的每一个稠密轨迹点**，
+  不抽样；性能优化不得减少被检查的点。`ungated(trajectory)` 只给开合抽屉用。
+- 段边界来自运动链：每段带 `span` / `holding` / `allow`，段后保持与尾部保持计入所在段；转基座段由技能层作为第一段加入。
+  pick 的手指闭合段是 `grip`、其后一段持物且 `rest`；place 的搬运持物，下放与松手持物且 `rest`，退回 `grip`。
+- `SimEnv.contacts_at(qpos, held=None, placed=None)`、`SimEnv.hand_pose(qpos)`、`SimEnv.object_pose(name)` 在一个快照事务里
+  摆构型（`held=(name, T)` 把物体放在手 · T，`placed=(name, T_world)` 放在世界位姿）、跑碰撞检测或正运动学，返回前还原快照。
+  `SimEnv.state_fingerprint()` 是真实写入代次与全部刚体关节位置、速度的哈希：代次由 `SimEnv.step()` 与 `SimEnv.reset()` 递增，
+  录制与 settle 窗口都经 `SimEnv.step()` 步进；快照事务内的还原不递增，所以同值 reset 也会让旧验证失效。
 
 契约：
 
-- **持物几何**：持物段的被抓物位姿 = 手位姿 · T，T 取自本轨迹第一个持物点的手位姿与被抓物当时的位姿。被抓物就是场景里
-  那个 entity，几何与执行一致。
+- **持物生命周期**：持物段的被抓物位姿 = 手位姿 · T，T 取自持物开始之前的构型（首个持物点的前一点；轨迹从持物开始时取
+  `q_start`）与被抓物当时的位姿。最后一个持物点之后，被抓物留在 手(最后持物点) · T，退回时手掌穿过它会被拒绝。
+  被抓物就是场景里那个 entity，几何与执行一致。
 - **接触许可**：
   - 手指碰目标，只在持物段或 `grip` 段合法；手的其它 link 碰到目标一律违规。
-  - 被抓物碰支撑面或放置目标，只在 `rest` 段合法。
+  - 被抓物碰支撑面或放置目标的 entity（`mat.top` 取 `mat`），只在 `rest` 段合法。
   - 其余凡涉及机器人或被抓物的接触都违规。
   - 第一版不判机器人自接触。
   - 必须拒绝的样例：两个端点合法、但中途穿墙的轨迹。
-- **状态事务**：只有 `SimEnv` 写 Genesis 状态。快照事务不改变状态指纹；试抓会步进物理，所以试抓之后旧的验证一律作废，
-  技能层要在恢复后的状态上对同一条轨迹重新过门、签发新的验证。真实步进与 `reset` 都会改变指纹。
-- **失效与零执行**：执行前比对 `VerifiedMotion.fingerprint` 与当前指纹，不等就拒绝执行。`verify` 抛出时，没有任何一点进入
-  录制；全部候选被拒时整步判 `infeasible`，零帧并停在这一步。
+- **候选搜索**：pick 每个候选先过门，再试抓，抬起后在恢复的状态上对同一条轨迹重新过门；place 按 0、5、10、15、20 cm 的搬运
+  高度取最低能过门的一条。任何候选都不成立时抛 `Infeasible(reason, detail)`。
+- **状态事务**：只有 `SimEnv` 写 Genesis 状态。快照事务不改变状态指纹；试抓会步进物理，所以试抓之后旧的验证一律作废。
+  真实步进与 `reset` 都会改变指纹。
+- **失效与零执行**：执行前 `check_current` 比对 `VerifiedMotion.fingerprint` 与当前指纹，不等就抛 `StaleMotion`。
+  `verify` 抛出时，没有任何一点进入录制；步骤 `infeasible` 时 `EpisodeRun` 记 `cause: infeasible` 与各候选的拒绝原因，
+  零帧、零物理步并停在这一步，入口不做任务判定的 settle，直接判失败。settle 与保持只下发最后一个已验证点。
+  初始 reset / settle 属于场景初始化，不在门的范围。
 - **并发**：不支持。一个 `SimEnv` 同一时刻只能有一个调用者。
 
 ## 已定 / 不做
@@ -101,7 +109,7 @@ agent 写步骤表（pick X、place X on Y…），技能执行，每步判定�
 
 1. ✅ 删除 rocRobo、`collision_aware` 分叉与碰撞盲退回（含 Docker socket 挂载与 sidecar 文档）；
 2. ✅ `SimEnv` 的快照接口，加 GPU 探针；
-3. 接入执行门、航点字段，并加 `infeasible` 失败；
+3. ✅ 接入执行门、航点字段，并加 `infeasible` 失败；
 4. 重写 [调用链](call-chain.md)。
 
 然后在[验收场景族](acceptance.md)的 test seed 上读出 certified 率。

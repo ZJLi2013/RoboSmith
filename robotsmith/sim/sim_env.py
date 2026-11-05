@@ -267,19 +267,6 @@ class SimEnv:
         env.sync_object_states()
         return env
 
-    def trial_trajectory(self, start: dict, trajectory: list, target: str, *, settle_steps: int = 30,
-                         lift_m: float = 0.02) -> dict:
-        """Reset to ``start`` (as ``reset`` takes it), replay ``trajectory`` without rendering, and
-        report whether ``target`` ended at least ``lift_m`` above where it settled."""
-        self.reset(start, settle_steps=settle_steps)
-        z0 = float(to_numpy(self.entity_map[target].get_pos()).reshape(-1)[2])
-        t0 = time.perf_counter()
-        for q in trajectory:
-            self.franka.control_dofs_position(q, self.motors_dof)
-            self.step()
-        dz = float(to_numpy(self.entity_map[target].get_pos()).reshape(-1)[2]) - z0
-        return {"lifted": dz > lift_m, "lift_m": round(dz, 4), "seconds": round(time.perf_counter() - t0, 3)}
-
     def trial_from_here(self, trajectory: list, target: str, *, lift_m: float = 0.02) -> dict:
         """Replay ``trajectory`` from the current scene state without rendering, report whether ``target``
         ended at least ``lift_m`` higher, then restore the whole scene (bodies, joints, velocities)."""
@@ -330,25 +317,37 @@ class SimEnv:
                 owner[geom.idx] = (name, geom.link.name)
         return owner
 
+    def object_pose(self, name: str) -> tuple[np.ndarray, np.ndarray]:
+        """``(pos, quat_wxyz)`` of ``name`` as ``set_pos`` / ``set_quat`` take it."""
+        ent = self.entity_map[name]
+        return (to_numpy(ent.get_pos()).reshape(-1).astype(np.float64),
+                to_numpy(ent.get_quat()).reshape(-1).astype(np.float64))
+
     def hand_pose(self, qpos) -> tuple[np.ndarray, np.ndarray]:
         """Hand-link ``(pos, quat_wxyz)`` at ``qpos``; the scene is unchanged on return."""
         with self._snapshot():
             self._set_arm(qpos)
             return self._hand()
 
-    def contacts_at(self, qpos, held: tuple[str, np.ndarray] | None = None) -> list[tuple[tuple[str, str], ...]]:
-        """Contacts with the arm at ``qpos`` and, with ``held=(name, T_hand_obj)``, that object at
-        ``hand · T_hand_obj``: ``[((entity, link), (entity, link)), ...]``, read by collision detection
-        without stepping. The scene is unchanged on return."""
+    def _put(self, name: str, t_world: np.ndarray) -> None:
+        ent = self.entity_map[name]
+        ent.set_pos(t_world[:3, 3].astype(np.float32), zero_velocity=True)
+        ent.set_quat(rotmat_to_quat_wxyz(t_world[:3, :3]).astype(np.float32), zero_velocity=True, relative=False)
+
+    def contacts_at(self, qpos, held: tuple[str, np.ndarray] | None = None,
+                    placed: tuple[str, np.ndarray] | None = None) -> list[tuple[tuple[str, str], ...]]:
+        """Contacts with the arm at ``qpos``, with ``held=(name, T_hand_obj)`` that object at
+        ``hand · T_hand_obj`` and with ``placed=(name, T_world)`` that object at ``T_world``:
+        ``[((entity, link), (entity, link)), ...]``, read by collision detection without stepping.
+        The scene is unchanged on return."""
         owner = self._geom_owner()
         with self._snapshot():
             self._set_arm(qpos)
             if held is not None:
                 name, t_hand_obj = held
-                t = pose_matrix(*self._hand()) @ np.asarray(t_hand_obj, dtype=np.float64)
-                ent = self.entity_map[name]
-                ent.set_pos(t[:3, 3].astype(np.float32), zero_velocity=True)
-                ent.set_quat(rotmat_to_quat_wxyz(t[:3, :3]).astype(np.float32), zero_velocity=True, relative=False)
+                self._put(name, pose_matrix(*self._hand()) @ np.asarray(t_hand_obj, dtype=np.float64))
+            if placed is not None:
+                self._put(placed[0], np.asarray(placed[1], dtype=np.float64))
             pairs = self.scene.sim.rigid_solver.detect_collision()
         unknown = ("env", "?")
         return [(owner.get(int(a), unknown), owner.get(int(b), unknown)) for a, b in pairs]

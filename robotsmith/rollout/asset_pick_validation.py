@@ -10,6 +10,7 @@ import shutil
 
 import numpy as np
 
+from robotsmith.execution.gate import ExecutionGate, Infeasible, VerifiedMotion
 from robotsmith.scenario.adapters import (
     to_legacy_scene_config,
     to_legacy_skills,
@@ -61,11 +62,13 @@ class AssetPickValidationConfig:
 
 @dataclass
 class AssetPickEpisodePlan:
-    """Prepared trajectory and state for one asset-pick validation episode."""
+    """Verified motions and state for one asset-pick validation episode; no motions when it is infeasible."""
 
     initial_positions: dict[str, np.ndarray]
     scene_state: dict
-    trajectory: list[np.ndarray]
+    motions: list[VerifiedMotion]
+    gate: ExecutionGate
+    infeasible: dict | None = None
 
 
 def _asset_category(asset_name: str) -> str:
@@ -168,23 +171,21 @@ def _prepare_asset_pick_episode(
         "skill_traces": [],
     }
     if grasp_selection in ("trial", "trial_all"):
-        scene_state["grasp_trial"] = lambda traj, target: env.trial_trajectory(
-            obj_xy_map, traj, target, settle_steps=settle_steps)
+        scene_state["grasp_trial"] = env.trial_from_here
         scene_state["grasp_trial_all"] = grasp_selection == "trial_all"
-    trajectory = run_skills(
-        task_spec.skills,
-        env.planner,
-        executor,
-        env.solve_ik,
-        scene_state,
-        motion_params,
-    )
-    if "grasp_trial" in scene_state:
-        env.reset(obj_xy_map, settle_steps=settle_steps)
+    gate = ExecutionGate(env)
+    try:
+        motions = run_skills(task_spec.skills, env.planner, executor, env.solve_ik, scene_state, motion_params,
+                             gate=gate)
+        infeasible = None
+    except Infeasible as exc:
+        motions, infeasible = [], {"reason": exc.reason, **exc.detail}
     return AssetPickEpisodePlan(
         initial_positions=initial_positions,
         scene_state=scene_state,
-        trajectory=trajectory,
+        motions=motions,
+        gate=gate,
+        infeasible=infeasible,
     )
 
 
@@ -287,22 +288,24 @@ def run_asset_pick(config: AssetPickValidationConfig, asset_name: str) -> dict:
         if ep == 0:
             start = _start_state(env, episode_plan)
 
-        traj = episode_plan.trajectory
+        n_frames = sum(len(m.trajectory) for m in episode_plan.motions)
         scene_state = episode_plan.scene_state
         pick_trace = _pick_trace(scene_state)
         if frames_per_episode is None:
-            frames_per_episode = len(traj)
+            frames_per_episode = n_frames
             print(f"[rollout] trajectory: {frames_per_episode} frames/episode")
-        episode_frame_counts[ep] = len(traj)
+        episode_frame_counts[ep] = n_frames
 
-        record_episode(
-            env,
-            dataset,
-            traj,
-            task_spec,
-            primary_entity=primary_entity,
-            camera_names=camera_names,
-        )
+        for motion in episode_plan.motions:
+            episode_plan.gate.check_current(motion)
+            record_episode(
+                env,
+                dataset,
+                motion.trajectory,
+                task_spec,
+                primary_entity=primary_entity,
+                camera_names=camera_names,
+            )
         success = _evaluate_asset_pick_task(
             env,
             task_spec,
@@ -313,7 +316,8 @@ def run_asset_pick(config: AssetPickValidationConfig, asset_name: str) -> dict:
             "task": task_spec.name,
             "asset": asset_name,
             "success": bool(success),
-            "frame_count": len(traj),
+            "frame_count": n_frames,
+            "infeasible": episode_plan.infeasible,
             "selected_candidate_index": pick_trace.get("selected_candidate_index"),
             "no_candidates": bool(pick_trace.get("no_candidates", False)),
             "no_trial_success": pick_trace.get("no_trial_success"),
@@ -332,7 +336,8 @@ def run_asset_pick(config: AssetPickValidationConfig, asset_name: str) -> dict:
         episode_diagnostics.append({
             key: label[key] for key in EPISODE_DIAGNOSTIC_FIELDS
         })
-        dataset.save_episode()
+        if n_frames:
+            dataset.save_episode()
 
         status = "OK" if success else "FAIL"
         print(f"[rollout] {asset_name} ep {ep + 1}/{config.n_episodes} [{status}]")
@@ -358,7 +363,7 @@ def run_asset_pick(config: AssetPickValidationConfig, asset_name: str) -> dict:
     if not config.no_videos:
         copied.extend(copy_episode_videos(
             dataset_root,
-            [e["episode_index"] for e in episode_labels],
+            [e["episode_index"] for e in episode_labels if e["frame_count"]],
             config.output_dir / asset_name / "videos",
             asset_name,
             frames_per_episode,

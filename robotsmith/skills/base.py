@@ -15,6 +15,7 @@ import numpy as np
 
 from robotsmith.grasp.planner import GraspPlanner
 from robotsmith.execution.executor import MotionExecutor
+from robotsmith.execution.gate import ExecutionGate
 from robotsmith.motion.params import MotionParams
 from robotsmith.motion.planner import MotionPlanner
 
@@ -72,6 +73,8 @@ class SkillContext:
     scene_state: dict
     qpos: np.ndarray
     category: str
+    gate: ExecutionGate
+    held: str | None = None
     held_category: str | None = None
     held_place_z: float | None = None
     phase: str = "all"

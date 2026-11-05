@@ -19,6 +19,7 @@ import numpy as np
 
 from robotsmith.grasp.planner import GraspPlan
 from robotsmith.motion.chain import (
+    MotionChainExecution,
     RuntimeMotionWaypoint,
     classify_segments,
     execute_motion_chain,
@@ -162,7 +163,7 @@ class MotionExecutor:
         motion_planner: MotionPlanner,
         home_qpos: np.ndarray,
         params: MotionParams,
-    ) -> list[np.ndarray]:
+    ) -> MotionChainExecution:
         """home → waypoints → hold (velocity-adaptive step counts); the final
         approach segment is Cartesian."""
         if not plan.waypoints:
@@ -175,7 +176,7 @@ class MotionExecutor:
         motion_planner: MotionPlanner,
         home_qpos: np.ndarray,
         params: MotionParams,
-    ) -> list[np.ndarray]:
+    ) -> MotionChainExecution:
         """Execute an ordered waypoint sequence with velocity-adaptive timing.
 
         Segment classification (determines velocity):
@@ -187,6 +188,9 @@ class MotionExecutor:
                        Uses ``fine_joint_vel``.
           **normal** — all other arm-movement segments (approach, retreat).
                        Uses ``max_joint_vel``.
+
+        Finger segments may touch the target (``allow="grip"``); after the last one the target is
+        held, and the first segment after it may still touch the support it leaves (``allow="rest"``).
         """
         wps = plan.waypoints
         assert wps, "waypoints must be non-empty"
@@ -214,6 +218,9 @@ class MotionExecutor:
                     hold_after_steps=(
                         params.grasp_settle_steps if i == last_finger else 0
                     ),
+                    holding=0 <= last_finger < i,
+                    allow=("grip" if is_finger[i]
+                           else "rest" if last_finger >= 0 and i == last_finger + 1 else None),
                 )
             )
 
@@ -232,7 +239,7 @@ class MotionExecutor:
                 last_finger,
                 params.grasp_settle_steps * params.dt,
             )
-        return result.trajectory
+        return result
 
     def place(
         self,
@@ -242,7 +249,9 @@ class MotionExecutor:
         params: MotionParams,
         *,
         phase: str = "all",
-    ) -> list[np.ndarray]:
+        carry: tuple[np.ndarray, np.ndarray] | None = None,
+        carry_height: float = 0.0,
+    ) -> MotionChainExecution:
         """transport → pre_place → place (open fingers) → retreat.
 
         Assumes the robot is holding an object (fingers closed) at start_qpos.
@@ -272,14 +281,37 @@ class MotionExecutor:
           would slant the Cartesian line into the drawer wall.
         - ``"all"`` (default): the full transport → descend → release → retreat in
           one open-loop pass (legacy behavior; static anchors, tests).
+
+        With ``carry_height`` the transport rises that far above the ``carry`` hand pose (the start),
+        crosses at that height and comes straight down onto the standoff.
+        The object is held until the release; descend and release may rest it on the target, and the
+        retreat may touch it with the fingers.
         """
-        transport_wp = RuntimeMotionWaypoint(
+        transport_wps = [RuntimeMotionWaypoint(
             pos=place_plan.pre_grasp_pos,
             quat=place_plan.pre_grasp_quat,
             finger_width=place_plan.finger_closed,
             label="transport",
             steps=params.transport_steps,
-        )
+            holding=True,
+        )]
+        if carry_height > 0.0:
+            up = np.array([0.0, 0.0, carry_height])
+            transport_wps = [
+                RuntimeMotionWaypoint(
+                    pos=np.asarray(carry[0], dtype=np.float64) + up, quat=carry[1],
+                    finger_width=place_plan.finger_closed, label="carry_up", holding=True,
+                ),
+                RuntimeMotionWaypoint(
+                    pos=np.asarray(place_plan.pre_grasp_pos, dtype=np.float64) + up, quat=place_plan.pre_grasp_quat,
+                    finger_width=place_plan.finger_closed, label="transport", steps=params.transport_steps,
+                    holding=True,
+                ),
+                RuntimeMotionWaypoint(
+                    pos=place_plan.pre_grasp_pos, quat=place_plan.pre_grasp_quat,
+                    finger_width=place_plan.finger_closed, label="carry_down", cartesian=True, holding=True,
+                ),
+            ]
         descend_wps = [
             RuntimeMotionWaypoint(
                 pos=place_plan.grasp_pos,
@@ -288,6 +320,8 @@ class MotionExecutor:
                 label="descend",
                 cartesian=True,
                 steps=params.place_descend_steps,
+                holding=True,
+                allow="rest",
             ),
             RuntimeMotionWaypoint(
                 pos=place_plan.grasp_pos,
@@ -297,6 +331,8 @@ class MotionExecutor:
                 segment_type="finger",
                 steps=params.release_steps,
                 finger_only=True,
+                holding=True,
+                allow="rest",
             ),
             RuntimeMotionWaypoint(
                 pos=place_plan.retreat_pos,
@@ -305,12 +341,13 @@ class MotionExecutor:
                 label="retreat",
                 cartesian=True,
                 steps=params.retreat_steps,
+                allow="grip",
             ),
         ]
         if phase == "transport":
-            runtime_wps = [transport_wp]
+            runtime_wps = transport_wps
         else:  # "descend" or "all": (corrective) transport then vertical descend
-            runtime_wps = [transport_wp, *descend_wps]
+            runtime_wps = [*transport_wps, *descend_wps]
         result = execute_motion_chain(
             runtime_wps,
             motion_planner,
@@ -319,7 +356,7 @@ class MotionExecutor:
             raise_on_cartesian_discontinuity=False,
         )
         self.last_motion_trace = execution_trace("place", result)
-        return result.trajectory
+        return result
 
     def drag_handle(
         self,

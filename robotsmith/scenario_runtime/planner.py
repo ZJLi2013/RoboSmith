@@ -105,6 +105,8 @@ def parse_steps(text: str, assets: dict, yaw_deg: dict, held: str | None = None)
 
 def route_failure(entry: dict, positions: dict, binding: dict | None) -> str:
     """``plan`` / ``physical`` / ``unknown`` from execution evidence, per the M6 contract."""
+    if entry.get("cause") == "infeasible":
+        return "plan"
     if entry.get("skill") == "pick" or entry.get("cause") in ("grip?", "motion?"):
         return "physical"
     if entry.get("skill") == "place" and binding and binding.get("status") == "bound":

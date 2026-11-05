@@ -77,10 +77,9 @@ def _pick_plan():
     )
 
 
-def _segment_frames(exe, traj, idx):
-    segs = exe.last_motion_trace["segments"]
-    bounds = np.cumsum([0] + [s["steps"] + s["hold_after_steps"] for s in segs])
-    return np.asarray(traj)[bounds[idx]:bounds[idx + 1]]
+def _segment_frames(result, idx):
+    start, end = result.segments[idx]["span"]
+    return np.asarray(result.trajectory)[start:end]
 
 
 class TestPickMotionChain:
@@ -102,7 +101,7 @@ class TestPickMotionChain:
         exe = MotionExecutor()
         traj = exe.pick(_pick_plan(), GenesisBackend(unstable_ik), np.zeros(9),
                         MotionParams(finger_steps=10))
-        arm = _segment_frames(exe, traj, 2)[:, :7]
+        arm = _segment_frames(traj, 2)[:, :7]
         np.testing.assert_allclose(arm, np.tile([0.5, 0.0, 0.10, 0, 0, 0, 0], (len(arm), 1)),
                                    atol=1e-6)
 
@@ -142,7 +141,7 @@ class TestPlaceMotionChain:
         assert segs[release_idx]["finger_only"] is True
 
         # If release re-solved IK while the fingers open, joint 3 would whip to 1.5.
-        release_arm = _segment_frames(exe, traj, release_idx)[:, :7]
+        release_arm = _segment_frames(traj, release_idx)[:, :7]
         assert np.allclose(release_arm, release_arm[0])
         assert release_arm[0][3] == pytest.approx(0.0)
 

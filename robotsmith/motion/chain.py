@@ -152,6 +152,8 @@ class RuntimeMotionWaypoint:
     finger_only: bool = False
     cartesian: bool = False
     hold_after_steps: int = 0
+    holding: bool = False
+    allow: str | None = None
 
 
 @dataclass
@@ -299,9 +301,11 @@ def _assemble_trajectory(
     segments: list[dict],
     tail_hold_steps: int,
 ) -> list[np.ndarray]:
-    """Expand per-segment endpoints/paths into the full step-by-step trajectory."""
+    """Expand per-segment endpoints/paths into the full step-by-step trajectory; each segment's ``span`` is
+    its ``[start, end)`` in it, holds included (the tail hold belongs to the last segment)."""
     traj: list[np.ndarray] = []
     for i, wp in enumerate(waypoints):
+        start = len(traj)
         path = segment_paths[i]
         if path is not None:
             traj += path
@@ -309,8 +313,10 @@ def _assemble_trajectory(
             traj += _interpolate(q_targets[i], q_targets[i + 1], int(segments[i]["steps"]))
         if wp.hold_after_steps > 0:
             traj += [q_targets[i + 1].copy() for _ in range(wp.hold_after_steps)]
+        segments[i]["span"] = [start, len(traj)]
     if tail_hold_steps > 0:
         traj += [q_targets[-1].copy() for _ in range(tail_hold_steps)]
+        segments[-1]["span"][1] = len(traj)
     return traj
 
 
@@ -357,6 +363,8 @@ def execute_motion_chain(
                 "cartesian": wp.cartesian,
                 "finger_only": wp.finger_only,
                 "hold_after_steps": wp.hold_after_steps,
+                "holding": wp.holding,
+                "allow": wp.allow,
             }
         )
 
