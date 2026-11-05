@@ -85,7 +85,7 @@ agent 写步骤表（pick X、place X on Y…），技能执行，每步判定�
 
 ## 已定 / 不做
 
-- rocRobo 与碰撞盲退回已删除，不保留为可选后端；删除后的运动层接口见[调用链](call-chain.md#运动层的接口)。
+- rocRobo 与碰撞盲退回已删除，不保留为可选后端；删除后的运动层接口见[调用链](call-chain.md#运动层与执行门的接口)。
   启动脚本的 Docker socket 挂载只为进 rocRobo sidecar 容器，随之删除。第一版不加采样式路径规划：先看验收族上「候选 × 关节插值」被门拒绝的比例，
   证据显示不够再在同一份仿真几何里加。依据：rocRobo 在自己的简化世界里规划，与仿真几何不一致（见「迁移前的问题」）。
 - 关节体操作（开合抽屉）第一版不过门，标为 `ungated`；验收族里没有抽屉。
@@ -117,6 +117,6 @@ agent 写步骤表（pick X、place X on Y…），技能执行，每步判定�
 1. ✅ 删除 rocRobo、`collision_aware` 分叉与碰撞盲退回（含 Docker socket 挂载与 sidecar 文档）；
 2. ✅ `SimEnv` 的快照接口，加 GPU 探针；
 3. ✅ 接入执行门、航点字段，并加 `infeasible` 失败；
-4. 重写 [调用链](call-chain.md)。
+4. ✅ 重写 [调用链](call-chain.md)。
 
 然后在[验收场景族](acceptance.md)的 test seed 上读出 certified 率。
