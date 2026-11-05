@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import threading
 from pathlib import Path
 
 from robotsmith.execution.gate import Span
@@ -99,3 +100,31 @@ def test_a_crashed_instance_is_retried_once_and_both_rows_are_kept(tmp_path):
     written = [json.loads(line) for line in (tmp_path / "rows.jsonl").read_text(encoding="utf-8").splitlines()]
     assert [(r["attempt"], r["outcome"]) for r in written] == [(1, "error"), (2, "certified")]
     assert "boom" in written[0]["why"] and rows == [written[1]]
+
+
+def test_a_resumed_batch_retries_only_the_seed_that_hung(tmp_path):
+    prior = [{"seed": 1, "attempt": 1, "outcome": "certified", "certified": True},
+             {"seed": 2, "attempt": 1, "outcome": "error", "certified": False, "why": "no result after 600 s"}]
+    ran = []
+
+    def one(seed):
+        ran.append(seed)
+        return {"outcome": "certified", "certified": True}
+
+    with (tmp_path / "rows.jsonl").open("w", encoding="utf-8") as fh:
+        rows = certify.run_batch([1, 2, 3], one, fh, prior=prior)
+    assert ran == [2, 3]
+    assert [(r["seed"], r["attempt"]) for r in rows] == [(1, 1), (2, 2), (3, 1)]
+
+
+def test_an_attempt_past_its_timeout_is_written_as_an_error_before_the_process_ends(tmp_path):
+    hung = threading.Event()
+
+    def one(seed):
+        hung.wait(2)
+        return {"outcome": "certified", "certified": True}
+
+    with (tmp_path / "rows.jsonl").open("w", encoding="utf-8") as fh:
+        certify.run_batch([5], one, fh, timeout=0.05, on_hang=hung.set)
+    first = json.loads((tmp_path / "rows.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    assert first["outcome"] == "error" and first["attempt"] == 1 and "no result" in first["why"]

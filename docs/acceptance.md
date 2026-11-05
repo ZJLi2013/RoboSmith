@@ -84,7 +84,8 @@ python scripts/acceptance/certify.py --family f1_wall_gap --split test --out out
   认证判的是实际物理，没被抓的 die 碰到墙说明它被推了。和见证的差别：搬运中 die 擦到桌面也算违规。
 - **certified**：正例要任务谓词成立且零违规；负例要第一步判 `infeasible` 且 reset 之后零物理步。
   其余结果分别记 `infeasible`、`violation`、`task_failed`、`init_failed`（静止检查不过）与 `error`（抛异常，重试一次，
-  两次尝试都留在 `instances.jsonl`，取后一次）。
+  两次尝试都留在 `instances.jsonl`，取后一次）。Genesis 偶尔在某个物理步上挂住，Python 中断不了它：一次尝试超过
+  600 s 就记为 `error` 并以退出码 3 结束进程，`--resume` 接着已写的行重试它并跑完其余 seed。
 - 每实例一行：布局、静止后位置、难度参数、各阶段物理步与违规步、首个违规（阶段、span、接触对、物理步号）、
   正式帧数、交接记录、任务判定。
 

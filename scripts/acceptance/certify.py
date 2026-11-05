@@ -13,8 +13,10 @@ after the reset. Writes ``instances.jsonl`` (one row per instance, as it runs), 
 import argparse
 import dataclasses
 import json
+import os
 import shutil
 import sys
+import threading
 import time
 import traceback
 from collections import Counter
@@ -30,6 +32,8 @@ from robotsmith.execution.gate import SUPPORT, Span, certified  # noqa: E402
 
 SETTLE_STEPS = 30
 NEGATIVE = {"f4_caged"}
+INSTANCE_TIMEOUT_S = 600
+HUNG = 3
 
 
 class Monitor:
@@ -185,24 +189,46 @@ class _NoDataset:
         pass
 
 
-def run_batch(seeds, one, fh) -> list[dict]:
+def run_batch(seeds, one, fh, prior=(), timeout=None, on_hang=lambda: os._exit(HUNG)) -> list[dict]:
     """``one(seed)`` for each seed, its row appended to ``fh`` as it finishes. An instance that raises is retried
-    once; both attempts stay in ``fh`` and the last one is the instance's reading."""
+    once; both attempts stay in ``fh`` and the last one is the instance's reading. ``prior`` are the rows of an
+    earlier run of the batch: a seed they settle is not run again. An attempt still running after ``timeout``
+    seconds is written as an error and ``on_hang`` ends the process, since a hung simulator step cannot be
+    interrupted from Python; rerunning with the rows so far retries it."""
+    lock = threading.Lock()
+
+    def write(row):
+        with lock:
+            fh.write(json.dumps(row, default=str) + "\n")
+            fh.flush()
+        print(json.dumps({k: row.get(k) for k in ("seed", "attempt", "outcome", "first_violation", "seconds")},
+                         default=str), flush=True)
+
+    def hang(seed, attempt):
+        write({"seed": seed, "attempt": attempt, "outcome": "error", "certified": False,
+               "why": f"no result after {timeout} s", "seconds": timeout})
+        on_hang()
+
     rows = []
     for seed in seeds:
-        for attempt in (1, 2):
+        past = [r for r in prior if r["seed"] == seed]
+        attempt = len(past)
+        row = past[-1] if past else None
+        while attempt < 2 and (row is None or row["outcome"] == "error"):
+            attempt += 1
+            watchdog = threading.Timer(timeout, hang, (seed, attempt)) if timeout else None
+            if watchdog:
+                watchdog.daemon = True
+                watchdog.start()
             t0 = time.perf_counter()
             try:
                 row = one(seed)
             except Exception:  # noqa: BLE001 -- an instance's crash is a reading, the batch goes on
                 row = {"outcome": "error", "certified": False, "why": traceback.format_exc()}
+            if watchdog:
+                watchdog.cancel()
             row = {"seed": seed, "attempt": attempt, **row, "seconds": round(time.perf_counter() - t0, 1)}
-            fh.write(json.dumps(row, default=str) + "\n")
-            fh.flush()
-            print(json.dumps({k: row.get(k) for k in ("seed", "attempt", "outcome", "first_violation", "seconds")},
-                             default=str), flush=True)
-            if row["outcome"] != "error":
-                break
+            write(row)
         rows.append(row)
     return rows
 
@@ -218,6 +244,7 @@ def main() -> None:
     ap.add_argument("--split", choices=["playground", "test"], required=True)
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument("--resume", action="store_true", help=f"continue the rows in --out (after exit code {HUNG})")
     args = ap.parse_args()
 
     from robotsmith.scenario_runtime import materialize_candidate
@@ -243,8 +270,10 @@ def main() -> None:
         mon.start()
         return {"split": args.split, **run_instance(env, packages[seed], args.family, mon, record_episode)}
 
-    with (args.out / "instances.jsonl").open("w", encoding="utf-8") as fh:
-        rows = run_batch(seeds, one, fh)
+    log = args.out / "instances.jsonl"
+    prior = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()] if args.resume else []
+    with log.open("a" if args.resume else "w", encoding="utf-8") as fh:
+        rows = run_batch(seeds, one, fh, prior=prior, timeout=INSTANCE_TIMEOUT_S)
     outcomes = Counter(r["outcome"] for r in rows)
     summary = {"family": args.family, "split": args.split, "seeds": seeds,
                "certified": sum(r["certified"] for r in rows), "n": len(rows), "outcomes": dict(outcomes)}
