@@ -91,6 +91,18 @@ flowchart TD
 | 笛卡尔段 | 相邻步关节跳变（pick 超限即拒，place / drag 不拒） | 碰撞 |
 | `handoff.check` | 持物距离、首次脱手帧、可能原因 | 不中断 episode，只记录 |
 
+## 运动层的接口
+
+- `motion/planner.MotionPlanner` 只有 `solve_ik(pos, quat, finger_pos, *, init_qpos)`；唯一实现 `GenesisBackend` 包装
+  `SimEnv.solve_ik`，不查碰撞。
+- `motion/chain.execute_motion_chain(waypoints, motion_planner, start_qpos, params, *, tail_hold_steps,
+  raise_on_cartesian_discontinuity)` 只做「航点 → IK（笛卡尔段逐步 IK）→ 关节插值」，不接收任何碰撞世界。
+- `MotionExecutor.pick(plan, motion_planner, home_qpos, params)`、`place(..., *, phase)`、`drag_handle(..., action)`：
+  place 的下放与退回恒为笛卡尔直线；pick 与 place 各自在航点前加一段转基座的关节插值。
+- 开合抽屉（`open_close`）与 pick / place 走同一条不查碰撞的路径。
+- `scenario/relations.rigid_moving_links`：关节子 link 加上与它固定连接的 link，给 `clear_of` 的扫掠占地用。
+- 启动脚本 `scripts/setup/run_scenario.sh` 只挂仓库与 Hugging Face 缓存，不挂 Docker socket。
+
 ## 开关
 
 | 开关 | 默认 | 作用 |
