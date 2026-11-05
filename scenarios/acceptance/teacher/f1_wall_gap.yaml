@@ -1,0 +1,4 @@
+teacher: acc_f1_wall_gap
+steps:
+  - pick: die
+  - place: {target: mat.top}

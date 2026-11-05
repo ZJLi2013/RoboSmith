@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "wall_01",
+  "revision": 1,
+  "kind": "fixture",
+  "category": "wall",
+  "source": {
+    "type": "builtin_primitive",
+    "license": "Apache-2.0",
+    "rebuildable": false,
+    "files": []
+  },
+  "build": {
+    "files": [
+      "model.urdf"
+    ],
+    "hash": "c0731c78efe1522775d134d147180cd96ac527b3678e4b52acdb655626bd716f"
+  },
+  "annotations": {
+    "description": {
+      "value": "Low wall 40 cm long (local y), 2 cm thick (local x), 6 cm tall.",
+      "by": "agent:acceptance"
+    },
+    "friction": {
+      "value": 0.6,
+      "by": "agent:acceptance"
+    }
+  }
+}

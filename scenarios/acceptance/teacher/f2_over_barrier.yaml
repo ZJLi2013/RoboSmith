@@ -1,0 +1,4 @@
+teacher: acc_f2_over_barrier
+steps:
+  - pick: die
+  - place: {target: mat.top}

@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "cage_01",
+  "revision": 1,
+  "kind": "fixture",
+  "category": "cage",
+  "source": {
+    "type": "builtin_primitive",
+    "license": "Apache-2.0",
+    "rebuildable": false,
+    "files": []
+  },
+  "build": {
+    "files": [
+      "model.urdf"
+    ],
+    "hash": "fd2a1021374276278548d2832af9144f387a91ce7bfe69a1655eb53b5f98a8eb"
+  },
+  "annotations": {
+    "description": {
+      "value": "Closed cage 12 x 12 x 12 cm (1 cm walls and roof, open bottom, no other opening).",
+      "by": "agent:acceptance"
+    },
+    "friction": {
+      "value": 0.6,
+      "by": "agent:acceptance"
+    }
+  }
+}

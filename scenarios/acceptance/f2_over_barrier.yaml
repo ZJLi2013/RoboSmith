@@ -1,0 +1,14 @@
+scenario: acc_f2_over_barrier
+robot: franka
+scene:
+  support: table_simple
+  objects:
+    - {id: barrier, asset: wall_02, on: support, anchor_xy: [0.50, 0.0], yaw_deg: 90}
+    # Barrier-local x is world +y: the die stands 30-150 mm beyond the barrier face, the mat on the far side.
+    - {id: die, asset: die_01, on: support, offset_from: {of: barrier, x: [0.065, 0.185], y: [-0.08, 0.08]}}
+    - {id: mat, asset: mat_01, on: support, anchor_xy: [0.50, -0.15], yaw_deg: 0}
+task:
+  instruction: Put the die on the mat.
+  success:
+    on: {object: die, surface: mat.top}
+split: {playground: [0, 9], test: [100, 119]}
