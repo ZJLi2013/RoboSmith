@@ -25,7 +25,7 @@ flowchart TD
         OC["open_close.run_open / run_close<br/>gate.ungated"]
     end
 
-    INF["Infeasible：记 cause = infeasible 与各候选的拒绝原因<br/>零帧、零物理步，停在这一步"]
+    INF["Infeasible：记 cause = infeasible 与各候选的拒绝原因<br/>不正式回放（零帧），停在这一步<br/>之前过门的候选可能已试抓：物理步进后恢复"]
     CUR["ExecutionGate.check_current<br/>凭证指纹 ≠ 当前指纹就抛 StaleMotion"]
 
     subgraph SIM["仿真与判定"]
@@ -45,7 +45,7 @@ flowchart TD
     PICK & PLACE & OC -->|VerifiedMotion| CUR --> REC
     REC --> HO --> JC -->|下一段 / 下一步| RUN
     RUN -->|全部步骤结束| TASK
-    INF -->|入口不做任务判定，直接判失败| CLI
+    INF -->|入口不做任务判定的 settle，直接判失败| CLI
 ```
 
 技能内部见下一张图。teacher 与 agent 两条路径共用 `EpisodeRun`，只是步骤表的来源不同。agent 路径上 `infeasible` 也按

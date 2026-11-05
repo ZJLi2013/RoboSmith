@@ -79,7 +79,8 @@ agent 写步骤表（pick X、place X on Y…），技能执行，每步判定�
   真实步进与 `reset` 都会改变指纹。
 - **失效与零执行**：执行前 `check_current` 比对 `VerifiedMotion.fingerprint` 与当前指纹，不等就抛 `StaleMotion`。
   `verify` 抛出时，没有任何一点进入录制；步骤 `infeasible` 时 `EpisodeRun` 记 `cause: infeasible` 与各候选的拒绝原因，
-  零帧、零物理步并停在这一步，入口不做任务判定的 settle，直接判失败。settle 与保持只下发最后一个已验证点。
+  不做正式回放（零帧）并停在这一步，入口不做任务判定的 settle，直接判失败。判定之前，过了门的 pick 候选已在
+  试抓里步进过物理并恢复快照；只有所有候选都在门前被拒（例如 F4）时，这一步才在初始化之外零物理步。settle 与保持只下发最后一个已验证点。
   初始 reset / settle 属于场景初始化，不在门的范围。
 - **并发**：不支持。一个 `SimEnv` 同一时刻只能有一个调用者。
 
