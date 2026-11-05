@@ -66,6 +66,7 @@ def _read(path: Path):
 _ID = {"type": "string", "pattern": r"^[A-Za-z_]\w*$"}
 _REF = {"type": "string", "pattern": r"^[A-Za-z_]\w*(\.[A-Za-z_]\w*)?$"}
 _SEEDS = {"type": "array", "items": {"type": "integer"}, "minItems": 2, "maxItems": 2}
+_RANGE = {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}
 
 
 def _leaf(name: str, props: dict, required: list[str]) -> dict:
@@ -86,6 +87,10 @@ _SCENE_PROPS = {
             "on": _REF,
             "anchor_xy": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
             "near": {"enum": ["robot"]},
+            "offset_from": {
+                "type": "object", "additionalProperties": False, "required": ["of", "x", "y"],
+                "properties": {"of": _ID, "x": _RANGE, "y": _RANGE},
+            },
             "clear_of": {"type": "array", "items": {"type": "string"}},
             "facing": {"enum": ["robot"]},
             "yaw_deg": {"type": "number"},
