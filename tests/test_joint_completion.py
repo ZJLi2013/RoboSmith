@@ -101,6 +101,7 @@ class _Env:
     def __init__(self, q, rebound=None):
         self.q, self.rebound = q, rebound
         self.scene = SimpleNamespace(dt=1.0 / 30.0, t=0, step=self._step)
+        self.step = self._step
         self.franka = SimpleNamespace(control_dofs_position=lambda q, dofs: None, links=(),
                                       get_contacts=lambda: {"link_a": np.zeros(0), "link_b": np.zeros(0)})
         self.entity_map = {"die": _Ent([0.6, 0.0, 0.835]), "drawer": _Ent([0.6, 0.0, 0.775])}

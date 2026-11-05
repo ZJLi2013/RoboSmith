@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 
 pytest.importorskip("torch")
@@ -113,3 +114,75 @@ def test_trial_from_here_restores_the_scene_and_the_arm_target():
     assert env.scene.calls == ["get_state", "step", "step", "step", "reset"]
     assert ent.pos == pytest.approx([0.42, -0.27, 0.80])
     assert env.franka.commands[-1] == pytest.approx([0.1] * 9)
+
+
+def _geoms(*items):
+    return [SimpleNamespace(idx=i, link=SimpleNamespace(name=n)) for i, n in items]
+
+
+class _QueryEntity(_FakeEntity):
+    def __init__(self, pos, geoms, qpos=()):
+        super().__init__(pos)
+        self.geoms, self.qpos = geoms, list(qpos)
+        self.n_dofs = len(self.qpos)
+
+    def set_dofs_position(self, qpos, *args, **kwargs):
+        self.qpos[: len(qpos)] = list(qpos)
+
+    def get_qpos(self):
+        return list(self.qpos)
+
+    def get_dofs_velocity(self):
+        return [0.0] * self.n_dofs
+
+
+class _QueryScene(_SnapshotScene):
+    def __init__(self, ent, pairs):
+        super().__init__(ent)
+        self.sim = SimpleNamespace(rigid_solver=SimpleNamespace(detect_collision=lambda: pairs))
+
+
+def _query_env(pairs):
+    env = object.__new__(SimEnv)
+    die = _QueryEntity([0.5, 0.0, 0.8], _geoms((3, "die_link")))
+    env.franka = _QueryEntity([0.0, 0.0, 0.0], _geoms((0, "hand"), (1, "left_finger")), qpos=[0.0] * 9)
+    env.end_effector = _FakeEntity([0.5, 0.0, 1.0])
+    env.motors_dof = list(range(9))
+    env.entity_map = {"die": die}
+    env.scene = _QueryScene(die, pairs)
+    return env
+
+
+def test_contacts_at_names_the_links_and_restores_the_scene():
+    env = _query_env([[1, 3], [3, 7]])
+
+    assert env.contacts_at([0.0] * 9) == [(("robot", "left_finger"), ("die", "die_link")),
+                                          (("die", "die_link"), ("env", "?"))]
+    assert env.scene.calls == ["get_state", "reset"]
+
+
+def test_contacts_at_restores_the_scene_when_the_query_fails():
+    env = _query_env([])
+
+    with pytest.raises(KeyError):
+        env.contacts_at([0.0] * 9, held=("missing", np.eye(4)))
+    assert env.scene.calls == ["get_state", "reset"]
+
+
+def test_state_fingerprint_follows_the_joint_state():
+    env = _query_env([])
+    before = env.state_fingerprint()
+    env.franka.qpos[0] = 0.1
+
+    assert env.state_fingerprint() != before
+
+
+def test_a_real_step_changes_the_fingerprint_and_a_query_does_not():
+    env = _query_env([[1, 3]])
+    before = env.state_fingerprint()
+    env.contacts_at([0.0] * 9)
+    env.hand_pose([0.0] * 9)
+    assert env.state_fingerprint() == before
+
+    env.step()
+    assert env.state_fingerprint() != before

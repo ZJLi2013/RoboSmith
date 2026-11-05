@@ -5,10 +5,12 @@ and reset logic. No episode/recording concerns.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import subprocess
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -23,6 +25,7 @@ from robotsmith.sim.franka import (
 from robotsmith.assets.schema import Asset
 from robotsmith.grasp.geometric import GeometricGraspPlanner
 from robotsmith.grasp.planner import GraspPlanner
+from robotsmith.grasp.transforms import pose_matrix, rotmat_to_quat_wxyz
 from robotsmith.scenes.config import SceneConfig
 
 logger = logging.getLogger(__name__)
@@ -122,6 +125,7 @@ class SimEnv:
     """object name -> {joint name -> initial qpos} applied (passively) on reset."""
 
     _default_finger_open: float = 0.04
+    _writes: int = 0
 
     # ---- Factory ----
 
@@ -272,7 +276,7 @@ class SimEnv:
         t0 = time.perf_counter()
         for q in trajectory:
             self.franka.control_dofs_position(q, self.motors_dof)
-            self.scene.step()
+            self.step()
         dz = float(to_numpy(self.entity_map[target].get_pos()).reshape(-1)[2]) - z0
         return {"lifted": dz > lift_m, "lift_m": round(dz, 4), "seconds": round(time.perf_counter() - t0, 3)}
 
@@ -286,12 +290,77 @@ class SimEnv:
         try:
             for q in trajectory:
                 self.franka.control_dofs_position(q, self.motors_dof)
-                self.scene.step()
+                self.step()
             dz = float(to_numpy(self.entity_map[target].get_pos()).reshape(-1)[2]) - z0
         finally:
             self.scene.reset(snapshot)
             self.franka.control_dofs_position(qpos, self.motors_dof)
         return {"lifted": dz > lift_m, "lift_m": round(dz, 4), "seconds": round(time.perf_counter() - t0, 3)}
+
+    def step(self) -> None:
+        """One physics step. Real steps and ``reset`` go through here, so ``state_fingerprint`` changes
+        even when they leave the same joint values; the static queries' restores do not count."""
+        self.scene.step()
+        self._writes += 1
+
+    # ---- Static queries: each poses bodies inside a snapshot and restores it ----
+
+    @contextmanager
+    def _snapshot(self):
+        snapshot = self.scene.get_state()
+        try:
+            yield
+        finally:
+            self.scene.reset(snapshot)
+
+    def _set_arm(self, qpos) -> None:
+        self.franka.set_dofs_position(np.asarray(qpos, dtype=np.float32), self.motors_dof, zero_velocity=True)
+
+    def _hand(self) -> tuple[np.ndarray, np.ndarray]:
+        return (to_numpy(self.end_effector.get_pos()).reshape(-1).astype(np.float64),
+                to_numpy(self.end_effector.get_quat()).reshape(-1).astype(np.float64))
+
+    def _geom_owner(self) -> dict[int, tuple[str, str]]:
+        owner: dict[int, tuple[str, str]] = {}
+        named = [("robot", self.franka), *self.entity_map.items()]
+        known = {id(e) for _, e in named}
+        others = [("env", e) for e in getattr(self.scene, "entities", []) if id(e) not in known]
+        for name, ent in [*others, *named]:
+            for geom in getattr(ent, "geoms", []):
+                owner[geom.idx] = (name, geom.link.name)
+        return owner
+
+    def hand_pose(self, qpos) -> tuple[np.ndarray, np.ndarray]:
+        """Hand-link ``(pos, quat_wxyz)`` at ``qpos``; the scene is unchanged on return."""
+        with self._snapshot():
+            self._set_arm(qpos)
+            return self._hand()
+
+    def contacts_at(self, qpos, held: tuple[str, np.ndarray] | None = None) -> list[tuple[tuple[str, str], ...]]:
+        """Contacts with the arm at ``qpos`` and, with ``held=(name, T_hand_obj)``, that object at
+        ``hand · T_hand_obj``: ``[((entity, link), (entity, link)), ...]``, read by collision detection
+        without stepping. The scene is unchanged on return."""
+        owner = self._geom_owner()
+        with self._snapshot():
+            self._set_arm(qpos)
+            if held is not None:
+                name, t_hand_obj = held
+                t = pose_matrix(*self._hand()) @ np.asarray(t_hand_obj, dtype=np.float64)
+                ent = self.entity_map[name]
+                ent.set_pos(t[:3, 3].astype(np.float32), zero_velocity=True)
+                ent.set_quat(rotmat_to_quat_wxyz(t[:3, :3]).astype(np.float32), zero_velocity=True, relative=False)
+            pairs = self.scene.sim.rigid_solver.detect_collision()
+        unknown = ("env", "?")
+        return [(owner.get(int(a), unknown), owner.get(int(b), unknown)) for a, b in pairs]
+
+    def state_fingerprint(self) -> str:
+        """Hash of the real-write count and every rigid entity's joint positions and velocities."""
+        h = hashlib.sha1(str(self._writes).encode())
+        for ent in [self.franka, *self.entity_map.values()]:
+            if getattr(ent, "n_dofs", 0):
+                h.update(to_numpy(ent.get_qpos()).astype(np.float32).tobytes())
+                h.update(to_numpy(ent.get_dofs_velocity()).astype(np.float32).tobytes())
+        return h.hexdigest()
 
     # ---- Workspace ----
 
@@ -454,6 +523,7 @@ class SimEnv:
         sim must not recompute it. Only fall back to the table-relative
         ``get_initial_z`` when z is omitted (2-tuple).
         """
+        self._writes += 1
         self.franka.set_dofs_position(HOME_QPOS, self.motors_dof)
         self.franka.control_dofs_position(HOME_QPOS, self.motors_dof)
         self.franka.zero_all_dofs_velocity()
@@ -488,7 +558,7 @@ class SimEnv:
         self._apply_joint_init()
 
         for _ in range(settle_steps):
-            self.scene.step()
+            self.step()
 
         positions = self.sync_object_states()
         violations = settle_violations(

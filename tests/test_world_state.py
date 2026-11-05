@@ -54,6 +54,9 @@ class _Env:
         self.franka = _Franka()
         self.entity_map = {"die": _Ent([0.5, 0.0, 0.84]), "supporter": _Ent([0.56, 0.0, 0.775])}
 
+    def step(self):
+        self.scene.step()
+
     def get_joint_positions(self):
         return {}
 

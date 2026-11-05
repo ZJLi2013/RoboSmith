@@ -89,6 +89,9 @@ class _Env:
         self.placed_map, self.object_heights, self.asset_map, self.object_quats = {}, {}, {}, {}
         self.table_surface_z, self.articulated_joint_dofs, self.planner = 0.775, {}, object()
 
+    def step(self):
+        self.scene.step()
+
     def reset(self, obj_xyz_map, *, settle_steps):
         pass
 

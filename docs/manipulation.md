@@ -53,7 +53,8 @@ agent 写步骤表（pick X、place X on Y…），技能执行，每步判定�
   任何一个轨迹点违规就抛 `MotionRejected(segment, pair)`。门检查的是**会被执行的每一个稠密轨迹点**，不抽样；性能优化
   不得减少被检查的点。
 - `SimEnv.contacts_at(qpos, held=None)` 与 `SimEnv.hand_pose(qpos)` 在一个快照事务里摆构型、跑碰撞检测或正运动学，
-  返回前还原快照。`SimEnv.state_fingerprint()` 是全部刚体关节位置与速度的哈希。
+  返回前还原快照。`SimEnv.state_fingerprint()` 是真实写入代次与全部刚体关节位置、速度的哈希：代次由 `SimEnv.step()`
+  与 `SimEnv.reset()` 递增，录制与 settle 窗口都经 `SimEnv.step()` 步进；快照事务内的还原不递增，所以同值 reset 也会让旧验证失效。
 - 航点多两个字段：`holding`（这一段手里有没有被抓物）与 `allow`（取自 `grip` / `rest`）。
 
 契约：
@@ -87,17 +88,20 @@ agent 写步骤表（pick X、place X on Y…），技能执行，每步判定�
 - Panda 手指沿 hand 局部 Y 闭合；夹爪可用开口至少 7.5 cm。
 - 同一个末端位姿换 IK 初值，接触结果会变：验证过的关节构型要带到执行，执行时不再重新解 IK。
 
-- 以下三点还未核实，由迁移第 2 步的探针回答：
-  - 摆好构型后，`rigid_solver.detect_collision()` 是否反映新构型；
-  - 单点检测的耗时；
-  - 快照还原后，状态指纹是否与之前一致。
+- `SimEnv` 的三个查询已在 Genesis 0.4.5（MI300X、F1 场景）上实测，测试在 `tests/test_sim_queries_gpu.py`：
+  - `set_dofs_position` 摆好构型后，`rigid_solver.detect_collision()` 直接反映新构型；交替查询相交 / 分离构型不沿用上一次结果。
+    持物按 `set_pos` / `set_quat` 摆到手位姿 · T 后同样即时生效。
+  - 快照事务 `scene.get_state()` / `scene.reset(state)` 还原后指纹不变，查询抛异常时也还原。同值 `reset` 两次后关节值只差
+    3e-8，内容哈希分不出来，所以指纹里要带 `SimEnv` 的真实写入代次。
+  - 单点耗时（预热 5 次、各 50 次）中位数：无接触 10 ms，有接触 20 ms，带持物 32 ms，`hand_pose` 7.5 ms。
+    几百个稠密点的轨迹过一次门要几秒；第一版接受，不抽样。
 
 ## 下一步
 
 按四步迁移，每步单独可合入：
 
 1. ✅ 删除 rocRobo、`collision_aware` 分叉与碰撞盲退回（含 Docker socket 挂载与 sidecar 文档）；
-2. `SimEnv` 的快照接口，加 GPU 探针；
+2. ✅ `SimEnv` 的快照接口，加 GPU 探针；
 3. 接入执行门、航点字段，并加 `infeasible` 失败；
 4. 重写 [调用链](call-chain.md)。
 
