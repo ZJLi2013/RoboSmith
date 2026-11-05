@@ -41,7 +41,7 @@ agent 写步骤表（pick X、place X on Y…），技能执行，每步判定�
 | 概念 | Owner |
 |---|---|
 | Genesis 场景状态：快照、构型、状态指纹 | `SimEnv` |
-| 「这条轨迹能不能执行」、持物生命周期与接触许可规则 | `ExecutionGate`（许可规则只在 `permitted` 一处） |
+| 「这条轨迹能不能执行」、持物生命周期与接触许可规则 | `ExecutionGate`（许可规则只在 `permitted` 一处；读实际物理接触的验收用同模块的 `certified`，见 [certified 读数](acceptance.md#被测链路的-certified-读数)） |
 | 候选及其顺序（抓取、搬运高度） | 技能层（`run_pick` / `run_place`） |
 | 航点模板与每段的持物 / 允许接触 | `MotionExecutor` |
 | 关键位姿到稠密关节路径与段边界 | `motion.chain.execute_motion_chain` |

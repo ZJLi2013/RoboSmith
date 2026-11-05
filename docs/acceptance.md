@@ -69,6 +69,25 @@ python scripts/acceptance/witness.py --family f2_over_barrier --seeds 100 119 --
 
 F2 只跑了 2 个实例：穿透接触让求解器变慢，批次在第 3 个实例前超时。
 
+## 被测链路的 certified 读数
+
+`scripts/acceptance/certify.py` 对每个实例用 teacher 步骤跑一次 `EpisodeRun`（技能、执行门、执行器），不渲染：
+
+```text
+python scripts/acceptance/certify.py --family f1_wall_gap --split test --out out/f1_test
+```
+
+- **每个物理步都判**：`SimEnv.step()` 每步回调一次，读该步解出的接触，按正在执行的 span 用
+  `robotsmith.execution.gate.certified` 判。试抓、正式回放用已验证轨迹的 span，步骤与任务判定的 settle 用末个
+  已回放的 span；reset 及其静止计步不判；不属于任何阶段的物理步算违规。试抓的快照恢复不抹掉它的接触计数。
+- **规则**是执行门的 `permitted` 再加一条：die 没被抓着时只能碰桌面、放置目标与机器人手指。门判的是静态位姿，
+  认证判的是实际物理，没被抓的 die 碰到墙说明它被推了。和见证的差别：搬运中 die 擦到桌面也算违规。
+- **certified**：正例要任务谓词成立且零违规；负例要第一步判 `infeasible` 且 reset 之后零物理步。
+  其余结果分别记 `infeasible`、`violation`、`task_failed`、`init_failed`（静止检查不过）与 `error`（抛异常，重试一次，
+  两次尝试都留在 `instances.jsonl`，取后一次）。
+- 每实例一行：布局、静止后位置、难度参数、各阶段物理步与违规步、首个违规（阶段、span、接触对、物理步号）、
+  正式帧数、交接记录、任务判定。
+
 ## 不在这一版
 
 - 侧插放置（格子、货架）：需要俯抓以外的抓取朝向，属于给链路加能力。

@@ -78,6 +78,17 @@ def permitted(pair, span: Span, target: str, rest: set) -> bool:
     return True
 
 
+def certified(pair, span: Span, target: str, rest: set) -> bool:
+    """``permitted``, and a target that is not held touches only rest surfaces and the robot. For contacts read
+    from executed physics, where a free target meeting an obstacle means something pushed it."""
+    if not permitted(pair, span, target, rest):
+        return False
+    (ea, _), (eb, _) = pair
+    if span.holding or target not in (ea, eb) or ea == eb:
+        return True
+    return (eb if ea == target else ea) in {*rest, "robot"}
+
+
 class ExecutionGate:
     def __init__(self, env):
         self.env = env

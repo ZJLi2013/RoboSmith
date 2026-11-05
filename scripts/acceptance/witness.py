@@ -99,6 +99,24 @@ def _hold(q, fingers, n=40):
     return [q] * n
 
 
+def difficulty(family: str, placed: dict, die: np.ndarray) -> dict:
+    """The family's continuous difficulty parameter for the settled die and the placed fixtures."""
+    if family == "f1_wall_gap":
+        return {"gap_m": round(float(placed["wall"][0] - 0.01 - (die[0] + 0.023)), 4)}
+    if family == "f2_over_barrier":
+        return {"dist_m": round(float(die[1] - placed["barrier"][1] - 0.01 - DIE_HALF), 4)}
+    if family == "f0_open":
+        return {"reach_m": round(float(np.hypot(die[0], die[1])), 4)}
+    return {}
+
+
+def caged(placed: dict, die: np.ndarray) -> str:
+    """Why the settled die is not inside its cage; empty when it is."""
+    off = np.abs(die[:2] - placed["cage"][:2])
+    inside = bool(np.all(off < 0.05 - 0.025) and die[2] < TABLE_Z + 0.06)
+    return "" if inside else f"die not inside cage: {off}"
+
+
 def witness(env, task, fam: dict, die: np.ndarray, mat: np.ndarray) -> dict:
     quat = _quat(fam["yaw"])
     carry = TABLE_Z + fam["carry"]
@@ -170,16 +188,10 @@ def main() -> None:
             rows.append({**row, "settle_ok": False, "witness_ok": False, "why": str(e)})
             continue
         die = _np(env.entity_map["die"].get_pos()).reshape(-1)
-        if args.family == "f1_wall_gap":
-            row["gap_m"] = round(float(placed["wall"][0] - 0.01 - (die[0] + 0.023)), 4)
-        elif args.family == "f2_over_barrier":
-            row["dist_m"] = round(float(die[1] - placed["barrier"][1] - 0.01 - DIE_HALF), 4)
-        elif args.family == "f0_open":
-            row["reach_m"] = round(float(np.hypot(die[0], die[1])), 4)
+        row.update(difficulty(args.family, placed, die))
         if fam is None:
-            off = np.abs(die[:2] - placed["cage"][:2])
-            inside = bool(np.all(off < 0.05 - 0.025) and die[2] < TABLE_Z + 0.06)
-            rows.append({**row, "witness_ok": inside, "why": "" if inside else f"die not inside cage: {off}"})
+            why = caged(placed, die)
+            rows.append({**row, "witness_ok": not why, "why": why})
             continue
         w = witness(env, pkg.legacy_task, fam, die, placed["mat"])
         ok = w["success"] and w["first_illegal"] is None

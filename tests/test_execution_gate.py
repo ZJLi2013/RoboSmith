@@ -7,7 +7,7 @@ import pytest
 
 from robotsmith.execution.executor import MotionExecutor
 from robotsmith.execution.gate import (ExecutionGate, Infeasible, MotionRejected, Span, StaleMotion,
-                                       VerifiedMotion, permitted, spans_of)
+                                       VerifiedMotion, certified, permitted, spans_of)
 from robotsmith.grasp.planner import GraspPlan
 from robotsmith.motion.params import MotionParams
 from robotsmith.motion.planner import GenesisBackend
@@ -125,6 +125,19 @@ def test_gate_rejects_a_violation_in_any_span_including_holds(where):
 ])
 def test_gate_contact_rules_per_segment(pair, span, ok):
     assert permitted(pair, span, "die", {"env", "mat"}) is ok
+
+
+@pytest.mark.parametrize("pair, span, gate_ok, cert_ok", [
+    ((("die", "base"), ("wall", "base")), Span("approach", 0, 1), True, False),
+    ((("die", "base"), ("env", "table")), Span("approach", 0, 1), True, True),
+    ((("die", "base"), ("mat", "base")), Span("retreat", 0, 1, allow="grip"), True, True),
+    ((("robot", "left_finger"), ("die", "base")), Span("retreat", 0, 1, allow="grip"), True, True),
+    ((("robot", "hand"), ("die", "base")), Span("retreat", 0, 1, allow="grip"), False, False),
+    ((("wall", "base"), ("env", "table")), Span("approach", 0, 1), True, True),
+])
+def test_certification_also_rejects_a_free_target_meeting_an_obstacle(pair, span, gate_ok, cert_ok):
+    assert permitted(pair, span, "die", {"env", "mat"}) is gate_ok
+    assert certified(pair, span, "die", {"env", "mat"}) is cert_ok
 
 
 def test_gate_checks_the_held_object_only_while_holding():

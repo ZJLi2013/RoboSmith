@@ -13,7 +13,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import numpy as np
 import torch
@@ -123,6 +123,9 @@ class SimEnv:
     """object name -> {joint name -> local DOF index} for articulated assets."""
     articulated_joint_init: dict[str, dict[str, float]] = field(default_factory=dict)
     """object name -> {joint name -> initial qpos} applied (passively) on reset."""
+
+    on_step: Optional[Callable[["SimEnv"], None]] = None
+    """Called after every physics step; for observers that must see each one (e.g. contact monitors)."""
 
     _default_finger_open: float = 0.04
     _writes: int = 0
@@ -289,6 +292,24 @@ class SimEnv:
         even when they leave the same joint values; the static queries' restores do not count."""
         self.scene.step()
         self._writes += 1
+        if self.on_step is not None:
+            self.on_step(self)
+
+    def contacts_now(self) -> list[tuple[tuple[str, str], ...]]:
+        """Contacts the last physics step resolved that involve the arm or a named entity:
+        ``[((entity, link), (entity, link)), ...]``, links outside them as ``("env", "?")``. Reads only."""
+        owner = {lk.idx: (name, lk.name) for name, ent in [("robot", self.franka), *self.entity_map.items()]
+                 for lk in ent.links}
+        pairs = set()
+        for ent in [self.franka, *self.entity_map.values()]:
+            c = ent.get_contacts()
+            a, b = to_numpy(c["link_a"]).reshape(-1), to_numpy(c["link_b"]).reshape(-1)
+            if "valid_mask" in c:
+                m = to_numpy(c["valid_mask"]).reshape(-1).astype(bool)
+                a, b = a[m], b[m]
+            for i, j in zip(a, b):
+                pairs.add(tuple(sorted((owner.get(int(i), ("env", "?")), owner.get(int(j), ("env", "?"))))))
+        return sorted(pairs)
 
     # ---- Static queries: each poses bodies inside a snapshot and restores it ----
 
