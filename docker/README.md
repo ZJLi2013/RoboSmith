@@ -7,7 +7,7 @@ One image per GPU architecture. Build from the repository root:
 | MI300 (gfx942) | `docker build -f docker/Dockerfile.gfx942 -t robotsmith:gfx942-rocm6.4.3-genesis0.4.5 .` |
 | MI350 (gfx950) | `docker build -f docker/Dockerfile.gfx950 -t robotsmith:rocm-headless .` |
 
-[`docs/quick-start.md`](../docs/quick-start.md) covers the rocRobo sidecar and the first run.
+[`docs/quick-start.md`](../docs/quick-start.md) covers the first run.
 
 Headless rendering policy:
 

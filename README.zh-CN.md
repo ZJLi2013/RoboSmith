@@ -62,7 +62,7 @@ MVP 还要做的，按顺序：
 - **资产：** 由 agent 生成（默认写 Blender 脚本），LLM 评审在仿真里取证后准入，按哈希发布到 Hugging Face。
 - **Scenario：** YAML，写物体、关系、对执行方隐藏的成功判定树，以及 playground / test 两段 seed。
 - **操作：** pick 用几何候选在仿真里试抓，全失败时 agent 修复环介入；place 支持台面、搁板、抽屉；棱柱关节开合；
-  自由段由 [rocRobo](https://github.com/ZJLi2013/rocRobo) 规划。
+  自由段在关节空间插值，不查碰撞。
 - **验证：** 每一步和整个任务用同一组谓词读仿真状态判定，可离线复判。
 
 主要限制：单台 Franka、一张桌子；手指位置控制（约 0.2 kg 以上会滑脱）；MI300X 上是软件渲染，还不适合评测 VLA；一个进程一个场景。

@@ -11,7 +11,6 @@ where the re-read changes nothing.
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass
 from typing import Callable
 
@@ -26,22 +25,6 @@ from robotsmith.tasks import evaluate_success
 from robotsmith.tasks.task_spec import TaskSpec
 
 logger = logging.getLogger(__name__)
-
-
-def _maybe_motion_planner(env):
-    """Construct the rocRobo collision-free backend when enabled (else None).
-
-    Gated by ``ROCROBO_BACKEND``. The backend degrades to Genesis IK when the
-    warm serve is unreachable.
-    """
-    if not os.environ.get("ROCROBO_BACKEND"):
-        return None
-    from robotsmith.motion.rocrobo_backend import RocRoboBackend
-
-    logger.info("[rocrobo] collision-free backend enabled (ROCROBO_BACKEND)")
-    # Franka base is mounted on the table at world z=table_surface_z; rocRobo plans
-    # with its base at z=0, so the backend rebases all poses/world geometry.
-    return RocRoboBackend(env.solve_ik, base_z=float(getattr(env, "table_surface_z", 0.0)))
 
 
 @dataclass
@@ -124,7 +107,6 @@ class EpisodeRun:
         self.held: str | None = None
         self.frame_count = 0
         self.window = None
-        self.motion_planner = _maybe_motion_planner(env)
 
     def _record_step(self, q):
         self.record_fn(self.env, self.dataset, [q], self.task_spec, camera_names=self.camera_names,
@@ -134,7 +116,6 @@ class EpisodeRun:
         """Execute ``skills`` with their ``bindings``; with ``stop_on_fail`` return the handoff of the first step
         judged false (the remaining steps are not run), else ``None``."""
         env = self.env
-        planner_kw = {"motion_planner": self.motion_planner} if self.motion_planner is not None else {}
         for k, (skill, binding) in enumerate(zip(skills, list(bindings) + [None] * (len(skills) - len(bindings)))):
             i = len(self.skills)
             self.skills.append(skill)
@@ -154,7 +135,7 @@ class EpisodeRun:
                 seg, self.held_category, self.held_place_z = plan_segment(
                     skill, i, planned, env.planner, self.executor, env.solve_ik,
                     scene_state, self.motion_params, self.qpos, self.held_category, self.held_place_z,
-                    phase=phase, **planner_kw,
+                    phase=phase,
                 )
                 samples = self.record_fn(
                     env,
@@ -172,7 +153,6 @@ class EpisodeRun:
                     joints_before=scene_state["joint_positions"],
                     joints_after=env.get_joint_positions() if hasattr(env, "get_joint_positions") else {},
                     trace=self.skill_traces[-1] if self.skill_traces else None,
-                    rocrobo=self.motion_planner is not None,
                 )
                 self.handoffs.append(entry)
                 if skill.name == "pick":

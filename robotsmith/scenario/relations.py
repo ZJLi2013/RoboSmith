@@ -28,7 +28,6 @@ import numpy as np
 from robotsmith.assets import derive
 from robotsmith.assets.library import AssetLibrary
 from robotsmith.assets.schema import Asset, parse_urdf_collision_boxes
-from robotsmith.motion.rocrobo_world import rigid_moving_links
 from robotsmith.scenes.config import DEFAULT_WORKSPACE_XY, SceneConfig, table_center_xy
 from robotsmith.sim.franka import REACH_HALF_ANGLE_DEG, REACH_M
 
@@ -197,6 +196,26 @@ def _to_world(p: Placement, local) -> np.ndarray:
 
 def _corners_xy(lo, hi) -> np.ndarray:
     return np.array([[lo[0], lo[1]], [lo[0], hi[1]], [hi[0], lo[1]], [hi[0], hi[1]]])
+
+
+def rigid_moving_links(asset: Asset, moving_link: str | None) -> set[str]:
+    """``moving_link`` plus every link rigidly attached to it via fixed joints.
+
+    The drawer slide moves its joint child *and* anything bolted to that child
+    (e.g. a separated ``handle`` link), so they share the same slide displacement.
+    """
+    if moving_link is None:
+        return set()
+    moving: set[str] = {moving_link}
+    joints = list(getattr(asset, "joints", []) or [])
+    changed = True
+    while changed:
+        changed = False
+        for j in joints:
+            if j.type == "fixed" and j.parent in moving and j.child not in moving:
+                moving.add(j.child)
+                changed = True
+    return moving
 
 
 def _footprint(asset: Asset, bounds, position, yaw_deg: float, swept: bool):

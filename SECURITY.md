@@ -24,5 +24,5 @@ available.
 ## Trust boundary
 
 Scenario files are Python modules and run with your privileges; load only scenarios you trust. The e2e launcher
-`scripts/setup/run_scenario.sh` mounts the Docker socket into the container, so the container can control the host
-Docker daemon. Run it only on machines where that is acceptable.
+`scripts/setup/run_scenario.sh` passes the host GPU devices into the container and mounts the repository and the
+Hugging Face cache read-write.

@@ -6,8 +6,8 @@ A waypoint chain is solved once and consumed two ways:
   return IK diagnostics (joint margin, total distance, final-approach step) without
   running a rollout. Used by grasp scoring.
 - ``execute_motion_chain`` — **runtime**: solve the chain and expand it into a full
-  step-by-step joint-space trajectory (velocity-adaptive timing, optional
-  collision-free ``plan_motion`` sub-paths). Used by ``MotionExecutor``.
+  step-by-step joint-space trajectory (velocity-adaptive timing). Used by
+  ``MotionExecutor``.
 
 Both share segment classification (``classify_segments`` / ``_same_pose``): a
 finger-only waypoint repeats the previous EE pose with a different finger width,
@@ -31,7 +31,7 @@ from robotsmith.motion.cartesian import (
 )
 from robotsmith.motion.constants import N_ARM_JOINTS as _N_ARM_JOINTS
 from robotsmith.motion.params import MotionParams
-from robotsmith.motion.planner import MotionPlanner, Waypoint
+from robotsmith.motion.planner import MotionPlanner
 
 logger = logging.getLogger(__name__)
 
@@ -197,25 +197,14 @@ def _solve_segment(
     q_from: np.ndarray,
     *,
     motion_planner: MotionPlanner,
-    world: list[dict] | None,
-    attach: dict | None,
-    params: MotionParams,
     raise_on_cartesian_discontinuity: bool,
 ) -> tuple[np.ndarray, list[np.ndarray] | None, float]:
     """Solve one segment → (endpoint qpos, dense path | None, arm displacement).
 
     Routing: finger-only locks the arm; cartesian walks a continuity-checked
-    Cartesian path (and reports its per-step continuity metric); a free segment
-    with a ``world`` tries collision-free ``plan_motion`` (straight-line fallback
-    on miss); otherwise plain per-pose IK.
+    Cartesian path (and reports its per-step continuity metric); otherwise plain
+    per-pose IK, interpolated in joint space.
     """
-
-    def _ik(q_seed: np.ndarray) -> np.ndarray:
-        return np.asarray(
-            motion_planner.solve_ik(wp.pos, wp.quat, wp.finger_width, init_qpos=q_seed),
-            dtype=np.float64,
-        )
-
     segment_path: list[np.ndarray] | None = None
     if wp.finger_only:
         q_to = q_from.copy()
@@ -238,32 +227,11 @@ def _solve_segment(
         )
         segment_path = path.path
         return segment_path[-1].copy(), segment_path, path.max_joint_step
-    elif world is not None:
-        plan = motion_planner.plan_motion(
-            q_from,
-            [Waypoint(wp.pos, wp.quat, wp.finger_width)],
-            world=world,
-            control_dt=params.dt,
-            attach=attach,
-        )
-        if plan.success and plan.trajectory:
-            segment_path = [np.asarray(q, dtype=np.float64) for q in plan.trajectory]
-            q_to = segment_path[-1].copy()
-        else:
-            # Collision-blind straight-line last resort. Endpoint geometry is
-            # authored to be reachable upstream (adaptive transport hover +
-            # lift-then-swing), so a miss here means the goal itself is
-            # unreachable/inside a keep-out — loud, because this segment then
-            # loses its collision guarantee.
-            logger.warning(
-                "[MotionExecutor] plan_motion miss on %s (%s); "
-                "collision-blind straight-line fallback",
-                wp.label,
-                plan.reason,
-            )
-            q_to = _ik(q_from)
     else:
-        q_to = _ik(q_from)
+        q_to = np.asarray(
+            motion_planner.solve_ik(wp.pos, wp.quat, wp.finger_width, init_qpos=q_from),
+            dtype=np.float64,
+        )
 
     max_joint_step = float(
         np.max(np.abs(q_to[:_N_ARM_JOINTS] - q_from[:_N_ARM_JOINTS]))
@@ -354,24 +322,14 @@ def execute_motion_chain(
     *,
     tail_hold_steps: int = 0,
     raise_on_cartesian_discontinuity: bool = True,
-    world: list[dict] | None = None,
-    attach: dict | None = None,
 ) -> MotionChainExecution:
     """Execute runtime waypoints with seed-continuous IK and diagnostics.
 
-    The motion seam is a single ``MotionPlanner``: per-pose IK goes through
-    ``motion_planner.solve_ik`` (the collision-blind ``GenesisBackend`` when no
-    collision-aware backend is wired). ``raise_on_cartesian_discontinuity`` gates
-    free-space Cartesian segments (pick/place) where an IK branch flip would whip
-    the arm. Contact drags (open/close) set it False: the motion is
-    position-controlled against a held handle, so a reconfiguration is tracked
-    instead of aborting the episode.
-
-    With a ``world``, each free-space arm segment (not finger-only, not the
-    contact-drag cartesian path) is routed through ``motion_planner.plan_motion``
-    for a **collision-free** sub-path that avoids ``world`` (the cabinet/drawer
-    envelope) instead of straight-line interpolation. A segment the planner cannot
-    solve (incl. the collision-blind fallback) uses ``solve_ik`` + interpolation.
+    Per-pose IK goes through ``motion_planner.solve_ik``; nothing here checks
+    collisions. ``raise_on_cartesian_discontinuity`` gates free-space Cartesian
+    segments (pick/place) where an IK branch flip would whip the arm. Contact
+    drags (open/close) set it False: the motion is position-controlled against a
+    held handle, so a reconfiguration is tracked instead of aborting the episode.
     """
     q_targets = [np.asarray(start_qpos, dtype=np.float64).copy()]
     segment_paths: list[list[np.ndarray] | None] = []
@@ -385,9 +343,6 @@ def execute_motion_chain(
             waypoints,
             q_from,
             motion_planner=motion_planner,
-            world=world,
-            attach=attach,
-            params=params,
             raise_on_cartesian_discontinuity=raise_on_cartesian_discontinuity,
         )
         q_targets.append(q_to)

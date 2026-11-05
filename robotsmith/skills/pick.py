@@ -1,8 +1,7 @@
 """``pick`` primitive: select an executable grasp and lift the object.
 
 Candidates are tried in simulation (``scene_state["grasp_trial"]``) and the first that lifts the target is
-executed; without a trial callback the planner's first candidate is used. Motion goes to ``MotionExecutor``;
-the grasped payload is frozen as an attached collision object (ACO) so downstream transport/place plan around it.
+executed; without a trial callback the planner's first candidate is used. Motion goes to ``MotionExecutor``.
 """
 
 from __future__ import annotations
@@ -12,13 +11,7 @@ import logging
 import numpy as np
 
 from robotsmith.grasp.planner import GraspPlan
-from robotsmith.grasp.transforms import pose_matrix
 from robotsmith.motion.params import MotionParams
-from robotsmith.motion.rocrobo_world import (
-    PANDA_FINGER_LINKS,
-    build_obstacle_world,
-    build_payload_spheres,
-)
 from robotsmith.skills.base import Skill, SkillContext
 from robotsmith.skills.registry import bound_leaf, register
 
@@ -124,36 +117,6 @@ def _pick_seed_transit(
     return seed, transit
 
 
-def _capture_payload_aco(ctx: SkillContext, plan: GraspPlan) -> None:
-    """Freeze the grasped payload as an ACO (spheres + T_ee_obj) on the executor.
-
-    T_ee_obj is frozen at the grasp instant (inv(T_world_ee) @ T_world_obj) — a
-    live object pose at place time would drift with physical slip. Spheres are in
-    the object frame; serve rides them on the EE via T_ee_obj. Stored on the
-    executor (persists across skills); cleared on release in ``place``.
-    """
-    skill = ctx.skill
-    asset = ctx.scene_state.get("assets", {}).get(skill.target)
-    payload_spheres = build_payload_spheres(asset)
-    if not payload_spheres:
-        ctx.executor.held_attach = None
-        return
-    quats = ctx.scene_state.get("object_quats", {})
-    obj_quat = np.asarray(quats.get(skill.target, (1.0, 0.0, 0.0, 0.0)), dtype=np.float64)
-    T_world_ee = pose_matrix(
-        np.asarray(plan.grasp_pos, dtype=np.float64),
-        np.asarray(plan.grasp_quat, dtype=np.float64),
-    )
-    T_world_obj = pose_matrix(np.asarray(ctx.obj_pos, dtype=np.float64), obj_quat)
-    T_ee_obj = np.linalg.inv(T_world_ee) @ T_world_obj
-    ctx.executor.held_attach = {
-        "ee_link": "hand",
-        "T_ee_obj": [[float(v) for v in row] for row in T_ee_obj],
-        "spheres": payload_spheres,
-        "exempt_self_links": list(PANDA_FINGER_LINKS),
-    }
-
-
 def _select_by_trial(ctx: SkillContext, trial) -> tuple[GraspPlan, list[np.ndarray]] | None:
     """Try candidates in planner order from the same start state; keep the first that lifts the target.
 
@@ -189,22 +152,7 @@ def _select_by_trial(ctx: SkillContext, trial) -> tuple[GraspPlan, list[np.ndarr
 def _pick_motion(ctx: SkillContext, plan: GraspPlan) -> list[np.ndarray]:
     """Base-aim transit plus the executor's pick segment for ``plan``."""
     seed, transit = _pick_seed_transit(ctx, plan)
-    # Collision-aware backend: build the obstacle world from every scene fixture so
-    # the free pick segments (home→pre-grasp, lift/retreat) route through
-    # plan_motion instead of punching a straight IK line through a shelf/cabinet.
-    # The grasp target is role `object`, not a fixture, so it is never in the world
-    # (no exemption needed). Collision-blind runs pass world=None (unchanged).
-    world = (
-        build_obstacle_world(
-            ctx.scene_state,
-            ground_z=float(ctx.scene_state.get("table_surface_z", 0.0)),
-        )
-        if ctx.motion_planner.collision_aware
-        else None
-    )
-    seg = ctx.executor.pick(
-        plan, ctx.motion_planner, seed, _pick_motion_params(ctx), world=world
-    )
+    seg = ctx.executor.pick(plan, ctx.motion_planner, seed, _pick_motion_params(ctx))
     return transit + seg
 
 
@@ -232,5 +180,4 @@ def run_pick(ctx: SkillContext) -> list[np.ndarray]:
     obj_h = float(ctx.scene_state.get("object_heights", {}).get(ctx.skill.target, 0.0) or 0.0)
     support_z = float(ctx.obj_pos[2]) - obj_h / 2.0
     ctx.held_place_z = max(float(plan.grasp_pos[2]) - support_z, 0.0)
-    _capture_payload_aco(ctx, plan)
     return traj

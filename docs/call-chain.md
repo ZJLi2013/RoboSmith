@@ -2,7 +2,8 @@
 
 开发文档，画 `main` 上的现状，粒度到函数；设计（要保证什么）在 [system-design](system-design.md) 与 [manipulation](manipulation.md)。改了这条链的 PR 同时改这里。
 
-**默认路径上没有一处在执行前检查动作是否可行**：抓取候选只看能否抬起，自由段是碰撞盲的 IK 插值，开 rocRobo 时规划失败也退回碰撞盲直线。
+**链路上没有一处在执行前检查动作是否可行**：抓取候选只看能否抬起，自由段是碰撞盲的 IK 插值，笛卡尔段只查关节跳变。
+要补上的执行门见 [manipulation](manipulation.md#执行门的接口与契约proposed尚未实现)。
 
 ## episode：从入口到判定
 
@@ -56,7 +57,6 @@ flowchart TD
 
     subgraph PL["place"]
         PP["grasp/planner.plan_place<br/>落点 = 目标点 + 抓取相对高度"]
-        HOV["place._author_transport_hover<br/>沿 approach 扫 standoff（仅 rocRobo 开时）"]
     end
 
     DR["open / close<br/>executor._open_drag_waypoints / _close_drag_waypoints"]
@@ -66,35 +66,28 @@ flowchart TD
 
     F["只动手指：手臂锁定"]
     C["笛卡尔段（最终接近、下放、拖拽、退回）<br/>motion/cartesian.solve_cartesian_ik_path<br/>逐步 IK，只查关节跳变"]
-    FREE{"自由段：<br/>有 world？（ROCROBO_BACKEND）"}
-    G["GenesisBackend.solve_ik + _interpolate<br/>关节线性插值，碰撞盲（默认）"]
-    R["RocRoboBackend.plan_motion<br/>rocrobo_world.build_obstacle_world：只含固定件的盒子世界"]
-    MISS{"规划成功？"}
+    G["自由段：GenesisBackend.solve_ik + _interpolate<br/>关节线性插值，碰撞盲"]
 
     GEO --> WP --> TR --> OK
     OK -- 否 --> TR
     OK -- 是，执行这条轨迹 --> EXE
-    PP --> HOV --> EXE
+    PP --> EXE
     DR --> EXE
     EXE --> CH
-    CH --> F & C & FREE
-    FREE -- 否 --> G
-    FREE -- 是 --> R --> MISS
-    MISS -- 否：打 warning，退回 --> G
+    CH --> F & C & G
 
     classDef blind fill:#fde2e2,stroke:#c0392b
     class G,OK,C blind
 ```
 
-红框是不查碰撞的地方。pick 在航点之前另有一段转基座的关节插值（`pick._pick_seed_transit`）；rocRobo 关闭时 place 也有一段（`place._place_transport_seed`），两者都不经任何检查。
+红框是不查碰撞的地方。pick 在航点之前另有一段转基座的关节插值（`pick._pick_seed_transit`），place 也有一段（`place._place_transport_seed`），两者都不经任何检查。
 
 ## 不做检查的地方
 
 | 位置 | 现在判什么 | 不判什么 |
 |---|---|---|
 | `SimEnv.trial_from_here` | 物体终点比起点高 0.02 m | 重放过程中手、臂与固定件的接触 |
-| `chain._solve_segment` 自由段，默认 | IK 解出终点 | 路径与终点的碰撞 |
-| `chain._solve_segment` 自由段，rocRobo | rocRobo 的盒子世界里无碰撞 | 松散物体；规划失败后退回的直线 |
+| `chain._solve_segment` 自由段 | IK 解出终点 | 路径与终点的碰撞 |
 | 笛卡尔段 | 相邻步关节跳变（pick 超限即拒，place / drag 不拒） | 碰撞 |
 | `handoff.check` | 持物距离、首次脱手帧、可能原因 | 不中断 episode，只记录 |
 
@@ -104,7 +97,6 @@ flowchart TD
 |---|---|---|
 | `--planner` | `teacher` | 步骤表来自 YAML（`teacher`）还是 LLM（`agent`） |
 | `--role` | `certifier` | agent 路径下是否看见成功树（`certifier` 看见，`baseline` 不看见） |
-| `ROCROBO_BACKEND` | 未设 | 设了才构建碰撞世界、自由段走 rocRobo；需要 sidecar 容器 |
 | `ROBOSMITH_LLM_*` | — | agent 路径调用的网关、模型与密钥 |
 
 ## 其他入口

@@ -21,14 +21,12 @@ Everything below needs an AMD GPU node with ROCm and Docker.
 
 ```text
 $HOME/RoboSmith         this repository
-$HOME/rocRobo           motion backend (sidecar)
 $HOME/.cache/huggingface  LeRobot datasets are written here
 ```
 
 ```bash
 cd $HOME
 git clone https://github.com/ZJLi2013/RoboSmith.git
-git clone --recurse-submodules https://github.com/ZJLi2013/rocRobo.git
 ```
 
 ## 2. Build the RoboSmith image
@@ -43,22 +41,7 @@ Build from the repository root (`cd $HOME/RoboSmith`) with the image for your GP
 gfx942 needs its own older stack (ROCm 6.4.3, Genesis 0.4.5) because newer Genesis crashes while compiling collision
 kernels on that architecture.
 
-## 3. Start the rocRobo sidecar
-
-Once per machine. The image is not published; build it from the rocRobo checkout. The container must be named
-`rocrobo_dev` (or set `ROCROBO_CONTAINER`) and mount rocRobo at `/rocrobo`:
-
-```bash
-cd $HOME/rocRobo && docker build -t rocrobo/pyroki:rocm7.2.4-jax0.8.2 .
-docker run -d --name rocrobo_dev \
-  --device=/dev/kfd --device=/dev/dri --group-add video --ipc=host \
-  -e AMD_COMGR_NAMESPACE=1 -e HIP_VISIBLE_DEVICES=0 \
-  -v $HOME/rocRobo:/rocrobo \
-  rocrobo/pyroki:rocm7.2.4-jax0.8.2 sleep infinity
-docker exec rocrobo_dev pip install -e /rocrobo/pyroki --no-deps
-```
-
-## 4. Run the supporter scenario
+## 3. Run the supporter scenario
 
 ```bash
 cd $HOME/RoboSmith
@@ -68,7 +51,7 @@ docker logs -f f1_m1
 ```
 
 The launcher starts a detached container (default name `f1_m1`; set `NAME`, `SCENARIO`, `SEED`, `EPISODES` to
-change the run). It mounts the Docker socket so RoboSmith can `docker exec` into the sidecar.
+change the run).
 
 Outputs:
 
@@ -84,7 +67,7 @@ docker run --rm --device=/dev/kfd --device=/dev/dri --group-add video \
   bash -lc 'cd /workspace/robotsmith && python scripts/datagen/snapshot_scenario.py --scenario scenarios/pick_place_onto_supporter.yaml'
 ```
 
-## 5. Write your own scenario
+## 4. Write your own scenario
 
 Copy a scenario YAML from [`scenarios/`](../scenarios/) and its teacher plan from `scenarios/teacher/` (same file
 name), change the objects, relations, success tree, and steps, and pass it with
@@ -94,15 +77,6 @@ name), change the objects, relations, success tree, and steps, and pass it with
 
 ## Troubleshooting
 
-- **Stuck after `starting warm serve` for ~10 minutes on the first run.** This is the JAX compile of the first
-  `plan_motion`, not a hang. The compile is cached in `/rocrobo/.jax_cache` (override with `ROCROBO_JAX_CACHE`);
-  later runs with the same scene geometry start in seconds. While waiting,
-  `docker exec rocrobo_dev pgrep -f rocrobo.serve` should print one process. If it prints none and the run is still
-  stuck, the serve died during startup; restart the run.
-- **A GPU is held by a dead serve.** `docker exec rocrobo_dev pkill -9 -f python`, then rerun.
-- **`collision-blind straight-line fallback` in the log.** `plan_motion` failed for that segment and it ran without
-  collision checks. The episode can still succeed, but that motion was never checked against the scene.
 - **`Genesis already initialized`.** One process can build only one scene; run each asset or scenario in its own
   process.
 - **Missing mesh files.** Build files are not in git; run `python -m robotsmith.assets.fetch`.
-- **Changed rocRobo code has no effect.** The sidecar bind-mounts `/rocrobo`; restart the run so a new serve starts.
