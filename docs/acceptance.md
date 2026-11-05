@@ -88,6 +88,19 @@ python scripts/acceptance/certify.py --family f1_wall_gap --split test --out out
 - 每实例一行：布局、静止后位置、难度参数、各阶段物理步与违规步、首个违规（阶段、span、接触对、物理步号）、
   正式帧数、交接记录、任务判定。
 
+test seed 100–119 上的读数（commit `7707f92`，每族 20 个实例各跑一次，无重试）：
+
+| 族 | certified | 其余 | 失败在哪 |
+|---|---|---|---|
+| F0 空桌面 | 19/20 | 1 `violation` | seed 108：任务谓词成立，但 pick 正式回放的第一个 transit 点读到 die–mat 接触（此时 die 在 y=0.16、垫在 y=−0.22），之后的 settle 另有 13 个违规步；成因未查 |
+| F1 贴墙抓取 | 19/20 | 1 `infeasible` | 间隙最小的实例（7.7 mm）：8 个抓取候选在下探段全被门拒，接触对 die–wall；其余 19 个（8.4–40.9 mm）全部 certified |
+| F2 越障搬运 | 0/20 | 20 `infeasible` | 都在 place：5 个搬运高度全部在 transit 段的同一个点被门拒，接触对 die–barrier |
+| F4 罩住 | 20/20 | — | 都在 pick 判 `infeasible`，reset 之后零物理步 |
+
+F2 的拒绝点不随搬运高度变：place 先用一段固定的 transit 在抬起高度（约 0.14 m）转基座对准垫子，搬运高度只作用于
+transit 之后，20 cm 的墙在转基座时就挡住了 die。所以这一族是 place 的搬运路线缺陷，不是门或场景的问题。
+单实例 45–50 s（F0、F1），F2 约 30 s，F4 约 11 s。
+
 ## 不在这一版
 
 - 侧插放置（格子、货架）：需要俯抓以外的抓取朝向，属于给链路加能力。
