@@ -89,7 +89,7 @@ def _pick_seed_transit(
 
 def _select(ctx: SkillContext, trial) -> tuple[GraspPlan, VerifiedMotion]:
     """Gate, then trial, the candidates in planner order from the same start state; keep the first that passes
-    both, verified again after its trial. Raises ``Infeasible`` when none does.
+    both, verified again after the last trial. Raises ``Infeasible`` when none does.
 
     ``trial(trajectory, target)`` replays the trajectory in simulation, restores the scene and returns
     ``{"lifted", "lift_m", "seconds"}``. With ``scene_state["grasp_trial_all"]`` every candidate is
@@ -98,7 +98,7 @@ def _select(ctx: SkillContext, trial) -> tuple[GraspPlan, VerifiedMotion]:
     plans, filter_counts = _candidates(ctx)
     try_all = bool(ctx.scene_state.get("grasp_trial_all"))
     target = ctx.skill.target
-    trials, chosen = [], None
+    trials, passing = [], []
     for plan in plans:
         md = plan.metadata
         record = {"candidate_index": md.get("candidate_index"), "kind": md.get("kind"),
@@ -116,11 +116,22 @@ def _select(ctx: SkillContext, trial) -> tuple[GraspPlan, VerifiedMotion]:
             record["motion_error"] = str(exc)
         else:
             record["gate"] = "passed"
-            if (trial is None or record["lifted"]) and chosen is None:
-                chosen = (plan, motion)
+            if trial is None or record["lifted"]:
+                passing.append((plan, traj, spans, motion, record))
         trials.append(record)
-        if chosen is not None and not try_all:
+        if passing and not try_all:
             break
+    chosen = None
+    for plan, traj, spans, motion, record in passing:
+        if try_all:
+            # Every later trial stepped physics and voided this motion's voucher.
+            try:
+                motion = ctx.gate.verify(traj, spans, target=target, q_start=ctx.qpos)
+            except MotionRejected as exc:
+                record["reverify"] = exc.to_dict()
+                continue
+        chosen = (plan, motion)
+        break
     ctx.trace({
         "skill": ctx.skill.name, "target": target, "category": ctx.category,
         "filter_counts": filter_counts, "no_candidates": not plans, "no_trial_success": chosen is None,

@@ -268,6 +268,27 @@ class TestRegistryDispatch:
         motions, trace, _ = self._trial_run(gate, [False, False, False])
         assert motions is None and trace["no_trial_success"] and trace["selected_candidate_index"] is None
 
+    def test_trial_all_verifies_the_chosen_motion_after_the_last_trial(self, gate):
+        motions, trace, calls = self._trial_run(gate, [True, True, True], try_all=True)
+        assert len(calls) == 3 and trace["selected_candidate_index"] == 0
+        assert motions[0].fingerprint == gate.env.state_fingerprint() == "3"
+        gate.check_current(motions[0])
+
+    def test_trial_all_skips_a_lifter_the_final_check_rejects(self, gate, monkeypatch):
+        rejected = []
+
+        def contacts_at(q, held=None, placed=None):
+            if gate.env.writes == 3 and not rejected:
+                rejected.append(float(q[0]))
+                return [(("robot", "hand"), ("wall", "base"))]
+            return []
+
+        monkeypatch.setattr(gate.env, "contacts_at", contacts_at, raising=False)
+        motions, trace, _ = self._trial_run(gate, [True, True, False], try_all=True)
+        assert trace["selected_candidate_index"] == 1 and rejected
+        assert trace["trials"][0]["reverify"]["pair"] == [["robot", "hand"], ["wall", "base"]]
+        gate.check_current(motions[0])
+
     def test_place_takes_the_lowest_carry_height_that_passes(self, gate, monkeypatch):
         heights = []
 
