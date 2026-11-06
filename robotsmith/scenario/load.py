@@ -146,6 +146,24 @@ SCHEMA = {
     },
 }
 
+_ONE = {"type": "object", "minProperties": 1, "maxProperties": 1}
+_LINE = {"type": "object", "additionalProperties": False, "required": ["direction", "dist"],
+         "properties": {"direction": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+                        "dist": {"type": "number", "exclusiveMinimum": 0}}}
+# The first version's meta actions (docs/manipulation.md); anything else is rejected, not skipped.
+PLAN_ACTIONS = {
+    "sample": {"type": "object", "additionalProperties": False, "required": ["kind", "object", "as"],
+               "properties": {"kind": {"enum": ["grasp", "place"]}, "object": _ID, "surface": _REF,
+                              "grasp": _ID, "as": _ID}},
+    "move_to": _REF,
+    "move_linear": {"oneOf": [_REF, _LINE]},
+    "gripper": {"type": "object", "additionalProperties": False, "required": ["width"],
+                "properties": {"width": {"enum": ["open", "close"]}, "target": _ID}},
+    "attach": _ID,
+    "detach": _ID,
+}
+BINDING_POSES = {"grasp": {"pre", "grasp"}, "place": {"pre", "place", "retreat"}}
+
 TEACHER_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -156,8 +174,14 @@ TEACHER_SCHEMA = {
             {"type": "object", "additionalProperties": False, "required": [k], "properties": {k: _ID}}
             for k in ("pick", "open", "close")
         ] + [_leaf("place", {"target": _REF}, ["target"])]}},
+        "plan": {"type": "array", "minItems": 1, "items": {
+            **_ONE, "additionalProperties": False, "properties": PLAN_ACTIONS}},
     },
 }
+
+
+class PlanInvalid(ValueError):
+    """A teacher plan the first version cannot run: an unknown action, an unbound reference, or holding twice."""
 
 
 def load_scenario(
@@ -229,6 +253,51 @@ def _teacher(path: Path, assets: dict) -> tuple[SkillIntentSequenceSpec, dict[st
     data = _read(path)
     jsonschema.validate(data, TEACHER_SCHEMA)
     return steps_to_intents(data["steps"], assets)
+
+
+def load_plan(path: Path) -> list[dict]:
+    """The teacher file's meta action plan, checked by ``check_plan``."""
+    data = _read(Path(path))
+    if "plan" not in data:
+        raise PlanInvalid(f"{path}: no plan")
+    return check_plan(data["plan"])
+
+
+def check_plan(plan: list[dict]) -> list[dict]:
+    """``plan`` unchanged when every action is a first-version meta action, every ``<binding>.<pose>`` names a
+    pose of a candidate sampled earlier, and the plan attaches at most once and detaches what it holds."""
+    try:
+        jsonschema.validate(plan, TEACHER_SCHEMA["properties"]["plan"])
+    except jsonschema.ValidationError as e:
+        raise PlanInvalid(e.message) from None
+    bound: dict[str, dict] = {}
+    held = None
+    attached = False
+    for i, step in enumerate(plan):
+        (name, arg), = step.items()
+        refs = [arg] if isinstance(arg, str) else []
+        if name == "sample":
+            if arg["kind"] == "place" and bound.get(arg.get("grasp"), {}).get("kind") != "grasp":
+                raise PlanInvalid(f"step {i}: place sample needs a bound grasp, got {arg.get('grasp')!r}")
+            bound[arg["as"]] = arg
+        for ref in refs:
+            key, _, pose = ref.partition(".")
+            spec = bound.get(key)
+            if spec is None:
+                raise PlanInvalid(f"step {i}: {name} {ref!r} names no candidate sampled earlier")
+            if pose and pose not in BINDING_POSES[spec["kind"]]:
+                raise PlanInvalid(f"step {i}: {ref!r} is not a pose of a {spec['kind']} candidate")
+        if name == "attach":
+            if attached or bound[arg]["kind"] != "grasp":
+                raise PlanInvalid(f"step {i}: attach {arg!r} must be the plan's one grasp candidate")
+            held, attached = arg, True
+        if name == "detach":
+            if held is None or bound[arg]["kind"] != "place" or bound[arg]["grasp"] != held:
+                raise PlanInvalid(f"step {i}: detach {arg!r} must place what is held ({held!r})")
+            held = None
+    if held is not None:
+        raise PlanInvalid(f"the plan ends holding {held!r}")
+    return plan
 
 
 def steps_to_intents(steps: list[dict], assets: dict) -> tuple[SkillIntentSequenceSpec, dict[str, TargetPositionSpec]]:
