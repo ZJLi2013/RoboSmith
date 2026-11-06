@@ -4,15 +4,20 @@
 
 A positive instance passes when a scripted top-down pick and place (family-specific grasp yaw and carry
 height, Cartesian waypoints through Genesis IK, executed with physics) ends with the task predicate true and
-no illegal contact: the robot touches only the die, and only with its fingers between closing and opening;
-the die touches nothing but the table, the mat and the fingers. A negative instance passes when the die
-settles inside its cage.
+no illegal contact (``PHASES``): the robot touches only the die, and only with its fingers between closing and
+opening; its links touch each other only where they are joined; the die touches the table until it is lifted,
+nothing while carried, and the mat from the lowering on, through the task judge's settle. A negative instance
+passes when the die settles inside its cage.
+
+``--heldout`` reads the family and its witness parameters from ``scenarios/acceptance/heldout/`` (``witness.json``);
+this file names no held-out family.
 """
 
 import argparse
 import json
 import math
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -21,11 +26,11 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 from robotsmith.scenario_runtime import materialize_candidate
 from robotsmith.scenario_runtime.runner import evaluate_scenario_task
-from robotsmith.sim.sim_env import SceneInvalid, SimEnv
 
 TCP = 0.1034
 FINGERS = {"left_finger", "right_finger"}
 OPEN, CLOSED = 0.04, 0.0
+RULE = "phase-v2"
 # grasp yaw (fingers close along world y at 0 deg), carry height of the TCP above the table
 FAMILIES = {
     "f0_open": {"yaw": 0.0, "carry": 0.20},
@@ -37,6 +42,19 @@ FAMILIES = {
 CONTROLS = {
     "f1_wall_gap": {"yaw": 90.0, "carry": 0.20},
     "f2_over_barrier": {"yaw": 90.0, "carry": 0.20},
+}
+ACCEPTANCE = REPO / "scenarios" / "acceptance"
+# phase -> (fingers may touch the die, what else the die may touch)
+PHASES = {
+    "approach": (False, {"env"}),
+    "descend": (False, {"env"}),
+    "close": (True, {"env"}),
+    "lift": (True, {"env"}),
+    "carry": (True, set()),
+    "lower": (True, {"mat"}),
+    "open": (True, {"mat"}),
+    "retreat": (False, {"mat"}),
+    "settle": (False, {"mat"}),
 }
 TABLE_Z = 0.775
 DIE_HALF = 0.025
@@ -58,6 +76,9 @@ class Contacts:
         for name, ent in [("robot", env.franka), *env.entity_map.items()]:
             for link in ent.links:
                 self.owner[link.idx] = (name, link.name)
+        parent = {lk.name: self.owner.get(lk.parent_idx, (None, None))[1] for lk in env.franka.links}
+        self.joined = {frozenset((a, b)) for a in parent for b in parent
+                       if a != b and (parent[a] == b or parent[b] == a or parent[a] == parent[b])}
         self.env = env
 
     def pairs(self, ent):
@@ -68,17 +89,20 @@ class Contacts:
             a, b = a[m], b[m]
         return [(self.owner.get(int(i), ("env", "?")), self.owner.get(int(j), ("env", "?"))) for i, j in zip(a, b)]
 
-    def illegal(self, gripping: bool) -> list[str]:
+    def illegal(self, phase: str) -> list[str]:
+        gripping, die_may = PHASES[phase]
         out = []
         for x, y in self.pairs(self.env.franka):
             if x[0] == "robot" and y[0] == "robot":
+                if frozenset((x[1], y[1])) not in self.joined:
+                    out.append(f"robot.{x[1]}-robot.{y[1]}")
                 continue
             robot, other = (x, y) if x[0] == "robot" else (y, x)
             if not (gripping and other[0] == "die" and robot[1] in FINGERS):
                 out.append(f"robot.{robot[1]}-{other[0]}")
         for x, y in self.pairs(self.env.entity_map["die"]):
             other = y if x[0] == "die" else x
-            if other[0] not in ("die", "robot", "env", "mat"):
+            if other[0] not in ("die", "robot", *die_may):
                 out.append(f"die-{other[0]}")
         return out
 
@@ -110,6 +134,37 @@ def difficulty(family: str, placed: dict, die: np.ndarray) -> dict:
     return {}
 
 
+def wall_gap(placed: dict, die: np.ndarray, of: str, yaw_deg: float) -> dict:
+    """Gap across the thickness (local x) of the 20 mm wall ``of`` yawed ``yaw_deg``, to a die yawed with it."""
+    d = die[:2] - placed[of][:2]
+    c, s = math.cos(math.radians(yaw_deg)), math.sin(math.radians(yaw_deg))
+    return {"gap_m": round(float(abs(c * d[0] + s * d[1]) - 0.01 - DIE_HALF), 4)}
+
+
+class Judge:
+    """Counts every physics step by phase and keeps the first illegal contact."""
+
+    def __init__(self, contacts: Contacts, phases):
+        self.contacts, self.steps, self.first = contacts, {p: 0 for p in phases}, None
+
+    def __call__(self, phase: str) -> bool:
+        self.steps[phase] = self.steps.get(phase, 0) + 1
+        bad = self.contacts.illegal(phase)
+        if bad and self.first is None:
+            self.first = f"{phase}: {bad[0]}"
+        return bool(bad)
+
+
+def judge_task(env, task, initial: dict, hold, judge: Judge) -> bool:
+    """The task predicate after the judge's settle, every settle step judged as ``settle``."""
+    env.on_step = lambda _env: judge("settle")
+    try:
+        ok, _ = evaluate_scenario_task(env, task, initial_positions=initial, hold=hold)
+    finally:
+        env.on_step = None
+    return bool(ok)
+
+
 def caged(placed: dict, die: np.ndarray) -> str:
     """Why the settled die is not inside its cage; empty when it is."""
     off = np.abs(die[:2] - placed["cage"][:2])
@@ -132,42 +187,51 @@ def witness(env, task, fam: dict, die: np.ndarray, mat: np.ndarray) -> dict:
     plan = []
     segs = [("approach", here, above, OPEN), ("descend", above, grasp, OPEN)]
     for name, a, b, f in segs:
-        plan.append((name, False, _cartesian(env, q, a, b, quat, f)))
-        q = plan[-1][2][-1]
-    plan.append(("close", True, _hold(q, CLOSED)))
-    q = plan[-1][2][-1]
+        plan.append((name, _cartesian(env, q, a, b, quat, f)))
+        q = plan[-1][1][-1]
+    plan.append(("close", _hold(q, CLOSED)))
+    q = plan[-1][1][-1]
     for name, a, b in [("lift", grasp, lift), ("carry", lift, over), ("lower", over, drop)]:
-        plan.append((name, True, _cartesian(env, q, a, b, quat, CLOSED)))
-        q = plan[-1][2][-1]
-    plan.append(("open", True, _hold(q, OPEN)))
-    q = plan[-1][2][-1]
-    plan.append(("retreat", False, _cartesian(env, q, drop, up, quat, OPEN, n=15)))
+        plan.append((name, _cartesian(env, q, a, b, quat, CLOSED)))
+        q = plan[-1][1][-1]
+    plan.append(("open", _hold(q, OPEN)))
+    q = plan[-1][1][-1]
+    plan.append(("retreat", _cartesian(env, q, drop, up, quat, OPEN, n=15)))
 
     initial = {n: _np(e.get_pos()).reshape(-1).copy() for n, e in env.entity_map.items()}
-    contacts = Contacts(env)
+    judge = Judge(Contacts(env), [name for name, _ in plan] + ["settle"])
     # Stops at the first illegal contact: the verdict is already decided, and penetrating contacts slow the solver.
-    for name, gripping, path in plan:
+    for name, path in plan:
         for qq in path:
             target = np.asarray(qq, dtype=np.float32)
             for _ in range(3):
                 env.franka.control_dofs_position(target, env.motors_dof)
                 env.scene.step()
-                bad = contacts.illegal(gripping)
-                if bad:
-                    return {"success": False, "first_illegal": f"{name}: {bad[0]}"}
-    ok, _ = evaluate_scenario_task(env, task, initial_positions=initial, hold=np.asarray(plan[-1][2][-1]))
-    return {"success": bool(ok), "first_illegal": None}
+                if judge(name):
+                    return {"success": False, "first_illegal": judge.first, "phase_steps": judge.steps}
+    ok = judge_task(env, task, initial, np.asarray(plan[-1][1][-1]), judge)
+    return {"success": ok, "first_illegal": judge.first, "phase_steps": judge.steps}
 
 
 def main() -> None:
+    from robotsmith.sim.sim_env import SceneInvalid, SimEnv
+
     ap = argparse.ArgumentParser()
-    ap.add_argument("--family", required=True, choices=sorted(FAMILIES))
+    ap.add_argument("--family", required=True)
     ap.add_argument("--seeds", type=int, nargs=2, required=True)
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--control", action="store_true")
+    ap.add_argument("--heldout", action="store_true")
     args = ap.parse_args()
-    fam = CONTROLS[args.family] if args.control else FAMILIES[args.family]
-    path = REPO / "scenarios" / "acceptance" / f"{args.family}.yaml"
+    if args.heldout:
+        path = ACCEPTANCE / "heldout" / f"{args.family}.yaml"
+        spec = json.loads((path.parent / "witness.json").read_text(encoding="utf-8"))[args.family]
+        fam = spec["control"] if args.control else spec["witness"]
+        gap = spec["gap"]
+    else:
+        path = ACCEPTANCE / f"{args.family}.yaml"
+        fam = CONTROLS[args.family] if args.control else FAMILIES[args.family]
+        gap = None
     seeds = list(range(args.seeds[0], args.seeds[1] + 1))
     packages = {s: materialize_candidate(path, seed=s) for s in seeds}
     first = packages[seeds[0]].legacy_scene
@@ -180,7 +244,8 @@ def main() -> None:
         placed = {o.name_override: np.asarray(o.fixed_position, dtype=float) for o in scene.objects}
         assert all(np.allclose(placed[k], v) for k, v in fixed.items()), "fixtures move between seeds"
         assert tuple(scene.table_size) == tuple(first.table_size), "table size changes between seeds"
-        row = {"family": args.family, "seed": seed, "die_xyz": placed["die"].round(4).tolist()}
+        row = {"family": args.family, "seed": seed, "rule": RULE, "die_xyz": placed["die"].round(4).tolist()}
+        t0 = time.perf_counter()
         try:
             env.reset({"die": tuple(placed["die"])}, settle_steps=30)
             row["settle_ok"] = True
@@ -188,14 +253,15 @@ def main() -> None:
             rows.append({**row, "settle_ok": False, "witness_ok": False, "why": str(e)})
             continue
         die = _np(env.entity_map["die"].get_pos()).reshape(-1)
-        row.update(difficulty(args.family, placed, die))
+        row.update(wall_gap(placed, die, gap["of"], gap["yaw_deg"]) if gap else difficulty(args.family, placed, die))
         if fam is None:
             why = caged(placed, die)
             rows.append({**row, "witness_ok": not why, "why": why})
             continue
         w = witness(env, pkg.legacy_task, fam, die, placed["mat"])
         ok = w["success"] and w["first_illegal"] is None
-        rows.append({**row, **w, "witness_ok": ok, "why": "" if ok else str(w)})
+        rows.append({**row, **w, "witness_ok": ok, "why": "" if ok else str(w["first_illegal"] or "task failed"),
+                     "seconds": round(time.perf_counter() - t0, 1)})
         print(json.dumps(rows[-1]), flush=True)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(rows, indent=1), encoding="utf-8")
