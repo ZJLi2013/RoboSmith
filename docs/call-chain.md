@@ -118,7 +118,13 @@ pick 的手指闭合段允许手指碰目标（`grip`），其后一段持物且
   `permitted`。步骤级结果 `Refused(label, evidence)`（`search_exhausted` / `unsupported` / `infeasible`，零物理步）与
   `ExecutionFailed(evidence, steps)` 也在这个模块。
 - `sim/sim_env.SimEnv`：`contacts_at(qpos, held, placed)`、`hand_pose(qpos)`、`object_pose(name)` 在快照事务里查询，
-  返回前还原；`joint_limits`、`joined_links` 读机器人模型；`state_fingerprint()` 带真实写入代次，`step()` 与 `reset()` 递增。
+  返回前还原；`joint_limits`、`joined_links`、`lever_arms(held)`（每个关节的力臂上界，持物算在手上）读机器人模型；
+  `hold(qpos, name, T)` 把机器人与物体摆成持物起态，是一次不步进的真实写入；`state_fingerprint()` 带真实写入代次，
+  `step()`、`reset()` 与 `hold()` 递增。
+- `motion/joint_planner.JointPlanner(env, gate, *, seed, max_queries, max_seconds).connect(q_start, q_goal, *, target, rest,
+  holding, label)`：关节空间 lazy RRT-Connect，状态与按 `lever_arms` 细分到每步 ≤ 5 mm 的连边点只经 `check_point`，路径由
+  `verify` 签发，返回 `Connection(motion, queries, seconds, nodes, direct)`；超出 1500 次查询或 30 s 抛
+  `Refused("search_exhausted")`。技能还没调用它。
 - `motion/planner.MotionPlanner` 只有 `solve_ik(pos, quat, finger_pos, *, init_qpos)`；唯一实现 `GenesisBackend` 包装
   `SimEnv.solve_ik`。
 - `motion/chain.execute_motion_chain(waypoints, motion_planner, start_qpos, params, *, tail_hold_steps,

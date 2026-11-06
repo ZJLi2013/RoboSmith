@@ -145,10 +145,11 @@ python scripts/acceptance/certify.py --family f1_wall_gap --split test --out out
   认证判的是实际物理，没被抓的 die 碰到墙说明它被推了。和见证的差别：搬运中 die 擦到桌面也算违规。
 - **certified**：正例要任务谓词成立且零违规；负例要第一步以 `Refused` 的标签（`search_exhausted` 等）停下且 reset 之后
   零物理步。其余结果分别记停下的标签（`search_exhausted`、`execution_failed`）、`violation`、`task_failed`、`init_failed`（静止检查不过）与 `error`（抛异常，重试一次，
-  两次尝试都留在 `instances.jsonl`，取后一次）。Genesis 偶尔在某个物理步上挂住，Python 中断不了它：一次尝试超过
-  600 s 就记为 `error` 并以退出码 3 结束进程，`--resume` 接着已写的行重试它并跑完其余 seed。这个计时器跑在
-  Python 线程里，挂住时若一直占着 GIL 它就不触发（见证的 test 批次遇到过一次，空转 33 分钟），此时只有外层的
-  `timeout` 能结束进程，且不写 `error` 行。见证（`witness.py`）用同一个 `scripts/acceptance/batch.py`。
+  两次尝试都留在 `instances.jsonl`，取后一次）。Genesis 偶尔在某个物理步上挂住，进程内中断不了它，所以超时在进程外：
+  入口经 `scripts/acceptance/batch.py` 的 `supervise` 在新进程组里起工作进程，工作进程每次尝试前写边车文件
+  `instances.running`（seed、attempt、开始时刻）；一次尝试超过 600 s，`supervise` 杀掉整个进程组，在还没有该尝试的行时
+  补一条 `error` 行（`why` 为 `killed after 600 s`），再以 `--resume` 重启，接着已写的行重试它并跑完其余 seed。
+  每个 seed 至多两次尝试；一个 log 只能有一个 `supervise`。见证（`witness.py`）与 e3 的 GPU 入口用同一机制。
 - 每实例一行：布局、静止后位置、难度参数、各阶段物理步与违规步、首个违规（阶段、span、接触对、物理步号）、
   正式帧数、交接记录、任务判定。
 

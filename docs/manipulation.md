@@ -108,7 +108,7 @@ agent 写步骤表（pick X、place X on Y…），技能执行，每步判定�
 ## 已定 / 不做
 
 - rocRobo 与碰撞盲退回已删除，不保留为可选后端；删除后的运动层接口见[调用链](call-chain.md#运动层与执行门的接口)。
-  启动脚本的 Docker socket 挂载只为进 rocRobo sidecar 容器，随之删除。下一步自由段改由关节空间 RRT-Connect 生成（未实现），
+  启动脚本的 Docker socket 挂载只为进 rocRobo sidecar 容器，随之删除。自由段改由关节空间 RRT-Connect（`JointPlanner`，已实现、技能未接入）生成，
   状态与连边的合法性检查调用执行门同一份 `contacts_at` + `permitted`，不另建世界：「候选 × 关节插值」在 F2 上 0/20，
   失败全在写死的搬运路线（[读数](acceptance.md#被测链路的-certified-读数)）。rocRobo 的问题是它在自己的简化世界里规划，
   与仿真几何不一致（见「迁移前的问题」）。
@@ -134,9 +134,9 @@ agent 写步骤表（pick X、place X on Y…），技能执行，每步判定�
 - 入口有界检查：F0、F4 各一个 seed 与单资产抓取验证都只经门执行；F0 完成 pick / place，F4 的 pick 在门前全部被拒、零帧，
   拒绝原因逐候选保留。这不是验收族的 certified 结果，certified 率见下一步。
 - `check_point` 新增的关节限位、FK 残差、非邻接自碰撞与 attach 核对，以及 `SimEnv.joint_limits`（Genesis
-  `get_dofs_limit`）、`joined_links`，只在 CPU 受控样例上验证过（[e1 证据](../exps/r1/evidence/e1/README.md)），
-  还没有在 Genesis 上跑过：IK 残差超过 5 mm 的抓取候选现在会以 `fk_residual` 或 `binding_mismatch` 被拒，它对验收族读数的
-  影响要等下一次 GPU 批次读出。`tests/test_gate_gpu.py` 已改为显式传 `Holding`。
+  `get_dofs_limit`）、`joined_links`，在 CPU 受控样例上验证过（[e1 证据](../exps/r1/evidence/e1/README.md)）；在 Genesis 上
+  只跑过 e3 的一个 F2 持物请求（两端带 FK 残差检查、对照路径的 attach 核对都通过）。IK 残差超过 5 mm 的抓取候选现在会以
+  `fk_residual` 或 `binding_mismatch` 被拒，它对验收族读数的影响要等下一次 GPU 批次读出。`tests/test_gate_gpu.py` 已改为显式传 `Holding`。
 
 ## 下一版设计：规划给出的 meta action 组合（未实现）
 
@@ -195,17 +195,34 @@ place: sample(place | g) · move_to(p.pre) · move_linear(p.place) · detach(p.s
 |---|---|
 | 动作展开 | 各 meta action 实现 |
 | 候选搜索与组合内回溯 | `CompositionSearch`（替换 `pick._select` 与 `CARRY_HEIGHTS` 循环） |
-| 自由段 | `JointPlanner`（替换 `_transit_lerp`、`_pick_seed_transit`、`_place_transport_seed`） |
+| 自由段 | `JointPlanner`（已实现；接入后替换 `_transit_lerp`、`_pick_seed_transit`、`_place_transport_seed`） |
 | 合法性 | `ExecutionGate.check_point`：数值有效、关节限位、FK 残差（5 mm / 0.05 rad）、非邻接自碰撞、`contacts_at` + `permitted`；规划器与 `verify` 都调它（已实现，`verify` 已在用） |
 | 持物 | `PlanState.holding`；`gate.verify` 接收 `Holding` 并在 attach 点核对（`verify` 一侧已实现，现由 pick / place 构造；`PlanState` 未实现） |
 | 物理步 | `EpisodeRun`，含试抓、回放与 settle |
 
 ### 规划器
 
-仓库内 RRT-Connect（双树、固定种子），依赖只有 numpy；状态与连边都经 `check_point`，连边按任一连杆或被抓物上的点每步
-位移 ≤ 5 mm 细分；先试直连。每次 connect 至多 1500 次状态查询或 30 s，组合共享 120 s 并按候选轮转。OMPL 算法更成熟，
-但 Python 绑定未在 ROCm 镜像上验证，接口留在 `JointPlanner` 可换；VAMP、cuRobo 自带碰撞表示，会形成与仿真几何不一致
-的第二份世界，不选。
+`robotsmith/motion/joint_planner.py` 的 `JointPlanner(env, gate, *, seed=0).connect(q_start, q_goal, *, target, rest=(),
+holding=None, label="move_to")` 已实现，技能还没接入。它是仓库内的 lazy RRT-Connect（双树、固定种子），依赖只有 numpy：
+
+- 合法性只问 `gate.check_point`，持物带调用方的 `Holding`；路径由 `gate.verify` 签发，返回
+  `Connection(motion, queries, seconds, nodes, direct)`。查询与失败都零物理步、不改状态。
+- 连边细分：`SimEnv.lever_arms(held)` 给每个关节的力臂上界 r（从关节锚点沿连杆原点到它带动的任一连杆碰撞 AABB、
+  手指行程、持物 AABB 的最远距离），每步 Σ r_k |Δq_k| ≤ 5 mm，所以任一连杆或持物上的点每步位移不超过 5 mm。
+  边内的点按二分顺序检查，碰撞早遇早停。
+- 先试直连；不通则双树生长，新节点只查状态。两树相遇后从每个节点直接连到能连通的最远后继（捷径），树边失败就剪掉
+  它下面的子树再长。
+- 预算：每次 connect 至多 1500 次状态查询或 30 s，先到即 `Refused("search_exhausted", {"reason": "budget", …})`；
+  起止点非法为 `invalid_start` / `invalid_goal`，带门的拒绝原因。组合共享 120 s 并按候选轮转（未实现）。
+- 起态装配：`SimEnv.hold(qpos, name, T)` 把机器人放到 qpos、物体放到手 · T，算一次真实写入，不步进。
+
+F2 playground seed 0 的固定持物请求（retreat 位姿 → mat 正上方同高）在 Genesis 上一次连通：两端过门、直连在第 88/203
+点以左手指碰 barrier 被拒、独立的抬高越障对照过门；`connect` 用 301 次查询、10.9 s、19 个节点，签发 247 点，最大每步
+位移 4.995 mm，零物理步（[e3 证据](../exps/r1/evidence/e3/README.md)）。这是单个请求的持物 connect，不是任务级 certified。
+
+限制：均匀采样的 7 维路径会绕远，CPU 受控样例里绕一道 0.2 rad 宽的墙要 0.6k–4k 次查询；比扩展步长（0.1 rad）还薄的
+障碍会让两树隔着它反复相遇、剪枝，同类薄墙要 7k–160k 次，超出预算。OMPL 算法更成熟，但 Python 绑定未在 ROCm 镜像上
+验证，接口留在 `JointPlanner` 可换；VAMP、cuRobo 自带碰撞表示，会形成与仿真几何不一致的第二份世界，不选。
 
 ## 下一步
 
@@ -213,7 +230,7 @@ place: sample(place | g) · move_to(p.pre) · move_linear(p.place) · detach(p.s
 [certified 读数](acceptance.md#被测链路的-certified-读数)。下一版按以下顺序迁移，每步单独可合入：
 
 1. 门加固：`check_point`、只读凭证、`Refused`、`verify` 接收 `Holding`（已实现，CPU 验证，GPU 未跑）；
-2. `JointPlanner`，独立于技能，GPU 上测 F2 布局的持物 connect；
+2. `JointPlanner`，独立于技能，GPU 上测 F2 布局的持物 connect（已实现，F2 固定请求一次连通，见「规划器」）；
 3. 6 个动作、`CompositionSearch` 与 pick / place recipe 一步切换；`EpisodeRun`、单资产验证与 `certify` 三个入口改用
    同一服务，删除 `MotionExecutor.pick / place`、`run_skills`、`plan_segment` 与转基座 / 抬高补丁；
 4. plan 文件的 `actions` 与 LLM 可直接提交 meta action 列表，走同一搜索与门。
