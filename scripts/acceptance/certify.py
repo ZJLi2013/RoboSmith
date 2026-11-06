@@ -83,6 +83,11 @@ def _tolist(x):
     return np.asarray(x, dtype=float).round(5).tolist()
 
 
+def _content(trajectory) -> bytes:
+    # Each read of VerifiedMotion.trajectory is a new tuple, so replays are matched to their motion by value.
+    return b"".join(np.asarray(q, dtype=np.float64).tobytes() for q in trajectory)
+
+
 def run_instance(env, pkg, family, mon, record_episode):
     from robotsmith.execution import MotionExecutor
     from robotsmith.motion import MotionParams
@@ -116,11 +121,11 @@ def run_instance(env, pkg, family, mon, record_episode):
 
     def verified(trajectory, spans, *, target, rest=(), **kw):
         m = verify(trajectory, spans, target=target, rest=rest, **kw)
-        meta[id(m.trajectory)] = (m.spans, target, {SUPPORT, *rest}, run.skills[-1].name)
+        meta[_content(m.trajectory)] = (m.spans, target, {SUPPORT, *rest}, run.skills[-1].name)
         return m
 
     def record(env_, dataset, seg, task_spec, **kw):
-        ctx = meta.get(id(seg))
+        ctx = meta.get(_content(seg))
         if ctx is not None:
             last[0] = ctx
             mon.enter("replay", ctx)
@@ -134,7 +139,7 @@ def run_instance(env, pkg, family, mon, record_episode):
     trial = env.trial_from_here
 
     def trialled(trajectory, target, **kw):
-        mon.enter("trial", meta.get(id(trajectory)))
+        mon.enter("trial", meta.get(_content(trajectory)))
         try:
             return trial(trajectory, target, **kw)
         finally:

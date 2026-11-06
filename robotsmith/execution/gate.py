@@ -34,21 +34,32 @@ class Span:
     allow: str | None = None
 
 
-def _frozen(a) -> np.ndarray:
-    a = np.array(a, dtype=np.float64)
-    a.setflags(write=False)
-    return a
+def _store(a) -> tuple[bytes, tuple]:
+    a = np.ascontiguousarray(a, dtype=np.float64)
+    return a.tobytes(), a.shape
 
 
-@dataclass(frozen=True, eq=False)
+def _view(stored: tuple[bytes, tuple]) -> np.ndarray:
+    # A view over bytes can never be made writable, and a fresh one per read keeps a caller's dtype / shape
+    # assignment on its own copy of the descriptor.
+    data, shape = stored
+    return np.frombuffer(data, dtype=np.float64).reshape(shape)
+
+
+@dataclass(frozen=True, eq=False, init=False)
 class Holding:
     """The object in the hand, rigidly at hand · ``t_hand_object`` (4x4)."""
 
     target: str
-    t_hand_object: np.ndarray
+    _t: tuple = field(repr=False)
 
-    def __post_init__(self):
-        object.__setattr__(self, "t_hand_object", _frozen(self.t_hand_object))
+    def __init__(self, target: str, t_hand_object):
+        object.__setattr__(self, "target", target)
+        object.__setattr__(self, "_t", _store(t_hand_object))
+
+    @property
+    def t_hand_object(self) -> np.ndarray:
+        return _view(self._t)
 
 
 def spans_of(segments: list[dict], offset: int = 0) -> list[Span]:
@@ -102,16 +113,27 @@ class ExecutionFailed(RuntimeError):
         self.evidence, self.steps = evidence, steps
 
 
-@dataclass(frozen=True, eq=False)
+@dataclass(frozen=True, eq=False, init=False)
 class VerifiedMotion:
     """A gate's voucher for a trajectory: read-only, and executable only while the state it was checked in holds."""
 
-    trajectory: tuple
+    _points: tuple = field(repr=False)
     spans: tuple
     fingerprint: str
     checked: int
     gated: bool = True
-    holding: Holding | None = field(default=None)
+    holding: Holding | None = None
+
+    def __init__(self, trajectory, spans, fingerprint: str, checked: int, gated: bool = True,
+                 holding: Holding | None = None):
+        for name, value in (("_points", tuple(_store(q) for q in trajectory)), ("spans", tuple(spans)),
+                            ("fingerprint", fingerprint), ("checked", checked), ("gated", gated),
+                            ("holding", holding)):
+            object.__setattr__(self, name, value)
+
+    @property
+    def trajectory(self) -> tuple:
+        return tuple(_view(p) for p in self._points)
 
 
 def permitted(pair, span: Span, target: str, rest: set) -> bool:
@@ -219,8 +241,7 @@ class ExecutionGate:
         return self._issue(traj, (Span("ungated", 0, len(traj)),), 0, gated=False)
 
     def _issue(self, traj, spans, checked, *, gated=True, holding=None) -> VerifiedMotion:
-        motion = VerifiedMotion(tuple(_frozen(q) for q in traj), tuple(spans), self.env.state_fingerprint(), checked,
-                                gated, holding)
+        motion = VerifiedMotion(traj, spans, self.env.state_fingerprint(), checked, gated, holding)
         self._issued.add(motion)
         return motion
 

@@ -45,7 +45,8 @@ All notable user-facing changes are documented here. This project follows Semant
 - `ExecutionGate.check_point` is the one point check: joint limits, FK residual where a pose is asked for,
   self-collision between links that are not joined, and contacts the gate does not permit; `verify` runs it on every
   point. A motion that holds an object takes an explicit `Holding(target, t_hand_object)`, checked where it attaches.
-  A `VerifiedMotion` is read-only and only the gate issues one. A step stopped before any physics raises
+  A `VerifiedMotion` is read-only and only the gate issues one: it and `Holding` keep their arrays as bytes, and
+  each read of `trajectory` / `t_hand_object` is a fresh read-only view. A step stopped before any physics raises
   `Refused(label, evidence)` (`search_exhausted`, `unsupported`, `infeasible`), and a pick whose trials stepped physics
   and lifted nothing raises `ExecutionFailed`; both replace `Infeasible`. The episode result field `infeasible` is now
   `stopped`, with `cause`, `evidence` and `steps`.

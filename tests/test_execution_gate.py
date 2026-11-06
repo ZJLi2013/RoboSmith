@@ -1,6 +1,8 @@
 """The execution gate's contract, on scenes that report scripted contacts."""
 
+import contextlib
 import dataclasses
+import warnings
 from types import SimpleNamespace
 
 import numpy as np
@@ -260,7 +262,8 @@ def test_episode_replays_the_verified_trajectory_without_ik(monkeypatch):
 
     run, recorded = _episode(monkeypatch, plan)
     run.run_steps([Skill("pick", "die")], [])
-    assert recorded == [issued[0].trajectory] and recorded[0] is issued[0].trajectory
+    assert len(recorded) == 1
+    np.testing.assert_array_equal(recorded[0], issued[0].trajectory)
 
 
 def test_episode_refuses_a_motion_verified_on_another_state(monkeypatch):
@@ -385,6 +388,31 @@ def test_a_verified_motion_cannot_be_changed_after_issue():
         motion.trajectory = ()
     with pytest.raises(AttributeError):
         motion.trajectory.append(np.zeros(9))
+
+
+def test_issued_arrays_cannot_be_made_writable_through_flags_views_or_buffers():
+    scene = _Scene()
+    traj = _points(0, 0.1, 0.2)
+    motion = ExecutionGate(scene).verify(traj, [Span("close", 0, 1, allow="grip"), Span("lift", 1, 3, holding=True)],
+                                         target="die", q_start=Q0, holding=_holding_at(scene, traj[0]))
+    reads = [lambda: motion.trajectory[1], lambda: motion.holding.t_hand_object]
+    before = [read().copy() for read in reads]
+    for read in reads:
+        a = read()
+        for target in (a, a.view(), a.reshape(-1), a.base):
+            with pytest.raises(ValueError):
+                target.setflags(write=True)
+        with pytest.raises(TypeError):
+            memoryview(a).cast("B")[0] = 1
+        with pytest.raises(TypeError):
+            memoryview(a.base.base).cast("B")[0] = 1
+        # NumPy 2.5 deprecates assigning dtype / shape; a later NumPy raises instead.
+        with warnings.catch_warnings(), contextlib.suppress(AttributeError):
+            warnings.simplefilter("ignore", DeprecationWarning)
+            a.dtype, a.shape = np.int64, (-1,)
+    for read, was in zip(reads, before):
+        assert read().dtype == np.float64
+        np.testing.assert_array_equal(read(), was)
 
 
 def test_only_the_gate_issues_a_motion_it_accepts():

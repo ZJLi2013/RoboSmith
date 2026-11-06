@@ -112,7 +112,8 @@ pick 的手指闭合段允许手指碰目标（`grip`），其后一段持物且
 
 - `execution/gate.ExecutionGate`：`check_point(q, span, *, target, rest, held, placed, pose)` 返回 `None` 或拒绝原因；
   `verify(trajectory, spans, *, target, q_start, rest, holding, poses)` 对每个点调它，返回只读
-  `VerifiedMotion(trajectory, spans, fingerprint, checked, gated, holding)`，违规抛 `MotionRejected(span, index, rejection)`；
+  `VerifiedMotion(trajectory, spans, fingerprint, checked, gated, holding)`（轨迹与 `Holding` 的变换存为 `bytes`，每次读取
+  得到新的只读视图，所以每次读 `trajectory` 都是新 tuple，certify 按内容把回放段对回凭证），违规抛 `MotionRejected(span, index, rejection)`；
   `check_current(motion)` 不是本门签发或指纹不一致抛 `StaleMotion`；`ungated(trajectory)` 只给开合抽屉。许可规则在
   `permitted`。步骤级结果 `Refused(label, evidence)`（`search_exhausted` / `unsupported` / `infeasible`，零物理步）与
   `ExecutionFailed(evidence, steps)` 也在这个模块。
