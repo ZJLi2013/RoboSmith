@@ -193,7 +193,9 @@ def test_posed_restores_the_fingerprint_and_voids_motions_verified_inside():
 
     env = _query_env([])
     arm, die = env.franka, env.entity_map["die"]
-    env.scene.get_state = lambda: (list(arm.qpos), list(die.pos))
+    stepped = (list(arm.qpos), list(die.pos))
+    # As in Genesis, a restore returns to the last stepped state and drops the writes since.
+    env.scene.get_state = lambda: stepped
     env.scene.reset = lambda state: (setattr(arm, "qpos", list(state[0])), setattr(die, "pos", list(state[1])))
     gate = ExecutionGate(env)
     before = env.state_fingerprint()
@@ -204,6 +206,8 @@ def test_posed_restores_the_fingerprint_and_voids_motions_verified_inside():
     with pytest.raises(StaleMotion):
         gate.check_current(inside)
     with env.posed([0.3] * 9, {}):
+        env.contacts_at([0.0] * 9)
+        env.hand_pose([0.0] * 9)
         assert arm.qpos == pytest.approx([0.3] * 9)
         with pytest.raises(StaleMotion):
             gate.check_current(inside)

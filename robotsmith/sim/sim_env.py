@@ -131,7 +131,7 @@ class SimEnv:
     _default_finger_open: float = 0.04
     _writes: int = 0
     _posings: int = 0
-    _posed: int | None = None
+    _posed: tuple | None = None
 
     # ---- Factory ----
 
@@ -323,6 +323,9 @@ class SimEnv:
             yield
         finally:
             self.scene.reset(snapshot)
+            # Genesis's restore drops writes made since the last step, the open ``posed`` state among them.
+            if self._posed is not None:
+                self._pose(*self._posed[1:])
 
     def _set_arm(self, qpos) -> None:
         self.franka.set_dofs_position(np.asarray(qpos, dtype=np.float32), self.motors_dof, zero_velocity=True)
@@ -382,15 +385,19 @@ class SimEnv:
         restores the scene. Queries inside read the posed state; a motion verified inside belongs to it and is not
         current afterwards, nor in another transaction."""
         self._posings += 1
-        outer, self._posed = self._posed, self._posings
-        try:
-            with self._snapshot():
-                self._set_arm(qpos)
-                for name, t_world in objects.items():
-                    self._put(name, np.asarray(t_world, dtype=np.float64))
+        outer = self._posed
+        with self._snapshot():
+            self._posed = (self._posings, qpos, objects)
+            try:
+                self._pose(qpos, objects)
                 yield
-        finally:
-            self._posed = outer
+            finally:
+                self._posed = outer
+
+    def _pose(self, qpos, objects: dict[str, np.ndarray]) -> None:
+        self._set_arm(qpos)
+        for name, t_world in objects.items():
+            self._put(name, np.asarray(t_world, dtype=np.float64))
 
     @cached_property
     def joint_limits(self) -> tuple[np.ndarray, np.ndarray]:
@@ -455,7 +462,7 @@ class SimEnv:
     def state_fingerprint(self) -> str:
         """Hash of the real-write count, the open ``posed`` transaction, and every rigid entity's joint positions
         and velocities."""
-        h = hashlib.sha1((str(self._writes) if self._posed is None else f"{self._writes}:{self._posed}").encode())
+        h = hashlib.sha1((str(self._writes) if self._posed is None else f"{self._writes}:{self._posed[0]}").encode())
         for ent in [self.franka, *self.entity_map.values()]:
             if getattr(ent, "n_dofs", 0):
                 h.update(to_numpy(ent.get_qpos()).astype(np.float32).tobytes())
