@@ -56,11 +56,9 @@ RUN python -m pip install --upgrade pip setuptools wheel \
       tensorboard tensorboardx timm webdataset yapf==0.40.1 \
       yourdfpy==0.0.56
 
-# GraspGen/PointTransformerV3 ROCm compatibility:
-# - spconv_rocm should be installed in downstream images or at runtime from
-#   https://github.com/ZJLi2013/spconv_rocm/tree/rocm when GraspGen is enabled.
-# - torch_scatter should use the repo shim, not PyG ROCm wheels, because those
-#   wheels have been ABI-fragile across ROCm PyTorch images.
+# Former GraspGen (learned grasp) dependency: the torch_scatter shim for its
+# PointTransformerV3 backbone. GraspGen has been removed from the code; the step
+# only keeps the published image reproducible.
 RUN if [ -f scripts/setup/_install_scatter_shim.py ]; then \
       python scripts/setup/_install_scatter_shim.py; \
     fi
