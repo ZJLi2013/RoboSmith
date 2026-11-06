@@ -26,9 +26,29 @@
 | F1 贴墙抓取 | `f1_wall_gap.yaml` | 物体一侧有一道比它高 1 cm 的矮墙（`wall_01`），手指垂直于墙会撞墙 | 物体到墙的间隙，5–40 mm | 可解：手指平行于墙 |
 | F2 越障搬运 | `f2_over_barrier.yaml` | 物体与放置垫之间有一道 20 cm 高墙（`wall_02`） | 物体到墙的距离，30–150 mm | 可解：抬过墙再放 |
 | F4 罩住 | `f4_caged.yaml` | 物体被无开口的罩子（`cage_01`）罩住 | — | 不可解 |
+| F5 留出 | `heldout/f5_clutter.yaml` | 解封前不在本文写 | 解封前不在本文写 | 可解 |
 
-四族的任务相同：把 die 放到垫子（`mat_01.top`）上；步骤表在 `scenarios/acceptance/teacher/`。被测的是技能层以下，
-所以不让 LLM 写步骤。split：`playground` 0–9，`test` 100–119。
+五族的任务相同：把 die 放到垫子（`mat_01.top`）上；步骤表与组合在 `teacher/`（留出族在 `heldout/teacher/`）。
+被测的是技能层以下，所以不让 LLM 写步骤。split：`playground` 0–9，`test` 100–119。
+
+### teacher 的 `plan`：六动作组合
+
+`plan` 是[下一版](manipulation.md#下一版设计规划给出的-meta-action-组合未实现)交给运行时的组合，五族逐字相同：
+候选由场景几何决定，组合里没有场景名、见证轨迹或搬运高度。`robotsmith/scenario/load.py` 的 `load_plan` /
+`check_plan` 校验它，六动作以外的请求（如 `push`）报 `PlanInvalid`。
+
+| 动作 | 参数 | 含义 |
+|---|---|---|
+| `sample` | `kind: grasp, object, as` 或 `kind: place, object, surface, grasp, as` | 绑定一组候选；grasp 绑定给出 `pre` / `grasp` 位姿，place 绑定给出 `pre` / `place` / `retreat` |
+| `move_to` | `<绑定>.<位姿>` | 自由段到该位姿 |
+| `move_linear` | `<绑定>.<位姿>`，或 `{direction: [x, y, z], dist}`（世界系，m） | 直线段 |
+| `gripper` | `{width: open \| close, target}` | 开合；`close` 的 `target` 是被抓物 |
+| `attach` | `<grasp 绑定>` | 此后物体随手移动，起止支撑由 grasp 绑定决定 |
+| `detach` | `<place 绑定>` | 物体落到 place 绑定的支撑面 |
+
+绑定语义：引用必须指向更早的 `sample` 且位姿名合法；place 绑定必须带一个 grasp 绑定；一次只 `attach` 一个物体；
+`detach` 只放手里的物体；组合结束时手里不能有物体。同一目标的 pick + place 是一个组合，第一步物理执行前整体验证，
+第一次试抓即提交。
 
 ### `offset_from`
 
@@ -49,19 +69,29 @@
 python scripts/acceptance/witness.py --family f2_over_barrier --seeds 100 119 --out out/f2.json
 ```
 
-每个物理步读一次接触。正例通过 = 全程没有违规接触且末态的任务谓词成立；遇到第一处违规接触就判不通过并停下。
-违规接触按下面的规则判，这就是读数的含义：
+每个物理步读一次接触，包括任务判定的 settle（经 `env.on_step`）。正例通过 = 全程没有违规接触且末态的任务谓词成立；
+每行记下各阶段的物理步数与第一处违规（`phase_steps`、`first_illegal`）。违规接触按 `PHASES` 逐阶段判（规则
+`phase-v2`，记在每行的 `rule`）：
 
-- **机器人**碰到任何东西（桌面、固定件、die）都算违规，唯一例外是闭合到张开之间手指（`left_finger` /
-  `right_finger`）碰 die。机器人自身连杆之间的接触不检查。
-- **die** 碰到桌面、垫子或手指都放行，**任何阶段都放行**；碰到其他固定件（墙、罩子）算违规。
-  所以见证比「die 只在起止时碰桌 / 垫」更宽：它证明 die 没碰障碍、机器人没碰任何东西，不证明 die 在搬运中没擦过桌面。
+| 阶段 | 手指可碰 die | die 还可碰 |
+|---|---|---|
+| approach、descend | 否 | 桌面 |
+| close、lift | 是 | 桌面 |
+| carry | 是 | 无 |
+| lower、open | 是 | 垫子 |
+| retreat、settle | 否 | 垫子 |
+
+- **机器人**只能用手指（`left_finger` / `right_finger`）在可碰的阶段碰 die，碰其余任何东西都算违规。
+- **自碰撞**：Franka 连杆之间只放行相连的一对（父子或同父的兄弟，例如两指），其余连杆对的接触算违规。
+- **die** 碰到表中以外的东西（障碍、搬运中的桌面或垫子）算违规。
 
 负例（F4）不执行抓放，只确认 die 静止后仍在罩内（xy 偏离罩心 < 25 mm），它的 `witness_ok` 不表示任何执行成功。
+见证只证明实例可解，它的路点不进 teacher，也不作运行时的候选。
 
 ### 约束真的起作用：对照
 
-同一见证改掉该族所需的动作，在 test seed 上读到的结果（只对这些实例和这些动作成立）：
+同一见证改掉该族所需的动作，在 test seed 上读到的结果（只对这些实例和这些动作成立；下表是 `phase-v2` 之前的
+宽松规则下的读数）：
 
 | 族 | 对照动作 | 实例 | 结果 |
 |---|---|---|---|
@@ -69,6 +99,18 @@ python scripts/acceptance/witness.py --family f2_over_barrier --seeds 100 119 --
 | F2 | 搬运高度降到 0.20 m（低于墙顶） | 100–101 | 2/2 违规，`die-barrier` |
 
 F2 只跑了 2 个实例：穿透接触让求解器变慢，批次在第 3 个实例前超时。
+
+## 留出族
+
+留出族检验链路在没调过参的约束上是否仍成立，所以它的约束与参数在解封前只给允许的读者看。
+
+- **位置**：族定义、teacher 与见证参数（`witness.json`）在 `scenarios/acceptance/heldout/`。公共 `witness.py` 只有
+  `--heldout` 机制，不含任何留出族名或参数；`certify.py` 只解析 `scenarios/acceptance/<family>.yaml`，解析不到留出族。
+- **冻结**：只有构造它的 task 写这些文件；test 批次在已提交的输入上运行，manifest 记下 commit 与各文件的 sha256，
+  之后只读。批次失败或输入未提交时不写 manifest，修正后整批重跑。
+- **读者**：解封前只有 `witness.py --heldout` 与该 task 的 verifier；实现与调参不读它的布局、teacher、见证或逐实例结果。
+- **解封**：只在最终评测，且新版实现与参数都已提交；解封时记下这个 commit，评测前对照 manifest 的 sha256。
+- **烧毁**：解封前被实现或调参读取或使用，这批留出作废，记录保留，另建一个未用于调参的留出族。
 
 ## 被测链路的 certified 读数
 
@@ -102,6 +144,13 @@ test seed 100–119 上的读数（commit `7707f92`，每族 20 个实例各跑�
 F2 的拒绝点不随搬运高度变：place 先用一段固定的 transit 在抬起高度（约 0.14 m）转基座对准垫子，搬运高度只作用于
 transit 之后，20 cm 的墙在转基座时就挡住了 die。所以这一族是 place 的搬运路线缺陷，不是门或场景的问题。
 单实例 45–50 s（F0、F1），F2 约 30 s，F4 约 11 s。
+
+### 下一版的认证口径
+
+[下一版](manipulation.md#下一版设计规划给出的-meta-action-组合未实现)的 certified：正例为任务谓词成立且实际执行零违规接触；
+负例为支持的动作域内候选与预算搜完后零步拒绝 `search_exhausted`。`unsupported` 与环境错误不计成功。试抓、回放、保持与
+settle 都计真实物理步，恢复快照不清除计数；第一次试抓之后的失败记 `execution_failed`。上表是现有链路的读数，
+不当作新版的 certified。
 
 ## 不在这一版
 
