@@ -88,6 +88,17 @@ python scripts/acceptance/witness.py --family f2_over_barrier --seeds 100 119 --
 负例（F4）不执行抓放，只确认 die 静止后仍在罩内（xy 偏离罩心 < 25 mm），它的 `witness_ok` 不表示任何执行成功。
 见证只证明实例可解，它的路点不进 teacher，也不作运行时的候选。
 
+test seed 100–119 上 `phase-v2` 的读数（commit `0b5f981`，每族 20 个实例，无重试）：
+
+| 族 | 见证 | 难度参数实际范围 |
+|---|---|---|
+| F0 空桌面 | 20/20 | 到基座 0.41–0.60 m |
+| F1 贴墙抓取 | 20/20 | 间隙 7.7–40.9 mm |
+| F2 越障搬运 | 20/20 | 到墙 36–150 mm |
+| F4 罩住 | 20/20 在罩内 | — |
+
+正例单实例 78–93 s，F4 约 2.5 s。
+
 ### 约束真的起作用：对照
 
 同一见证改掉该族所需的动作，在 test seed 上读到的结果（只对这些实例和这些动作成立；下表是 `phase-v2` 之前的
@@ -128,7 +139,9 @@ python scripts/acceptance/certify.py --family f1_wall_gap --split test --out out
 - **certified**：正例要任务谓词成立且零违规；负例要第一步判 `infeasible` 且 reset 之后零物理步。
   其余结果分别记 `infeasible`、`violation`、`task_failed`、`init_failed`（静止检查不过）与 `error`（抛异常，重试一次，
   两次尝试都留在 `instances.jsonl`，取后一次）。Genesis 偶尔在某个物理步上挂住，Python 中断不了它：一次尝试超过
-  600 s 就记为 `error` 并以退出码 3 结束进程，`--resume` 接着已写的行重试它并跑完其余 seed。
+  600 s 就记为 `error` 并以退出码 3 结束进程，`--resume` 接着已写的行重试它并跑完其余 seed。这个计时器跑在
+  Python 线程里，挂住时若一直占着 GIL 它就不触发（见证的 test 批次遇到过一次，空转 33 分钟），此时只有外层的
+  `timeout` 能结束进程，且不写 `error` 行。见证（`witness.py`）用同一个 `scripts/acceptance/batch.py`。
 - 每实例一行：布局、静止后位置、难度参数、各阶段物理步与违规步、首个违规（阶段、span、接触对、物理步号）、
   正式帧数、交接记录、任务判定。
 
