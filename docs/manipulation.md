@@ -87,8 +87,10 @@ agent 写步骤表（pick X、place X on Y…），技能执行，每步判定�
 ## 已定 / 不做
 
 - rocRobo 与碰撞盲退回已删除，不保留为可选后端；删除后的运动层接口见[调用链](call-chain.md#运动层与执行门的接口)。
-  启动脚本的 Docker socket 挂载只为进 rocRobo sidecar 容器，随之删除。第一版不加采样式路径规划：先看验收族上「候选 × 关节插值」被门拒绝的比例，
-  证据显示不够再在同一份仿真几何里加。依据：rocRobo 在自己的简化世界里规划，与仿真几何不一致（见「迁移前的问题」）。
+  启动脚本的 Docker socket 挂载只为进 rocRobo sidecar 容器，随之删除。下一步自由段改由关节空间 RRT-Connect 生成（未实现），
+  状态与连边的合法性检查调用执行门同一份 `contacts_at` + `permitted`，不另建世界：「候选 × 关节插值」在 F2 上 0/20，
+  失败全在写死的搬运路线（[读数](acceptance.md#被测链路的-certified-读数)）。rocRobo 的问题是它在自己的简化世界里规划，
+  与仿真几何不一致（见「迁移前的问题」）。
 - 关节体操作（开合抽屉）第一版不过门，标为 `ungated`；验收族里没有抽屉。
 - 中间层用 Python 自建，不接 MoveIt（ROS / C++，跑不到 Genesis 上）；第一版不做通用框架、多后端、自动修复写回、扩原语、调参。
 - 抓取不用学习模型；夹爪为位置控制，约 0.2 kg 以上的物体会滑脱。
@@ -111,13 +113,84 @@ agent 写步骤表（pick X、place X on Y…），技能执行，每步判定�
 - 入口有界检查：F0、F4 各一个 seed 与单资产抓取验证都只经门执行；F0 完成 pick / place，F4 的 pick 判 `infeasible`、零帧，
   拒绝原因逐候选保留。这不是验收族的 certified 结果，certified 率见下一步。
 
+## 下一版设计：规划给出的 meta action 组合（未实现）
+
+上面的执行门已实现；本节是替换 `MotionExecutor` 航点模板的设计，迁移完成前现有实现仍按上文。原因：模板式链路在
+F2 上 0/20，失败全在写死的搬运路线（[读数](acceptance.md#被测链路的-certified-读数)），给路线打补丁只适配一个场景。
+
+**一句话：** 技能是少量 meta action 的组合；组合搜索在零物理步的状态查询里为整个组合绑定候选、用 RRT-Connect 连自由段、
+整条时间线过一次执行门，拿到凭证才走第一个物理步。分工对照 MoveIt Task Constructor 的 Generate / Connect /
+MoveRelative / ModifyPlanningScene。
+
+### meta action
+
+| 动作 | 运动由谁生成 | 前置 → 后置 | 附加失败标签 |
+|---|---|---|---|
+| `sample` | 几何采样 + IK（`GraspPlanner.plan / plan_place`），零运动 | 产出带多个 IK 解的抓取 / 放置候选绑定 | `no_candidate`、`ik_failed` |
+| `move_to` | 关节空间 RRT-Connect | 持物状态不变，到目标构型 | `invalid_start`、`invalid_goal`、`search_exhausted` |
+| `move_linear` | 笛卡尔直线逐点 IK，跳变即拒 | 持物状态不变，末端沿直线到达 | `ik_failed`、`discontinuity` |
+| `gripper` | 手指位置目标，`allow=grip` | 张开到全宽；合爪到手指被物体挡住，宽度在候选 `closing_width` 容差内 | `grasp_unconfirmed` |
+| `attach` | 状态事件，零运动 | 持物 = 刚体（`T_hand_object` 取自抓取绑定） | `binding_mismatch` |
+| `detach` | 状态事件，零运动 | 持物为空，物体固定在放置位姿 | `unsupported_release` |
+
+所有动作共有 `precondition_failed`、`collision`（门拒绝，带接触对）、`stale_state`。`push`（推移模型 + 推接触许可）与
+`articulate`（把手约束 + 预测关节值）是扩展样例，需要门协议升级，第一版不实现；开合抽屉在那之前沿用 `drag_handle` +
+`ungated`，不计入产品保证。
+
+`pick`、`place` 是预定义组合：
+
+```text
+pick:  sample(grasp) · gripper(open) · move_to(g.pre) · move_linear(g.grasp) · gripper(close, target) · attach(g) · move_linear(+z)
+place: sample(place | g) · move_to(p.pre) · move_linear(p.place) · detach(p.support) · gripper(open, target) · move_linear(p.retreat)
+```
+
+接触许可沿用 `Span`：合爪 / 松爪 `allow=grip`；抬起持物且 `rest`（只许离开起始支撑）；搬运持物、无许可；落座持物且
+`rest`（只许碰放置支撑）；退回时目标固定在放置位姿。放置手位姿 = `T_world_object_goal · inv(T_hand_object)`，取代
+`held_place_z`。一个组合至多一次 attach → detach。
+
+扩展规则：新增动作 = 新模块 + 注册，实现参数 schema、零物理步的 `expand(state, args, budget)`（产出轨迹段 + span +
+预测末态）与结构化失败；不调 `SimEnv.step`、不构造 `VerifiedMotion`。需要新许可、新持物类型或预测状态的动作属于
+门协议升级。
+
+### 提交边界与结果
+
+- 同一目标的 pick + place 是一个组合：全部段在第一个物理步之前生成并一次过门，place 不可达时 pick 也不执行。
+- 试抓只对已过门的组合做、只回放 pick part，由 `EpisodeRun` 发起；第一次试抓即提交，此后结果只有成功或
+  `execution_failed`。门拒绝发生在任何试抓之前，所以 F4 仍是 reset 后零物理步。
+- 结果：`search_exhausted`（声明的候选与预算内没有组合过门，含 F4，不证明不可解）、`unsupported`、`infeasible`
+  （留给覆盖动作域的可检查证明，第一版不产出）三者都零物理步，由 `Refused(label, evidence)` 承载，替代现在的
+  `Infeasible`；`execution_failed` 保留实际步数。
+- 凭证：`gate.verify` 按切点签发 pick part、place part 两个只读 `VerifiedMotion`；任何物理步都改变指纹，旧 part 自然失效。
+  pick part 执行后按实测关节角与实测 `T_hand_object` 重验 place part（实测起点偏差 > 0.01 rad 时先接一段 `move_to`），
+  不过即 `execution_failed`。
+
+### owner
+
+| 概念 | owner |
+|---|---|
+| 动作展开 | 各 meta action 实现 |
+| 候选搜索与组合内回溯 | `CompositionSearch`（替换 `pick._select` 与 `CARRY_HEIGHTS` 循环） |
+| 自由段 | `JointPlanner`（替换 `_transit_lerp`、`_pick_seed_transit`、`_place_transport_seed`） |
+| 合法性 | `ExecutionGate.check_point`：数值有效、关节限位、FK 残差（5 mm / 0.05 rad）、非邻接自碰撞、`contacts_at` + `permitted`；规划器与 `verify` 都调它 |
+| 持物 | `PlanState.holding`；`gate.verify` 接收它并在 attach 点核对，不再从首个持物点自推 `T_hand_object` |
+| 物理步 | `EpisodeRun`，含试抓、回放与 settle |
+
+### 规划器
+
+仓库内 RRT-Connect（双树、固定种子），依赖只有 numpy；状态与连边都经 `check_point`，连边按任一连杆或被抓物上的点每步
+位移 ≤ 5 mm 细分；先试直连。每次 connect 至多 1500 次状态查询或 30 s，组合共享 120 s 并按候选轮转。OMPL 算法更成熟，
+但 Python 绑定未在 ROCm 镜像上验证，接口留在 `JointPlanner` 可换；VAMP、cuRobo 自带碰撞表示，会形成与仿真几何不一致
+的第二份世界，不选。
+
 ## 下一步
 
-按四步迁移，每步单独可合入：
+模板式链路的四步迁移已完成（rocRobo 删除、`SimEnv` 快照接口、执行门、[调用链](call-chain.md)重写），读数见
+[certified 读数](acceptance.md#被测链路的-certified-读数)。下一版按以下顺序迁移，每步单独可合入：
 
-1. ✅ 删除 rocRobo、`collision_aware` 分叉与碰撞盲退回（含 Docker socket 挂载与 sidecar 文档）；
-2. ✅ `SimEnv` 的快照接口，加 GPU 探针；
-3. ✅ 接入执行门、航点字段，并加 `infeasible` 失败；
-4. ✅ 重写 [调用链](call-chain.md)。
+1. 门加固：`check_point`、只读凭证、`Refused`、`verify` 接收 `Holding`；
+2. `JointPlanner`，独立于技能，GPU 上测 F2 布局的持物 connect；
+3. 6 个动作、`CompositionSearch` 与 pick / place recipe 一步切换；`EpisodeRun`、单资产验证与 `certify` 三个入口改用
+   同一服务，删除 `MotionExecutor.pick / place`、`run_skills`、`plan_segment` 与转基座 / 抬高补丁；
+4. teacher / LLM 可直接提交 meta action 列表，走同一搜索与门。
 
-然后在[验收场景族](acceptance.md)的 test seed 上读出 certified 率。
+然后在组合式验收场景（含开发期不读的留出族）的 test seed 上读 certified 率。
