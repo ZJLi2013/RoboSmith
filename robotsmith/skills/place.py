@@ -1,8 +1,9 @@
 """``place`` primitive: transport the held object and release it at the target.
 
 Supports tabletop places (explicit/held ``place_z``) and articulated-opening
-places (live tray-floor anchor). The transport is tried at increasing carry heights; the
-lowest whose whole trajectory passes the execution gate is executed.
+places (live tray-floor anchor). The transport to the standoff above the target is a
+``JointPlanner`` connection with the held object; the descend, release and retreat are the
+executor's straight lines from there, and the whole trajectory passes the execution gate once.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ import numpy as np
 from robotsmith.execution.gate import Holding, MotionRejected, Refused, Span, VerifiedMotion, poses_of, spans_of
 from robotsmith.grasp.planner import GraspPlan
 from robotsmith.grasp.transforms import pose_matrix
+from robotsmith.motion.joint_planner import JointPlanner
 from robotsmith.skills.base import SkillContext
 from robotsmith.skills.frames import (
     _float_or_none,
@@ -25,8 +27,6 @@ from robotsmith.skills.registry import bound_leaf, register
 # held payload settles just above the floor instead of being driven through it.
 # Robot/gripper property (not asset geometry), so it lives here, not in metadata.
 _DRAWER_PLACE_EE_CLEARANCE = 0.10
-# Extra height the held object is carried at, lowest first (0: straight joint-space transport).
-CARRY_HEIGHTS = (0.0, 0.05, 0.10, 0.15, 0.20)
 
 
 def _resolve_place_plan(
@@ -75,57 +75,53 @@ def _resolve_place_plan(
     return place_plan, requested_place_z, float(offset)
 
 
-def _transit_lerp(qa: np.ndarray, qb: np.ndarray, params) -> list[np.ndarray]:
-    """Joint-space interpolation qa→qb at transport resolution ([] if no move)."""
-    if np.allclose(qa[:7], qb[:7], atol=1e-3):
-        return []
-    steps = max(params.transport_steps, params.min_steps)
-    return [qa + (qb - qa) * (i + 1) / steps for i in range(steps)]
-
-
-def _place_transport_seed(ctx: SkillContext, q0: np.ndarray) -> tuple[np.ndarray, list[np.ndarray]]:
-    """Start pose + transit for the inbound move: aim the base joint at the target so the
-    joint-space transport segment does not under-rotate the base and release off to the side."""
-    if ctx.phase not in ("all", "transport"):
-        return q0, []
-    seed = q0.copy()
-    target_xy = np.asarray(ctx.obj_pos, dtype=np.float64)
-    seed[0] = float(np.arctan2(float(target_xy[1]), float(target_xy[0])))
-    return seed, _transit_lerp(q0, seed, ctx.params)
+def _connect(ctx: SkillContext, q0: np.ndarray, place_plan: GraspPlan, holding: Holding | None):
+    """The planned transport from ``q0`` to the standoff, fingers kept where they are, and its trace record."""
+    q_pre = np.asarray(ctx.motion_planner.solve_ik(place_plan.pre_grasp_pos, place_plan.pre_grasp_quat,
+                                                   float(q0[7]), init_qpos=q0), dtype=np.float64)
+    q_pre[7:] = q0[7:]
+    try:
+        c = JointPlanner(ctx.gate.env, ctx.gate).connect(q0, q_pre, target=ctx.held, holding=holding,
+                                                         label="transport")
+    except Refused as exc:
+        return None, {"ok": False, **exc.evidence}
+    return c, {"ok": True, "queries": c.queries, "seconds": c.seconds, "nodes": c.nodes, "direct": c.direct}
 
 
 @register("place", post=bound_leaf, settle_s=0.5)
 def run_place(ctx: SkillContext) -> VerifiedMotion:
     # Phase split (live re-anchoring): "transport" moves to straight above the
     # target; "descend" re-reads the (recoiled) target and goes vertical. "all" is
-    # the single-pass legacy path for static anchors. ``obj_pos`` is already
+    # the single pass for static anchors. ``obj_pos`` is already
     # re-resolved per phase by the runtime. See ``skill_phases``.
     place_plan, requested_place_z, resolved_place_z = _resolve_place_plan(ctx)
     q0 = np.asarray(ctx.qpos, dtype=np.float64)
-    start, transit = _place_transport_seed(ctx, q0)
-    heights = CARRY_HEIGHTS if ctx.phase in ("all", "transport") else (0.0,)
     env = ctx.gate.env
-    carry = env.hand_pose(start) if len(heights) > 1 else None
     holding = None
     if ctx.held:
         holding = Holding(ctx.held, np.linalg.inv(pose_matrix(*env.hand_pose(q0)))
                           @ pose_matrix(*env.object_pose(ctx.held)))
-    tries, motion = [], None
-    for h in heights:
+    transport, motion, why = None, None, None
+    transit, start = [], q0
+    if ctx.phase in ("all", "transport"):
+        connection, transport = _connect(ctx, q0, place_plan, holding)
+        if connection is not None and len(connection.motion.trajectory):
+            transit, start = list(connection.motion.trajectory), connection.motion.trajectory[-1]
+    if transport is None or transport["ok"]:
         try:
-            result = ctx.executor.place(place_plan, ctx.motion_planner, start, ctx.params, phase=ctx.phase,
-                                        carry=carry, carry_height=h)
-            spans = [Span("transit", 0, len(transit), holding=True)] + spans_of(result.segments, len(transit))
-            motion = ctx.gate.verify(transit + result.trajectory, spans, target=ctx.held, q_start=q0,
+            if ctx.phase == "transport":
+                segments, tail = [], []
+            else:
+                result = ctx.executor.place(place_plan, ctx.motion_planner, start, ctx.params, phase="descend")
+                segments, tail = result.segments, result.trajectory
+            spans = [Span("transport", 0, len(transit), holding=True)] + spans_of(segments, len(transit))
+            motion = ctx.gate.verify(transit + tail, spans, target=ctx.held, q_start=q0,
                                      rest={ctx.skill.target.split(".")[0]}, holding=holding,
-                                     poses=poses_of(result.segments, len(transit)))
+                                     poses=poses_of(segments, len(transit)))
         except MotionRejected as exc:
-            tries.append({"carry_height": h, "gate": exc.to_dict()})
+            why = {"gate": exc.to_dict()}
         except RuntimeError as exc:
-            tries.append({"carry_height": h, "motion_error": str(exc)})
-        else:
-            tries.append({"carry_height": h, "gate": "passed"})
-            break
+            why = {"motion_error": str(exc)}
     ctx.trace(
         {
             "skill": ctx.skill.name,
@@ -137,12 +133,14 @@ def run_place(ctx: SkillContext) -> VerifiedMotion:
             "place_z_source": (
                 "requested" if requested_place_z is not None else "selected_grasp"
             ),
-            "carry_tries": tries,
+            "transport": transport,
             "motion_trace": getattr(ctx.executor, "last_motion_trace", None),
         }
     )
     if motion is None:
-        raise Refused("search_exhausted", {"reason": "no carry height passed the gate", "tries": tries})
+        if transport is not None and not transport["ok"]:
+            raise Refused("search_exhausted", {"reason": "no transport to the standoff", "transport": transport})
+        raise Refused("search_exhausted", {"reason": "the place motion did not pass the gate", **why})
     # The object is only released on the descend phase; transport still carries it,
     # so hold-state carry-over must survive into descend.
     if ctx.phase in ("all", "descend"):

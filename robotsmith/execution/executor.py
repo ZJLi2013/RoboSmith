@@ -249,8 +249,6 @@ class MotionExecutor:
         params: MotionParams,
         *,
         phase: str = "all",
-        carry: tuple[np.ndarray, np.ndarray] | None = None,
-        carry_height: float = 0.0,
     ) -> MotionChainExecution:
         """transport → pre_place → place (open fingers) → retreat.
 
@@ -282,9 +280,8 @@ class MotionExecutor:
         - ``"all"`` (default): the full transport → descend → release → retreat in
           one open-loop pass (legacy behavior; static anchors, tests).
 
-        With ``carry_height`` the transport rises that far above the ``carry`` hand pose (the start),
-        crosses at that height and comes straight down onto the standoff.
-        The object is held until the release; descend and release may rest it on the target, and the
+        The ``place`` skill plans the free move to the standoff itself and calls this with
+        ``"descend"`` from there. The object is held until the release; descend and release may rest it on the target, and the
         retreat may touch it with the fingers.
         """
         transport_wps = [RuntimeMotionWaypoint(
@@ -295,23 +292,6 @@ class MotionExecutor:
             steps=params.transport_steps,
             holding=True,
         )]
-        if carry_height > 0.0:
-            up = np.array([0.0, 0.0, carry_height])
-            transport_wps = [
-                RuntimeMotionWaypoint(
-                    pos=np.asarray(carry[0], dtype=np.float64) + up, quat=carry[1],
-                    finger_width=place_plan.finger_closed, label="carry_up", holding=True,
-                ),
-                RuntimeMotionWaypoint(
-                    pos=np.asarray(place_plan.pre_grasp_pos, dtype=np.float64) + up, quat=place_plan.pre_grasp_quat,
-                    finger_width=place_plan.finger_closed, label="transport", steps=params.transport_steps,
-                    holding=True,
-                ),
-                RuntimeMotionWaypoint(
-                    pos=place_plan.pre_grasp_pos, quat=place_plan.pre_grasp_quat,
-                    finger_width=place_plan.finger_closed, label="carry_down", cartesian=True, holding=True,
-                ),
-            ]
         descend_wps = [
             RuntimeMotionWaypoint(
                 pos=place_plan.grasp_pos,

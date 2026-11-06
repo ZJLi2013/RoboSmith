@@ -15,6 +15,7 @@ from robotsmith.execution.executor import MotionExecutor
 from robotsmith.motion.params import MotionParams
 from robotsmith.motion.planner import GenesisBackend
 from robotsmith.execution.gate import ExecutionFailed, Refused
+from robotsmith.motion.joint_planner import JointPlanner
 from robotsmith.skills import Skill, run_skills
 from robotsmith.assets.geometry import rotate_vec_wxyz
 from robotsmith.skills.frames import (
@@ -121,7 +122,8 @@ class _FakePlan:
     def __init__(self):
         self.grasp_pos = np.array([0.5, 0.0, 0.12])
         self.grasp_quat = np.array([0.0, 1.0, 0.0, 0.0])
-        self.pre_grasp_pos = None
+        self.pre_grasp_pos = np.array([0.5, 0.0, 0.2])
+        self.pre_grasp_quat = self.grasp_quat
         self.retreat_pos = None
         self.metadata = {}
 
@@ -186,7 +188,7 @@ class TestRegistryDispatch:
         assert ex.calls == ["pick", "place", ("drag", "open"), ("drag", "close")]
         assert [m.gated for m in motions] == [True, True, False, False]
         # Each fake segment is tagged by a distinct constant qpos (pick=1, place=2,
-        # drag=3). place may prepend a base-aim transit, so assert the markers and
+        # drag=3). place prepends its planned transport, so assert the markers and
         # their order rather than an exact length.
         markers = [t[-1] for t in traj if np.allclose(t, t[-1])]
         assert markers == [1.0, 2.0, 3.0, 3.0]
@@ -290,24 +292,35 @@ class TestRegistryDispatch:
         assert trace["trials"][0]["reverify"]["pair"] == [["robot", "hand"], ["wall", "base"]]
         gate.check_current(motions[0])
 
-    def test_place_takes_the_lowest_carry_height_that_passes(self, gate, monkeypatch):
-        heights = []
+    def _pick_place(self, gate, ex):
+        state = {**_scene_state(), "positions": {"die": np.array([0.5, 0.0, 0.0]), "mat": np.array([0.4, -0.2, 0.0])}}
+        return run_skills([Skill("pick", "die"), Skill("place", "mat")], _FakePlanner(), ex,
+                          lambda *a, **k: np.zeros(9), state, MotionParams(), gate=gate), state
 
-        def place(self, *a, carry_height=0.0, **k):
-            heights.append(carry_height)
-            return _chain([np.full(9, carry_height)], holding=True)
+    def test_place_carries_the_held_object_along_the_planned_connection(self, gate, monkeypatch):
+        starts = []
+        monkeypatch.setattr(_FakeExecutor, "place",
+                            lambda self, plan, mp, start, *a, **k: starts.append(np.array(start)) or
+                            _chain([np.full(9, 2.0)], holding=True))
+        motions, state = self._pick_place(gate, _FakeExecutor())
+        q0, q_pre = np.full(9, 1.0), np.array([0.0] * 7 + [1.0, 1.0])
+        line = JointPlanner(gate.env, gate).connect(q0, q_pre, target="die", label="transport").motion.trajectory
+        place = motions[1]
+        assert np.allclose(place.trajectory[:len(line)], line) and np.allclose(starts[0], q_pre)
+        assert place.spans[0].label == "transport" and place.spans[0].holding
+        assert state["skill_traces"][1]["transport"]["ok"] and state["skill_traces"][1]["transport"]["direct"]
 
-        def contacts_at(q, held=None, placed=None):
-            below = held and np.allclose(q, q[0]) and q[0] < 0.1
-            return [(("die", "base"), ("barrier", "base"))] if below else []
-
-        monkeypatch.setattr(_FakeExecutor, "place", place)
-        monkeypatch.setattr(gate.env, "contacts_at", contacts_at, raising=False)
-        motions = run_skills([Skill("pick", "die"), Skill("place", "mat")], _FakePlanner(), _FakeExecutor(),
-                             lambda *a, **k: np.zeros(9), {**_scene_state(), "positions": {
-                                 "die": np.array([0.5, 0.0, 0.0]), "mat": np.array([0.4, -0.2, 0.0])}},
-                             MotionParams(), gate=gate)
-        assert heights == [0.0, 0.05, 0.10] and np.allclose(motions[1].trajectory[-1], 0.10)
+    def test_a_place_whose_connection_is_refused_steps_nothing(self, gate, monkeypatch):
+        monkeypatch.setattr(gate.env, "contacts_at",
+                            lambda q, held=None, placed=None:
+                            [(("die", "base"), ("barrier", "base"))] if held and np.allclose(q[:7], 0.0) else [],
+                            raising=False)
+        ex = _FakeExecutor()
+        with pytest.raises(Refused) as exc:
+            self._pick_place(gate, ex)
+        assert exc.value.label == "search_exhausted" and ex.calls == ["pick"] and gate.env.writes == 0
+        transport = exc.value.evidence["transport"]
+        assert not transport["ok"] and transport["queries"] >= 1 and transport["reason"]
 
     def test_place_lets_the_held_object_rest_on_the_target_entity_of_a_surface(self, gate, monkeypatch):
         monkeypatch.setattr(_FakeExecutor, "place",

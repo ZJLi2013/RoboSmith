@@ -168,7 +168,7 @@ def run_instance(env, pkg, family, mon, record_episode):
         success=bool(success), frame_count=run.frame_count, stopped=run.stopped,
         handoffs=[{k: h.get(k) for k in ("skill", "phase", "done", "cause")} for h in run.handoffs],
         trials=[t.get("trials") for t in run.skill_traces if "trials" in t],
-        carry_tries=[t.get("carry_tries") for t in run.skill_traces if "carry_tries" in t],
+        transports=[t["transport"] for t in run.skill_traces if t.get("transport")],
         task_judge={"object_positions": judged.get("object_positions")} if judged else None,
     )
     clean = not mon.violating
