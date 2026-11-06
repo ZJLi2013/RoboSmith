@@ -87,7 +87,9 @@ RUN python -m pip install "lerobot==0.4.4" \
 
 # Former GraspGen (learned grasp) dependencies. GraspGen has been removed from
 # the code and nothing in the repository imports these packages; the layer only
-# keeps the published gfx942-rocm6.4.3-genesis0.4.5 image reproducible.
+# keeps the published gfx942-rocm6.4.3-genesis0.4.5 image reproducible. Drop it,
+# with scripts/setup/_install_scatter_shim.py, at the next image rebuild: that
+# rebuild has to re-check the Genesis 0.4.5 numpy/scikit-image pins anyway.
 # numpy/scikit-image/setuptools are re-pinned afterwards because the
 # diffusers/transformers/huggingface-hub deps pull a newer numpy that would
 # otherwise reintroduce the Genesis 0.4.5 skimage ABI break.

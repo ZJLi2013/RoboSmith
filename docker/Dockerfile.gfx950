@@ -58,7 +58,7 @@ RUN python -m pip install --upgrade pip setuptools wheel \
 
 # Former GraspGen (learned grasp) dependency: the torch_scatter shim for its
 # PointTransformerV3 backbone. GraspGen has been removed from the code; the step
-# only keeps the published image reproducible.
+# only keeps the published image reproducible. Drop it at the next image rebuild.
 RUN if [ -f scripts/setup/_install_scatter_shim.py ]; then \
       python scripts/setup/_install_scatter_shim.py; \
     fi
