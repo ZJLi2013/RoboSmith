@@ -10,20 +10,23 @@ nothing while carried, and the mat from the lowering on, through the task judge'
 passes when the die settles inside its cage.
 
 ``--heldout`` reads the family and its witness parameters from ``scenarios/acceptance/heldout/`` (``witness.json``);
-this file names no held-out family.
+this file names no held-out family. Rows go to ``<out>.jsonl`` as they finish (``batch.run_batch``), the readings
+to ``--out``.
 """
 
 import argparse
 import json
 import math
 import sys
-import time
 from pathlib import Path
 
 import numpy as np
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from batch import HUNG, INSTANCE_TIMEOUT_S, run_batch
+
 from robotsmith.scenario_runtime import materialize_candidate
 from robotsmith.scenario_runtime.runner import evaluate_scenario_task
 
@@ -222,6 +225,7 @@ def main() -> None:
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--control", action="store_true")
     ap.add_argument("--heldout", action="store_true")
+    ap.add_argument("--resume", action="store_true", help=f"continue the rows in --out (after exit code {HUNG})")
     args = ap.parse_args()
     if args.heldout:
         path = ACCEPTANCE / "heldout" / f"{args.family}.yaml"
@@ -237,33 +241,37 @@ def main() -> None:
     first = packages[seeds[0]].legacy_scene
     env = SimEnv.build(first, seed=seeds[0])
     fixed = {o.name_override: o.fixed_position for o in first.objects if o.name_override != "die"}
-    rows = []
-    for seed in seeds:
-        pkg = packages[seed]
+    for pkg in packages.values():
         scene = pkg.legacy_scene
-        placed = {o.name_override: np.asarray(o.fixed_position, dtype=float) for o in scene.objects}
-        assert all(np.allclose(placed[k], v) for k, v in fixed.items()), "fixtures move between seeds"
+        assert all(np.allclose(o.fixed_position, fixed[o.name_override])
+                   for o in scene.objects if o.name_override != "die"), "fixtures move between seeds"
         assert tuple(scene.table_size) == tuple(first.table_size), "table size changes between seeds"
-        row = {"family": args.family, "seed": seed, "rule": RULE, "die_xyz": placed["die"].round(4).tolist()}
-        t0 = time.perf_counter()
+    head = {"family": args.family, "rule": RULE}
+
+    def one(seed):
+        pkg = packages[seed]
+        placed = {o.name_override: np.asarray(o.fixed_position, dtype=float) for o in pkg.legacy_scene.objects}
+        row = {**head, "die_xyz": placed["die"].round(4).tolist()}
         try:
             env.reset({"die": tuple(placed["die"])}, settle_steps=30)
-            row["settle_ok"] = True
         except SceneInvalid as e:
-            rows.append({**row, "settle_ok": False, "witness_ok": False, "why": str(e)})
-            continue
+            return {**row, "settle_ok": False, "witness_ok": False, "why": str(e)}
+        row["settle_ok"] = True
         die = _np(env.entity_map["die"].get_pos()).reshape(-1)
         row.update(wall_gap(placed, die, gap["of"], gap["yaw_deg"]) if gap else difficulty(args.family, placed, die))
         if fam is None:
             why = caged(placed, die)
-            rows.append({**row, "witness_ok": not why, "why": why})
-            continue
+            return {**row, "witness_ok": not why, "why": why}
         w = witness(env, pkg.legacy_task, fam, die, placed["mat"])
         ok = w["success"] and w["first_illegal"] is None
-        rows.append({**row, **w, "witness_ok": ok, "why": "" if ok else str(w["first_illegal"] or "task failed"),
-                     "seconds": round(time.perf_counter() - t0, 1)})
-        print(json.dumps(rows[-1]), flush=True)
-    args.out.parent.mkdir(parents=True, exist_ok=True)
+        return {**row, **w, "witness_ok": ok, "why": "" if ok else str(w["first_illegal"] or "task failed")}
+
+    log = args.out.with_suffix(".jsonl")
+    log.parent.mkdir(parents=True, exist_ok=True)
+    prior = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()] if args.resume else []
+    with log.open("a" if args.resume else "w", encoding="utf-8") as fh:
+        rows = run_batch(seeds, one, fh, prior=prior, timeout=INSTANCE_TIMEOUT_S,
+                         failed={**head, "settle_ok": None, "witness_ok": False})
     args.out.write_text(json.dumps(rows, indent=1), encoding="utf-8")
     print(f"{args.family}: {sum(r['witness_ok'] for r in rows)}/{len(rows)} witnessed")
 

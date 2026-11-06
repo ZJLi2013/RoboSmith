@@ -13,12 +13,8 @@ after the reset. Writes ``instances.jsonl`` (one row per instance, as it runs), 
 import argparse
 import dataclasses
 import json
-import os
 import shutil
 import sys
-import threading
-import time
-import traceback
 from collections import Counter
 from pathlib import Path
 
@@ -28,12 +24,11 @@ import yaml
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from batch import HUNG, INSTANCE_TIMEOUT_S, run_batch  # noqa: E402
 from robotsmith.execution.gate import SUPPORT, Span, certified  # noqa: E402
 
 SETTLE_STEPS = 30
 NEGATIVE = {"f4_caged"}
-INSTANCE_TIMEOUT_S = 600
-HUNG = 3
 
 
 class Monitor:
@@ -189,50 +184,6 @@ class _NoDataset:
         pass
 
 
-def run_batch(seeds, one, fh, prior=(), timeout=None, on_hang=lambda: os._exit(HUNG)) -> list[dict]:
-    """``one(seed)`` for each seed, its row appended to ``fh`` as it finishes. An instance that raises is retried
-    once; both attempts stay in ``fh`` and the last one is the instance's reading. ``prior`` are the rows of an
-    earlier run of the batch: a seed they settle is not run again. An attempt still running after ``timeout``
-    seconds is written as an error and ``on_hang`` ends the process, since a hung simulator step cannot be
-    interrupted from Python; rerunning with the rows so far retries it."""
-    lock = threading.Lock()
-
-    def write(row):
-        with lock:
-            fh.write(json.dumps(row, default=str) + "\n")
-            fh.flush()
-        print(json.dumps({k: row.get(k) for k in ("seed", "attempt", "outcome", "first_violation", "seconds")},
-                         default=str), flush=True)
-
-    def hang(seed, attempt):
-        write({"seed": seed, "attempt": attempt, "outcome": "error", "certified": False,
-               "why": f"no result after {timeout} s", "seconds": timeout})
-        on_hang()
-
-    rows = []
-    for seed in seeds:
-        past = [r for r in prior if r["seed"] == seed]
-        attempt = len(past)
-        row = past[-1] if past else None
-        while attempt < 2 and (row is None or row["outcome"] == "error"):
-            attempt += 1
-            watchdog = threading.Timer(timeout, hang, (seed, attempt)) if timeout else None
-            if watchdog:
-                watchdog.daemon = True
-                watchdog.start()
-            t0 = time.perf_counter()
-            try:
-                row = one(seed)
-            except Exception:  # noqa: BLE001 -- an instance's crash is a reading, the batch goes on
-                row = {"outcome": "error", "certified": False, "why": traceback.format_exc()}
-            if watchdog:
-                watchdog.cancel()
-            row = {"seed": seed, "attempt": attempt, **row, "seconds": round(time.perf_counter() - t0, 1)}
-            write(row)
-        rows.append(row)
-    return rows
-
-
 def seeds_for(path: Path, split: str, limit: int | None) -> list[int]:
     lo, hi = yaml.safe_load(path.read_text(encoding="utf-8"))["split"][split]
     return list(range(lo, hi + 1))[:limit]
@@ -273,7 +224,8 @@ def main() -> None:
     log = args.out / "instances.jsonl"
     prior = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()] if args.resume else []
     with log.open("a" if args.resume else "w", encoding="utf-8") as fh:
-        rows = run_batch(seeds, one, fh, prior=prior, timeout=INSTANCE_TIMEOUT_S)
+        rows = run_batch(seeds, one, fh, prior=prior, timeout=INSTANCE_TIMEOUT_S, failed={"certified": False},
+                         show=("seed", "attempt", "outcome", "first_violation", "seconds"))
     outcomes = Counter(r["outcome"] for r in rows)
     summary = {"family": args.family, "split": args.split, "seeds": seeds,
                "certified": sum(r["certified"] for r in rows), "n": len(rows), "outcomes": dict(outcomes)}
