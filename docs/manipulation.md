@@ -50,10 +50,19 @@ agent 写步骤表（pick X、place X on Y…），技能执行，每步判定�
 
 接口：
 
-- `ExecutionGate.verify(trajectory, spans, *, target, q_start, rest=())` 返回
-  `VerifiedMotion(trajectory, spans, fingerprint, checked)`；任何一个轨迹点违规就抛 `MotionRejected(span, index, pair)`。
+- `ExecutionGate.check_point(q, span, *, target, rest=(), held=None, placed=None, pose=None)` 是唯一的单点合法性检查，
+  合法返回 `None`，否则返回 `{"reason", 证据}`：`invalid_value`（非有限值或维数不对）、`joint_limit`（超出
+  `SimEnv.joint_limits`）、`fk_residual`（带 `pose` 时手部位姿与它相差超过 5 mm / 0.05 rad）、`self_collision`
+  （机器人两连杆相碰且不在 `SimEnv.joined_links`，即非父子、非同父）、`collision`（其余接触不被 `permitted` 许可）。
+  只读，返回或抛出时场景不变。后续的规划器与 `verify` 用同一个它。
+- `ExecutionGate.verify(trajectory, spans, *, target, q_start, rest=(), holding=None, poses=None)` 对每个点调
+  `check_point`，第一个不过的点抛 `MotionRejected(span, index, rejection)`（`rejection` 即上面的字典，接触对在 `.pair`）。
   `spans` 是 `Span(label, start, end, holding, allow)`，必须无缝铺满整条轨迹，门检查的是**会被执行的每一个稠密轨迹点**，
-  不抽样；性能优化不得减少被检查的点。`ungated(trajectory)` 只给开合抽屉用。
+  不抽样；性能优化不得减少被检查的点。`poses` 是 `{轨迹下标: (pos, quat)}`，只含要到达某个手部位姿的点：运动链给每段记下
+  航点位姿 `pose` 与到达它的下标 `reach`，`gate.poses_of(segments, offset)` 换算出来；自由插值的中间点、transit 与保持点
+  不带期望位姿，所以不会因偏离终点被拒。`ungated(trajectory)` 只给开合抽屉用。
+- 通过时返回只读的 `VerifiedMotion(trajectory, spans, fingerprint, checked, gated, holding)`：轨迹是只读数组组成的 tuple，
+  是调用方数组的副本；只有签发它的门的 `check_current` 接受它，手工构造或别的门签发的凭证一律 `StaleMotion`。
 - 段边界来自运动链：每段带 `span` / `holding` / `allow`，段后保持与尾部保持计入所在段；转基座段由技能层作为第一段加入。
   pick 的手指闭合段是 `grip`、其后一段持物且 `rest`；place 的搬运持物，下放与松手持物且 `rest`，退回 `grip`。
 - `SimEnv.contacts_at(qpos, held=None, placed=None)`、`SimEnv.hand_pose(qpos)`、`SimEnv.object_pose(name)` 在一个快照事务里
@@ -63,9 +72,10 @@ agent 写步骤表（pick X、place X on Y…），技能执行，每步判定�
 
 契约：
 
-- **持物生命周期**：持物段的被抓物位姿 = 手位姿 · T，T 取自持物开始之前的构型（首个持物点的前一点；轨迹从持物开始时取
-  `q_start`）与被抓物当时的位姿。最后一个持物点之后，被抓物留在 手(最后持物点) · T，退回时手掌穿过它会被拒绝。
-  被抓物就是场景里那个 entity，几何与执行一致。
+- **持物生命周期**：持物是调用方给的 `Holding(target, t_hand_object)`，有持物段而没有它时 `verify` 报错。pick 由抓取候选的
+  手部位姿与被抓物当前位姿构造 T，place 由实测手部位姿与被抓物位姿构造。attach 处（首个持物点的前一点；轨迹从持物开始时取
+  `q_start`）手 · T 与被抓物位姿相差超过 5 mm / 0.05 rad 时拒绝，记 `binding_mismatch`。持物段被抓物位姿 = 手位姿 · T；
+  最后一个持物点之后，被抓物留在 手(最后持物点) · T，退回时手掌穿过它会被拒绝。被抓物就是场景里那个 entity，几何与执行一致。
 - **接触许可**：
   - 手指碰目标，只在持物段或 `grip` 段合法；手的其它 link 碰到目标一律违规。
   - 被抓物碰支撑面或放置目标的 entity（`mat.top` 取 `mat`），只在 `rest` 段合法。
@@ -74,13 +84,17 @@ agent 写步骤表（pick X、place X on Y…），技能执行，每步判定�
   - 必须拒绝的样例：两个端点合法、但中途穿墙的轨迹。
 - **候选搜索**：pick 每个候选先过门，再试抓，抬起后在恢复的状态上对同一条轨迹重新过门；试遍全部候选时（`trial_all`，
   修复工具用），最后一次试抓之后再按候选顺序对抬起者的原轨迹重新过门，第一个通过的被选中；place 按 0、5、10、15、20 cm 的搬运
-  高度取最低能过门的一条。任何候选都不成立时抛 `Infeasible(reason, detail)`。
+  高度取最低能过门的一条。没有候选在任何试抓之前过门时抛 `Refused("search_exhausted", evidence)`（零物理步，不证明不可解）；
+  已有候选过门并试抓过、却没有一个成立时抛 `ExecutionFailed(evidence, steps)`，`steps` 是试抓步进的物理步数。
+  `Refused` 只接受 `search_exhausted`、`unsupported`、`infeasible` 三个标签，`infeasible` 留给覆盖动作域的可检查证明，
+  现在没有任何路径产出它。
 - **状态事务**：只有 `SimEnv` 写 Genesis 状态。快照事务不改变状态指纹；试抓会步进物理，所以试抓之后旧的验证一律作废。
   真实步进与 `reset` 都会改变指纹。
 - **失效与零执行**：执行前 `check_current` 比对 `VerifiedMotion.fingerprint` 与当前指纹，不等就抛 `StaleMotion`。
-  `verify` 抛出时，没有任何一点进入录制；步骤 `infeasible` 时 `EpisodeRun` 记 `cause: infeasible` 与各候选的拒绝原因，
-  不做正式回放（零帧）并停在这一步，入口不做任务判定的 settle，直接判失败。判定之前，过了门的 pick 候选已在
-  试抓里步进过物理并恢复快照；只有所有候选都在门前被拒（例如 F4）时，这一步才在初始化之外零物理步。settle 与保持只下发最后一个已验证点。
+  `verify` 抛出时，没有任何一点进入录制；步骤抛 `Refused` 或 `ExecutionFailed` 时 `EpisodeRun` 记 `cause`（标签）、
+  `evidence`（各候选的拒绝原因）与 `steps`，存进 `stopped`，不做正式回放（零帧）并停在这一步，入口不做任务判定的
+  settle，直接判失败。`search_exhausted` 表示所有候选都在门前被拒（例如 F4），这一步在初始化之外零物理步；
+  `execution_failed` 表示过门的候选已在试抓里步进过物理并恢复快照。settle 与保持只下发最后一个已验证点。
   初始 reset / settle 属于场景初始化，不在门的范围。
 - **并发**：不支持。一个 `SimEnv` 同一时刻只能有一个调用者。
 
@@ -110,8 +124,12 @@ agent 写步骤表（pick X、place X on Y…），技能执行，每步判定�
 - 执行门在同一环境的真实场景上满足所列预期，测试在 `tests/test_gate_gpu.py`：两端合法、中途碰墙的轨迹在中间点被拒；
   持物进墙以被抓物–墙被拒、越过墙上方可过门，手 · T 摆出的被抓物与预期位置相差不到 1 mm；松手后手掌下到被抓物处以
   机器人–被抓物被拒、向上退回可过门；真实步进后旧凭证失效。
-- 入口有界检查：F0、F4 各一个 seed 与单资产抓取验证都只经门执行；F0 完成 pick / place，F4 的 pick 判 `infeasible`、零帧，
+- 入口有界检查：F0、F4 各一个 seed 与单资产抓取验证都只经门执行；F0 完成 pick / place，F4 的 pick 在门前全部被拒、零帧，
   拒绝原因逐候选保留。这不是验收族的 certified 结果，certified 率见下一步。
+- `check_point` 新增的关节限位、FK 残差、非邻接自碰撞与 attach 核对，以及 `SimEnv.joint_limits`（Genesis
+  `get_dofs_limit`）、`joined_links`，只在 CPU 受控样例上验证过（[e1 证据](../exps/r1/evidence/e1/README.md)），
+  还没有在 Genesis 上跑过：IK 残差超过 5 mm 的抓取候选现在会以 `fk_residual` 或 `binding_mismatch` 被拒，它对验收族读数的
+  影响要等下一次 GPU 批次读出。`tests/test_gate_gpu.py` 已改为显式传 `Holding`。
 
 ## 下一版设计：规划给出的 meta action 组合（未实现）
 
@@ -158,8 +176,8 @@ place: sample(place | g) · move_to(p.pre) · move_linear(p.place) · detach(p.s
 - 试抓只对已过门的组合做、只回放 pick part，由 `EpisodeRun` 发起；第一次试抓即提交，此后结果只有成功或
   `execution_failed`。门拒绝发生在任何试抓之前，所以 F4 仍是 reset 后零物理步。
 - 结果：`search_exhausted`（声明的候选与预算内没有组合过门，含 F4，不证明不可解）、`unsupported`、`infeasible`
-  （留给覆盖动作域的可检查证明，第一版不产出）三者都零物理步，由 `Refused(label, evidence)` 承载，替代现在的
-  `Infeasible`；`execution_failed` 保留实际步数。
+  （留给覆盖动作域的可检查证明，第一版不产出）三者都零物理步，由 `Refused(label, evidence)` 承载；`execution_failed`
+  由 `ExecutionFailed(evidence, steps)` 承载，保留实际步数。这两个类型已实现，现有 pick / place 已经使用它们。
 - 凭证：`gate.verify` 按切点签发 pick part、place part 两个只读 `VerifiedMotion`；任何物理步都改变指纹，旧 part 自然失效。
   pick part 执行后按实测关节角与实测 `T_hand_object` 重验 place part（实测起点偏差 > 0.01 rad 时先接一段 `move_to`），
   不过即 `execution_failed`。
@@ -171,8 +189,8 @@ place: sample(place | g) · move_to(p.pre) · move_linear(p.place) · detach(p.s
 | 动作展开 | 各 meta action 实现 |
 | 候选搜索与组合内回溯 | `CompositionSearch`（替换 `pick._select` 与 `CARRY_HEIGHTS` 循环） |
 | 自由段 | `JointPlanner`（替换 `_transit_lerp`、`_pick_seed_transit`、`_place_transport_seed`） |
-| 合法性 | `ExecutionGate.check_point`：数值有效、关节限位、FK 残差（5 mm / 0.05 rad）、非邻接自碰撞、`contacts_at` + `permitted`；规划器与 `verify` 都调它 |
-| 持物 | `PlanState.holding`；`gate.verify` 接收它并在 attach 点核对，不再从首个持物点自推 `T_hand_object` |
+| 合法性 | `ExecutionGate.check_point`：数值有效、关节限位、FK 残差（5 mm / 0.05 rad）、非邻接自碰撞、`contacts_at` + `permitted`；规划器与 `verify` 都调它（已实现，`verify` 已在用） |
+| 持物 | `PlanState.holding`；`gate.verify` 接收 `Holding` 并在 attach 点核对（`verify` 一侧已实现，现由 pick / place 构造；`PlanState` 未实现） |
 | 物理步 | `EpisodeRun`，含试抓、回放与 settle |
 
 ### 规划器
@@ -187,7 +205,7 @@ place: sample(place | g) · move_to(p.pre) · move_linear(p.place) · detach(p.s
 模板式链路的四步迁移已完成（rocRobo 删除、`SimEnv` 快照接口、执行门、[调用链](call-chain.md)重写），读数见
 [certified 读数](acceptance.md#被测链路的-certified-读数)。下一版按以下顺序迁移，每步单独可合入：
 
-1. 门加固：`check_point`、只读凭证、`Refused`、`verify` 接收 `Holding`；
+1. 门加固：`check_point`、只读凭证、`Refused`、`verify` 接收 `Holding`（已实现，CPU 验证，GPU 未跑）；
 2. `JointPlanner`，独立于技能，GPU 上测 F2 布局的持物 connect；
 3. 6 个动作、`CompositionSearch` 与 pick / place recipe 一步切换；`EpisodeRun`、单资产验证与 `certify` 三个入口改用
    同一服务，删除 `MotionExecutor.pick / place`、`run_skills`、`plan_segment` 与转基座 / 抬高补丁；

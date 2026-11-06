@@ -2,8 +2,9 @@
 
 开发文档，画 `main` 上的现状，粒度到函数；设计（要保证什么）在 [system-design](system-design.md) 与 [manipulation](manipulation.md)。改了这条链的 PR 同时改这里。
 
-**每个被执行的关节目标都先经同一道执行门**：技能生成整条稠密轨迹，`ExecutionGate.verify` 在 Genesis 快照里逐点查接触，
-`EpisodeRun` 回放前核对状态指纹，只回放签发过的原轨迹。门的接口与接触契约见
+**每个被执行的关节目标都先经同一道执行门**：技能生成整条稠密轨迹，`ExecutionGate.verify` 对每个点调用
+`check_point`（数值、关节限位、要到达的位姿、自碰撞与接触，接触在 Genesis 快照里查），`EpisodeRun` 回放前核对凭证是这道门
+签发的、状态指纹没变，只回放签发过的原轨迹。门的接口与接触契约见
 [manipulation](manipulation.md#执行门的接口与契约)。
 
 ## episode：从入口到判定
@@ -15,7 +16,7 @@ flowchart TD
     subgraph ORCH["编排：做哪几步"]
         T["--planner file（默认）<br/>scenarios/plans/ 下同名 YAML 的 steps<br/>runner.run_scenario_episode"]
         A["--planner agent --role certifier|baseline<br/>planner.run_agentic_episode<br/>render_request → call_llm → parse_steps"]
-        RF["planner.route_failure<br/>plan 类失败（含 infeasible）重写剩余步骤，最多 MAX_REPLANS = 2 次"]
+        RF["planner.route_failure<br/>plan 类失败（含零步拒绝）重写剩余步骤，最多 MAX_REPLANS = 2 次"]
         RUN["runner.EpisodeRun.run_steps<br/>每步按 skill_phases 分段；每段先 _live_scene_state 重读仿真"]
     end
 
@@ -25,8 +26,8 @@ flowchart TD
         OC["open_close.run_open / run_close<br/>gate.ungated"]
     end
 
-    INF["Infeasible：记 cause = infeasible 与各候选的拒绝原因<br/>不正式回放（零帧），停在这一步<br/>之前过门的候选可能已试抓：物理步进后恢复"]
-    CUR["ExecutionGate.check_current<br/>凭证指纹 ≠ 当前指纹就抛 StaleMotion"]
+    INF["Refused（search_exhausted：全在门前被拒，零物理步）<br/>或 ExecutionFailed（过门候选试抓后都没抬起，带 steps）<br/>EpisodeRun.stopped 记 cause、evidence、steps；零帧，停在这一步"]
+    CUR["ExecutionGate.check_current<br/>不是本门签发、或凭证指纹 ≠ 当前指纹就抛 StaleMotion"]
 
     subgraph SIM["仿真与判定"]
         REC["sim/recorder.record_episode<br/>逐点下发 VerifiedMotion.trajectory 并录帧"]
@@ -49,8 +50,8 @@ flowchart TD
 ```
 
 技能内部见下一张图。file 与 agent 两条路径共用 `EpisodeRun`，只是步骤表的来源不同。plan 文件里的 `actions`
-（六动作组合）现在只被 `load_plan` 校验，还没有执行路径。agent 路径上 `infeasible` 也按
-plan 类失败重写剩余步骤；重写后的步骤全部执行完，episode 就不再算不可行。
+（六动作组合）现在只被 `load_plan` 校验，还没有执行路径。agent 路径上零步拒绝（`Refused` 的标签）按
+plan 类失败重写剩余步骤，`execution_failed` 按 physical 失败上报；重写后的步骤全部执行完，episode 就不再算被拒。
 
 ## 一个技能：候选、整条轨迹、过门
 
@@ -58,7 +59,7 @@ plan 类失败重写剩余步骤；重写后的步骤全部执行完，episode �
 flowchart TD
     subgraph PK["pick._select：按候选顺序"]
         GEO["grasp/geometric.GeometricGraspPlanner.plan<br/>写回的抓法在前，再按有向包围盒枚举 top_down / side"]
-        PM["pick._pick_motion<br/>_pick_seed_transit 转基座段 + MotionExecutor.pick"]
+        PM["pick._pick_request<br/>_pick_seed_transit 转基座段 + MotionExecutor.pick<br/>Holding 取自候选的抓取位姿，poses 取自航点"]
         V1{"ExecutionGate.verify"}
         TR["sim_env.SimEnv.trial_from_here<br/>重放、恢复快照；物体抬高超过 0.02 m 算抬起"]
         V2{"恢复后对同一条轨迹再 verify"}
@@ -67,11 +68,11 @@ flowchart TD
     subgraph PL["place.run_place：按 CARRY_HEIGHTS 0 → 20 cm"]
         PP["place._resolve_place_plan → grasp/planner.plan_place<br/>落点 = 目标点 + 抓取相对高度"]
         PX["place._place_transport_seed 转基座段 + MotionExecutor.place(carry_height)"]
-        V3{"ExecutionGate.verify<br/>rest = 放置目标的 entity"}
+        V3{"ExecutionGate.verify<br/>rest = 放置目标的 entity；Holding 取自实测手与物体位姿"}
     end
 
     EXE["execution/executor.MotionExecutor<br/>pick / place / drag_handle：航点模板 → RuntimeMotionWaypoint（holding / allow）"]
-    CH["motion/chain.execute_motion_chain → _solve_segment 逐段路由<br/>_assemble_trajectory 给每段写 span / holding / allow"]
+    CH["motion/chain.execute_motion_chain → _solve_segment 逐段路由<br/>_assemble_trajectory 给每段写 span / holding / allow / pose / reach"]
     F["只动手指：手臂锁定"]
     C["笛卡尔段（最终接近、下放、拖拽、退回）<br/>motion/cartesian.solve_cartesian_ik_path，逐步 IK"]
     G["自由段：GenesisBackend.solve_ik + _interpolate，关节线性插值"]
@@ -90,8 +91,9 @@ flowchart TD
 
 门检查的是会被执行的每一个点：转基座段、手指段、段后保持与尾部保持都在 `spans` 里，`spans` 必须铺满整条轨迹。
 pick 的手指闭合段允许手指碰目标（`grip`），其后一段持物且允许离开支撑面（`rest`）；place 的转基座与搬运持物，
-下放、松手持物且 `rest`，退回 `grip`。持物段把目标摆在 手 · T（T 取自持物开始之前的构型），松手之后目标留在
-手(最后持物点) · T，退回时手掌碰到它会被拒绝。
+下放、松手持物且 `rest`，退回 `grip`。持物段把目标摆在 手 · T，T 由技能以 `Holding` 传入，门在持物开始之前的构型上核对
+手 · T 与目标位姿（≤ 5 mm / 0.05 rad）；松手之后目标留在 手(最后持物点) · T，退回时手掌碰到它会被拒绝。
+航点到达点带期望手部位姿（`poses`），门判 FK 残差；自由插值的中间点不带。
 
 `trial_all`（试遍全部候选，修复工具用）在最后一次试抓之后再按候选顺序对抬起者的原轨迹重新过门，第一个通过的被选中。
 
@@ -99,7 +101,7 @@ pick 的手指闭合段允许手指碰目标（`grip`），其后一段持物且
 
 | 位置 | 在门里 | 不在门里 |
 |---|---|---|
-| pick / place 的整条轨迹 | 每个点，含转基座、手指、保持段；持物与松手后的物体 | 机器人自接触 |
+| pick / place 的整条轨迹 | 每个点，含转基座、手指、保持段；持物与松手后的物体；非相连连杆的自碰撞 | 相连（父子、同父）连杆的接触 |
 | 试抓 `SimEnv.trial_from_here` | 试抓前后对同一条轨迹各过一次门 | 试抓本身是物理步进，判抬起，不判接触 |
 | settle 与任务判定 `settle_window` | 只下发最后一个已验证点 | 保持期间的物理演化 |
 | 开合抽屉 `open_close` | — | `gate.ungated`，不查接触；验收族里没有抽屉 |
@@ -108,16 +110,20 @@ pick 的手指闭合段允许手指碰目标（`grip`），其后一段持物且
 
 ## 运动层与执行门的接口
 
-- `execution/gate.ExecutionGate`：`verify(trajectory, spans, *, target, q_start, rest)` 返回
-  `VerifiedMotion(trajectory, spans, fingerprint, checked)`，违规抛 `MotionRejected(span, index, pair)`；
-  `check_current(motion)` 不一致抛 `StaleMotion`；`ungated(trajectory)` 只给开合抽屉。许可规则在 `permitted`。
+- `execution/gate.ExecutionGate`：`check_point(q, span, *, target, rest, held, placed, pose)` 返回 `None` 或拒绝原因；
+  `verify(trajectory, spans, *, target, q_start, rest, holding, poses)` 对每个点调它，返回只读
+  `VerifiedMotion(trajectory, spans, fingerprint, checked, gated, holding)`，违规抛 `MotionRejected(span, index, rejection)`；
+  `check_current(motion)` 不是本门签发或指纹不一致抛 `StaleMotion`；`ungated(trajectory)` 只给开合抽屉。许可规则在
+  `permitted`。步骤级结果 `Refused(label, evidence)`（`search_exhausted` / `unsupported` / `infeasible`，零物理步）与
+  `ExecutionFailed(evidence, steps)` 也在这个模块。
 - `sim/sim_env.SimEnv`：`contacts_at(qpos, held, placed)`、`hand_pose(qpos)`、`object_pose(name)` 在快照事务里查询，
-  返回前还原；`state_fingerprint()` 带真实写入代次，`step()` 与 `reset()` 递增。
+  返回前还原；`joint_limits`、`joined_links` 读机器人模型；`state_fingerprint()` 带真实写入代次，`step()` 与 `reset()` 递增。
 - `motion/planner.MotionPlanner` 只有 `solve_ik(pos, quat, finger_pos, *, init_qpos)`；唯一实现 `GenesisBackend` 包装
   `SimEnv.solve_ik`。
 - `motion/chain.execute_motion_chain(waypoints, motion_planner, start_qpos, params, *, tail_hold_steps,
   raise_on_cartesian_discontinuity)` 做「航点 → IK（笛卡尔段逐步 IK）→ 关节插值」，返回 `MotionChainExecution`，
-  每段带 `span`、`holding`、`allow`；`spans_of` 把它们转成门的 `Span`。
+  每段带 `span`、`holding`、`allow`、航点位姿 `pose` 与到达下标 `reach`；`spans_of` 把它们转成门的 `Span`，`poses_of`
+  转成 `verify` 的 `poses`。
 - `MotionExecutor.pick(plan, motion_planner, home_qpos, params)`、`place(..., *, phase, carry, carry_height)`、
   `drag_handle(..., action)`；`carry_height > 0` 时搬运分成 `carry_up`、`transport`、`carry_down` 三段。
 - `scenario/relations.rigid_moving_links`：关节子 link 加上与它固定连接的 link，给 `clear_of` 的扫掠占地用。
@@ -135,6 +141,6 @@ pick 的手指闭合段允许手指碰目标（`grip`），其后一段持物且
 
 - 单资产抓取验证（`scripts/datagen/validate_asset_picks.py` → `rollout/asset_pick_validation.run_asset_pick`）经
   `skills.run_skills` 走同一套技能、门与执行器，不经 `EpisodeRun`；试抓用 `SimEnv.trial_from_here`，回放前同样
-  `check_current`；全部候选被拒时记 `infeasible`、零帧，不写 episode。
+  `check_current`；pick 停下时把 `cause`、`evidence`、`steps` 记进 `stopped`、零帧，不写 episode。
 - 修复环工具（`grasp/diagnostics/tool.try_candidates`）把 agent 提出的抓法交给单资产入口，以 `trial_all` 试遍，
   所以同样只经门执行。

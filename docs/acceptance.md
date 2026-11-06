@@ -13,8 +13,8 @@
 3. **可解性已知，含负例**：正例都有一条独立于被测链路的执行见证；负例在几何上不可解。
 4. **难度是一个连续参数**：每个实例记下实现的参数值，读数按参数画曲线，不只报一个均值。
 5. **判据是任务级的 certified**：任务谓词成立，且实际执行的轨迹零违规接触，且失败时给出正确的标签
-   （负例应零步拒绝：现有链路记 `infeasible`；[下一版](manipulation.md#下一版设计规划给出的-meta-action-组合未实现)
-   记 `search_exhausted`，不声称已证明不可解）。
+   （负例应零步拒绝：现有链路记 `search_exhausted`，表示声明的候选与预算内无解，不声称已证明不可解；
+   见[步骤结果](manipulation.md#执行门的接口与契约)）。
 6. **不被其他层污染**：被抓物是已准入的简单刚体（`die_01`，5 cm），障碍是 URDF 图元固定件，场景先过静止检查，不渲染。
 7. **单个 episode 便宜**：一次抓放，十几秒仿真。
 
@@ -143,8 +143,8 @@ python scripts/acceptance/certify.py --family f1_wall_gap --split test --out out
   已回放的 span；reset 及其静止计步不判；不属于任何阶段的物理步算违规。试抓的快照恢复不抹掉它的接触计数。
 - **规则**是执行门的 `permitted` 再加一条：die 没被抓着时只能碰桌面、放置目标与机器人手指。门判的是静态位姿，
   认证判的是实际物理，没被抓的 die 碰到墙说明它被推了。和见证的差别：搬运中 die 擦到桌面也算违规。
-- **certified**：正例要任务谓词成立且零违规；负例要第一步判 `infeasible` 且 reset 之后零物理步。
-  其余结果分别记 `infeasible`、`violation`、`task_failed`、`init_failed`（静止检查不过）与 `error`（抛异常，重试一次，
+- **certified**：正例要任务谓词成立且零违规；负例要第一步以 `Refused` 的标签（`search_exhausted` 等）停下且 reset 之后
+  零物理步。其余结果分别记停下的标签（`search_exhausted`、`execution_failed`）、`violation`、`task_failed`、`init_failed`（静止检查不过）与 `error`（抛异常，重试一次，
   两次尝试都留在 `instances.jsonl`，取后一次）。Genesis 偶尔在某个物理步上挂住，Python 中断不了它：一次尝试超过
   600 s 就记为 `error` 并以退出码 3 结束进程，`--resume` 接着已写的行重试它并跑完其余 seed。这个计时器跑在
   Python 线程里，挂住时若一直占着 GIL 它就不触发（见证的 test 批次遇到过一次，空转 33 分钟），此时只有外层的
@@ -152,7 +152,8 @@ python scripts/acceptance/certify.py --family f1_wall_gap --split test --out out
 - 每实例一行：布局、静止后位置、难度参数、各阶段物理步与违规步、首个违规（阶段、span、接触对、物理步号）、
   正式帧数、交接记录、任务判定。
 
-test seed 100–119 上的读数（commit `7707f92`，每族 20 个实例各跑一次，无重试）：
+test seed 100–119 上的读数（commit `7707f92`，每族 20 个实例各跑一次，无重试；该 commit 把门前全部被拒记为
+`infeasible`，对应现在的 `search_exhausted`）：
 
 | 族 | certified | 其余 | 失败在哪 |
 |---|---|---|---|
