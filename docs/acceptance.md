@@ -39,7 +39,8 @@ split：`playground` 0–9，`test` 100–119。
 `check_plan` 校验它，六动作以外的请求（如 `push`）报 `PlanInvalid`。现有链路还不执行它。
 
 `read_plan_file` 是读 plan 文件的唯一入口（`load_scenario` 与 `load_plan` 都经它）。留出族的 plan 文件在改名前冻结，保留旧键 `teacher` / `plan`，
-读时映射为 `name` / `actions`；同一文件新旧键混用报 `PlanInvalid`。这样留出文件只迁路径、字节与 a2 的 sha256 不变。
+读时映射为 `name` / `actions`；同一文件新旧键混用报 `PlanInvalid`。它只读文件，不回写、不跨调用缓存，YAML 与 schema
+错误原样抛出。这样留出文件只迁路径、字节与 a2 的 sha256 不变。
 
 | 动作 | 参数 | 含义 |
 |---|---|---|
