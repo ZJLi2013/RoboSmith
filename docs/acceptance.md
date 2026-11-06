@@ -93,7 +93,7 @@ test seed 100–119 上的读数（commit `7707f92`，每族 20 个实例各跑�
 
 | 族 | certified | 其余 | 失败在哪 |
 |---|---|---|---|
-| F0 空桌面 | 19/20 | 1 `violation` | seed 108：任务谓词成立，但 pick 正式回放的第一个 transit 点读到 die–mat 接触（此时 die 在 y=0.16、垫在 y=−0.22），之后的 settle 另有 13 个违规步；成因未查 |
+| F0 空桌面 | 19/20 | 1 `violation` | seed 108：任务谓词成立，但 pick 正式回放的第一个 transit 点读到 die–mat 接触（此时 die 在 y=0.16、垫在 y=−0.22），之后的 settle 另有 13 个违规步；同一 commit 重跑一次为 20/20，这一例不复现，成因未查 |
 | F1 贴墙抓取 | 19/20 | 1 `infeasible` | 间隙最小的实例（7.7 mm）：8 个抓取候选在下探段全被门拒，接触对 die–wall；其余 19 个（8.4–40.9 mm）全部 certified |
 | F2 越障搬运 | 0/20 | 20 `infeasible` | 都在 place：5 个搬运高度全部在 transit 段的同一个点被门拒，接触对 die–barrier |
 | F4 罩住 | 20/20 | — | 都在 pick 判 `infeasible`，reset 之后零物理步 |
