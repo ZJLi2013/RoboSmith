@@ -41,23 +41,10 @@ def try_candidates(context: dict, candidates: list[dict], out_dir: Path) -> dict
     from robotsmith.grasp import geometric
     from robotsmith.rollout.asset_pick_validation import AssetPickValidationConfig, run_asset_pick
     from robotsmith.sim.sim_env import ensure_display
-    from robotsmith.skills import pick
 
     plans = _plans(geometric.GeometricGraspPlanner(), candidates)
-    plan_geometric, seed_transit = geometric.GeometricGraspPlanner.plan, pick._pick_seed_transit
-
-    def seeded(ctx, plan):
-        seed, transit = seed_transit(ctx, plan)
-        if plan.metadata.get("ik_seed"):
-            q0 = np.asarray(ctx.qpos, dtype=np.float64)
-            seed = seed.copy()
-            seed[:7] = plan.metadata["ik_seed"]
-            steps = max(ctx.params.approach_steps, ctx.params.min_steps)
-            transit = [q0 + (seed - q0) * (k + 1) / steps for k in range(steps)]
-        return seed, transit
-
+    plan_geometric = geometric.GeometricGraspPlanner.plan
     geometric.GeometricGraspPlanner.plan = lambda self, *a, **k: plans
-    pick._pick_seed_transit = seeded
     try:
         ensure_display()
         asset = context["asset"]
@@ -65,7 +52,7 @@ def try_candidates(context: dict, candidates: list[dict], out_dir: Path) -> dict
             assets=[asset], output_dir=out_dir, n_episodes=1, seed=context["seed"], no_videos=True, clean=True,
             settle_steps=context["settle_steps"], object_xy=tuple(context["object_xy"]), grasp_selection="trial_all"), asset)
     finally:
-        geometric.GeometricGraspPlanner.plan, pick._pick_seed_transit = plan_geometric, seed_transit
+        geometric.GeometricGraspPlanner.plan = plan_geometric
     label = json.loads((out_dir / asset / f"franka_gen_pick_{asset}" / "episode_labels.json").read_text())[0]
     results = [{"candidate": t["candidate_index"], "lifted": t["lifted"], "lift_m": t.get("lift_m"),
                 "motion_error": t.get("motion_error"), "hand_pos": [round(float(v), 4) for v in plans[t["candidate_index"]].grasp_pos]}

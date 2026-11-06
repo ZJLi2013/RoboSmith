@@ -41,6 +41,9 @@ class _Scene:
     def object_pose(self, name):
         return self.obj
 
+    def lever_arms(self, held=None):
+        return np.r_[np.full(7, 0.01), 1.0, 1.0]
+
     def state_fingerprint(self):
         return str(self.writes)
 
@@ -119,9 +122,14 @@ def _ik(pos, quat, finger_pos, *, init_qpos=None):
     return q
 
 
+def _at_first_waypoint(plan, finger):
+    return _ik(plan.waypoints[0].pos, plan.waypoints[0].quat, finger)
+
+
 def _pick_motion():
     params = MotionParams()
-    result = MotionExecutor().pick(_pick_plan(), GenesisBackend(_ik), np.zeros(9), params)
+    plan = _pick_plan()
+    result = MotionExecutor().pick(plan, GenesisBackend(_ik), _at_first_waypoint(plan, 0.0), params)
     transit = _points(0.1, 0.2)
     return transit + result.trajectory, [Span("transit", 0, 2)] + spans_of(result.segments, 2), params
 
@@ -137,7 +145,7 @@ def test_pick_spans_tile_the_whole_trajectory_with_holds_and_rules():
 def test_pick_poses_are_the_waypoints_at_the_points_that_reach_them():
     params = MotionParams()
     plan = _pick_plan()
-    result = MotionExecutor().pick(plan, GenesisBackend(_ik), np.zeros(9), params)
+    result = MotionExecutor().pick(plan, GenesisBackend(_ik), _at_first_waypoint(plan, 0.0), params)
     poses = poses_of(result.segments, 2)
     assert len(poses) == len(plan.waypoints)
     traj = _points(0.1, 0.2) + result.trajectory
@@ -148,6 +156,17 @@ def test_pick_poses_are_the_waypoints_at_the_points_that_reach_them():
     # The approach's intermediate points ask for no pose.
     approach = next(s for s in spans_of(result.segments, 2) if s.label == "wp0")
     assert [i for i in range(approach.start, approach.end) if i in poses] == [approach.end - 1]
+
+
+def test_pick_holds_the_arm_at_its_start_through_the_first_waypoint():
+    plan, params = _pick_plan(), MotionParams()
+    start = _at_first_waypoint(plan, 0.0)
+    result = MotionExecutor().pick(plan, GenesisBackend(_ik), start, params)
+    first = spans_of(result.segments)[0]
+    assert first.end == params.finger_steps
+    assert all(np.allclose(q[:7], start[:7]) for q in result.trajectory[:first.end])
+    opened = MotionExecutor().pick(plan, GenesisBackend(_ik), _at_first_waypoint(plan, 0.04), params)
+    assert spans_of(opened.segments)[0].end == 0
 
 
 @pytest.mark.parametrize("where", ["transit", "wp2", "tail"])
@@ -455,7 +474,8 @@ def test_only_the_gate_issues_a_motion_it_accepts():
 class _Planner:
     def plan(self, *a, **k):
         quat = np.array([0.0, 1.0, 0.0, 0.0])
-        return [SimpleNamespace(grasp_pos=np.array([0.5, 0.0, 0.85]), grasp_quat=quat, metadata={"candidate_index": i})
+        return [SimpleNamespace(grasp_pos=np.array([0.5, 0.0, 0.85]), grasp_quat=quat, metadata={"candidate_index": i},
+                                waypoints=[SimpleNamespace(pos=np.array([0.5, 0.0, 0.95]), quat=quat, finger_width=0.04)])
                 for i in range(2)]
 
 
@@ -481,7 +501,7 @@ def test_a_refused_step_steps_no_physics():
 
     state = {"home_qpos": Q0, "positions": {"die": np.array([0.5, 0.0, 0.8])}, "grasp_trial": trial}
     with pytest.raises(Refused) as exc:
-        run_skills([Skill("pick", "die")], _Planner(), _Executor(), None, state, MotionParams(),
+        run_skills([Skill("pick", "die")], _Planner(), _Executor(), lambda *a, **k: Q0, state, MotionParams(),
                    gate=ExecutionGate(scene))
     assert exc.value.label == "search_exhausted" and trials == [] and scene.writes == 0
     assert [t["gate"]["reason"] for t in exc.value.evidence["trials"]] == ["collision", "collision"]
@@ -489,6 +509,6 @@ def test_a_refused_step_steps_no_physics():
     # Trials that stepped physics and lifted nothing are a failed execution, not a zero-step refusal.
     del scene.contacts_at
     with pytest.raises(ExecutionFailed) as failed:
-        run_skills([Skill("pick", "die")], _Planner(), _Executor(), None, dict(state), MotionParams(),
+        run_skills([Skill("pick", "die")], _Planner(), _Executor(), lambda *a, **k: Q0, dict(state), MotionParams(),
                    gate=ExecutionGate(scene))
-    assert failed.value.label == "execution_failed" and trials == ["die", "die"] and failed.value.steps == 4
+    assert failed.value.label == "execution_failed" and trials == ["die", "die"] and failed.value.steps == 6

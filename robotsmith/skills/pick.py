@@ -1,6 +1,7 @@
 """``pick`` primitive: select an executable grasp and lift the object.
 
-Each candidate's whole trajectory goes through the execution gate first; one that passes is tried in
+The approach to each candidate's first waypoint is a ``JointPlanner`` connection; the descend, grasp and lift are
+the executor's segment from there. Each candidate's whole trajectory goes through the execution gate first; one that passes is tried in
 simulation (``scene_state["grasp_trial"]``) and, if it lifts the target, verified again on the restored
 scene and executed. Without a trial callback the first candidate that passes the gate is used.
 """
@@ -13,6 +14,7 @@ from robotsmith.execution.gate import (ExecutionFailed, Holding, MotionRejected,
                                        poses_of, spans_of)
 from robotsmith.grasp.planner import GraspPlan
 from robotsmith.grasp.transforms import pose_matrix
+from robotsmith.motion.joint_planner import JointPlanner
 from robotsmith.motion.params import MotionParams
 from robotsmith.skills.base import SkillContext
 from robotsmith.skills.registry import bound_leaf, register
@@ -61,32 +63,16 @@ def _pick_motion_params(ctx: SkillContext) -> MotionParams:
     )
 
 
-def _pick_seed_transit(
-    ctx: SkillContext, plan: GraspPlan
-) -> tuple[np.ndarray, list[np.ndarray]]:
-    """Reset to home + pre-aim the base joint at the grasp azimuth, with transit.
-
-    Two failure modes this guards against:
-      1. After an articulated drag (open/close) the arm is left in an extended
-         pose; descending IK to a tabletop grasp gets stuck there.
-      2. From the y=0 neutral home, Genesis IK under-rotates the base joint and
-         lands short of off-axis (large |y|) targets, closing beside the object.
-    The transit is a no-op when the arm already starts at this seed.
-    """
-    params = ctx.params
+def _ik_init(ctx: SkillContext, plan: GraspPlan) -> np.ndarray:
+    """IK start for the candidate's first waypoint: home with the base joint aimed at the grasp azimuth, or the
+    candidate's ``ik_seed``. From an extended pose (after a drag) IK gets stuck, and from the y=0 home Genesis IK
+    under-rotates the base and lands short of off-axis targets."""
     home_qpos = ctx.scene_state.get("home_qpos")
-    q0 = np.asarray(ctx.qpos, dtype=np.float64)
-    seed = (
-        np.asarray(home_qpos, dtype=np.float64).copy()
-        if home_qpos is not None
-        else q0.copy()
-    )
-    seed[0] = float(np.arctan2(float(plan.grasp_pos[1]), float(plan.grasp_pos[0])))
-    transit: list[np.ndarray] = []
-    if not np.allclose(q0[:7], seed[:7], atol=1e-3):
-        steps = max(params.approach_steps, params.min_steps)
-        transit = [q0 + (seed - q0) * (i + 1) / steps for i in range(steps)]
-    return seed, transit
+    init = np.asarray(home_qpos if home_qpos is not None else ctx.qpos, dtype=np.float64).copy()
+    init[0] = float(np.arctan2(float(plan.grasp_pos[1]), float(plan.grasp_pos[0])))
+    if plan.metadata.get("ik_seed"):
+        init[:7] = plan.metadata["ik_seed"]
+    return init
 
 
 def _select(ctx: SkillContext, trial) -> tuple[GraspPlan, VerifiedMotion]:
@@ -107,7 +93,7 @@ def _select(ctx: SkillContext, trial) -> tuple[GraspPlan, VerifiedMotion]:
         record = {"candidate_index": md.get("candidate_index"), "kind": md.get("kind"),
                   "closing_width": md.get("closing_width"), "lifted": False, "lift_m": None, "seconds": 0.0}
         try:
-            request = _pick_request(ctx, plan)
+            request, record["approach"] = _pick_request(ctx, plan)
             motion = ctx.gate.verify(**request)
             if trial is not None:
                 record.update(trial(motion.trajectory, target), steps=len(motion.trajectory))
@@ -115,6 +101,8 @@ def _select(ctx: SkillContext, trial) -> tuple[GraspPlan, VerifiedMotion]:
                     motion = ctx.gate.verify(**request)
         except MotionRejected as exc:
             record["gate"] = exc.to_dict()
+        except Refused as exc:
+            record["approach"] = {"ok": False, **exc.evidence}
         except RuntimeError as exc:
             record["motion_error"] = str(exc)
         else:
@@ -151,18 +139,30 @@ def _select(ctx: SkillContext, trial) -> tuple[GraspPlan, VerifiedMotion]:
     return chosen
 
 
-def _pick_request(ctx: SkillContext, plan: GraspPlan) -> dict:
-    """``gate.verify`` keywords for ``plan``: base-aim transit plus the executor's pick segment, its spans and
-    waypoint poses, and the target held at the candidate's grasp pose."""
-    seed, transit = _pick_seed_transit(ctx, plan)
-    result = ctx.executor.pick(plan, ctx.motion_planner, seed, _pick_motion_params(ctx))
+def _pick_request(ctx: SkillContext, plan: GraspPlan) -> tuple[dict, dict]:
+    """``gate.verify`` keywords for ``plan``, and the approach's record: a ``JointPlanner`` approach from the
+    current joints to the candidate's first waypoint, the executor's pick segment from there, their spans and
+    waypoint poses, and the target held at the candidate's grasp pose. The pick segment passes the gate on its own
+    before the approach is searched, so a candidate the gate rejects costs no search."""
+    q0 = np.asarray(ctx.qpos, dtype=np.float64)
+    first = plan.waypoints[0]
+    q_pre = np.asarray(ctx.motion_planner.solve_ik(first.pos, first.quat, first.finger_width,
+                                                   init_qpos=_ik_init(ctx, plan)), dtype=np.float64)
+    q_pre[7:] = q0[7:]
+    result = ctx.executor.pick(plan, ctx.motion_planner, q_pre, _pick_motion_params(ctx))
     target = ctx.skill.target
     t_hand_object = (np.linalg.inv(pose_matrix(plan.grasp_pos, plan.grasp_quat))
                      @ pose_matrix(*ctx.gate.env.object_pose(target)))
-    return {"trajectory": transit + result.trajectory,
-            "spans": [Span("transit", 0, len(transit))] + spans_of(result.segments, len(transit)),
-            "poses": poses_of(result.segments, len(transit)), "target": target, "q_start": ctx.qpos,
-            "holding": Holding(target, t_hand_object)}
+    holding = Holding(target, t_hand_object)
+    ctx.gate.verify(result.trajectory, spans_of(result.segments), target=target, q_start=q_pre, holding=holding,
+                    poses=poses_of(result.segments))
+    c = JointPlanner(ctx.gate.env, ctx.gate).connect(q0, q_pre, target=target, label="approach")
+    approach = list(c.motion.trajectory)
+    n = len(approach)
+    return ({"trajectory": approach + result.trajectory,
+             "spans": [Span("approach", 0, n)] + spans_of(result.segments, n),
+             "poses": poses_of(result.segments, n), "target": target, "q_start": ctx.qpos, "holding": holding},
+            {"ok": True, "queries": c.queries, "seconds": c.seconds, "nodes": c.nodes, "direct": c.direct})
 
 
 @register("pick", post=bound_leaf)

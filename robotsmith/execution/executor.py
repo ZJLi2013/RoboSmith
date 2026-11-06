@@ -164,8 +164,9 @@ class MotionExecutor:
         home_qpos: np.ndarray,
         params: MotionParams,
     ) -> MotionChainExecution:
-        """home → waypoints → hold (velocity-adaptive step counts); the final
-        approach segment is Cartesian."""
+        """waypoints → hold (velocity-adaptive step counts); the final approach segment is Cartesian.
+        ``home_qpos`` is the arm already at the first waypoint, so that segment only opens the fingers, in zero
+        steps when they already are."""
         if not plan.waypoints:
             raise ValueError("GraspPlan.pick requires a non-empty waypoint sequence")
         return self._pick_waypoints(plan, motion_planner, home_qpos, params)
@@ -197,6 +198,8 @@ class MotionExecutor:
 
         is_finger, fine_idx = classify_segments(wps)
         last_finger = max((i for i, f in enumerate(is_finger) if f), default=-1)
+        opened = np.asarray(motion_planner.solve_ik(wps[0].pos, wps[0].quat, wps[0].finger_width), dtype=np.float64)
+        open_steps = 0 if np.allclose(opened[7:], np.asarray(home_qpos, dtype=np.float64)[7:]) else None
 
         runtime_wps: list[RuntimeMotionWaypoint] = []
         for i in range(len(wps)):
@@ -213,7 +216,8 @@ class MotionExecutor:
                     finger_width=wps[i].finger_width,
                     label=f"wp{i}",
                     segment_type=segment_type,
-                    finger_only=is_finger[i],
+                    steps=open_steps if i == 0 else None,
+                    finger_only=is_finger[i] or i == 0,
                     cartesian=i == fine_idx,
                     hold_after_steps=(
                         params.grasp_settle_steps if i == last_finger else 0

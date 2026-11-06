@@ -125,6 +125,7 @@ class _FakePlan:
         self.pre_grasp_pos = np.array([0.5, 0.0, 0.2])
         self.pre_grasp_quat = self.grasp_quat
         self.retreat_pos = None
+        self.waypoints = [SimpleNamespace(pos=self.pre_grasp_pos, quat=self.grasp_quat, finger_width=0.04)]
         self.metadata = {}
 
 
@@ -188,10 +189,10 @@ class TestRegistryDispatch:
         assert ex.calls == ["pick", "place", ("drag", "open"), ("drag", "close")]
         assert [m.gated for m in motions] == [True, True, False, False]
         # Each fake segment is tagged by a distinct constant qpos (pick=1, place=2,
-        # drag=3). place prepends its planned transport, so assert the markers and
-        # their order rather than an exact length.
+        # drag=3). pick and place prepend their planned approach and transport, so assert
+        # the markers and their order rather than an exact length.
         markers = [t[-1] for t in traj if np.allclose(t, t[-1])]
-        assert markers == [1.0, 2.0, 3.0, 3.0]
+        assert markers == [0.0, 1.0, 2.0, 3.0, 3.0]
 
     def test_pick_with_every_candidate_filtered_out_records_counts_and_is_refused(self, gate):
         class EmptyPlanner(_FakePlanner):
@@ -296,6 +297,68 @@ class TestRegistryDispatch:
         state = {**_scene_state(), "positions": {"die": np.array([0.5, 0.0, 0.0]), "mat": np.array([0.4, -0.2, 0.0])}}
         return run_skills([Skill("pick", "die"), Skill("place", "mat")], _FakePlanner(), ex,
                           lambda *a, **k: np.zeros(9), state, MotionParams(), gate=gate), state
+
+    def _pick_only(self, gate, plans, ik, trial=None):
+        class Plans(_FakePlanner):
+            def plan(self, *a, **k):
+                return plans
+
+        ex, state = _FakeExecutor(), _scene_state()
+        starts = []
+        pick = ex.pick
+        ex.pick = lambda plan, mp, start, *a, **k: starts.append(np.array(start)) or pick()
+        state["grasp_trial"] = trial
+        try:
+            motions = run_skills([Skill("pick", "die")], Plans(), ex, ik, state, MotionParams(), gate=gate)
+        except (Refused, ExecutionFailed):
+            motions = None
+        return motions, state["skill_traces"][0], starts
+
+    @staticmethod
+    def _plans(*xs):
+        plans = [_FakePlan() for _ in xs]
+        for i, (p, x) in enumerate(zip(plans, xs)):
+            p.metadata = {"candidate_index": i}
+            p.waypoints = [SimpleNamespace(pos=np.array([x, 0.0, 0.2]), quat=p.grasp_quat, finger_width=0.04)]
+        return plans
+
+    @staticmethod
+    def _ik(pos, quat, finger, init_qpos=None):
+        return np.r_[np.full(7, pos[0]), 0.0, 0.0]
+
+    def test_pick_reaches_the_first_waypoint_along_the_planned_connection(self, gate):
+        motions, trace, starts = self._pick_only(gate, self._plans(0.2), self._ik)
+        q_pre = np.r_[np.full(7, 0.2), 0.0, 0.0]
+        line = JointPlanner(gate.env, gate).connect(np.zeros(9), q_pre, target="die", label="approach").motion.trajectory
+        pick = motions[0]
+        assert len(line) > 1 and np.allclose(pick.trajectory[:len(line)], line) and np.allclose(starts[0], q_pre)
+        assert pick.spans[0].label == "approach" and pick.spans[0].end == len(line)
+        assert trace["trials"][0]["approach"]["ok"]
+
+    def test_a_pick_candidate_whose_connection_is_refused_is_not_tried(self, gate, monkeypatch):
+        monkeypatch.setattr(gate.env, "contacts_at",
+                            lambda q, held=None, placed=None:
+                            [(("robot", "hand"), ("wall", "base"))] if np.allclose(q[:7], 0.2) else [],
+                            raising=False)
+        tried = []
+        _, trace, _ = self._pick_only(gate, self._plans(0.2, 0.3), self._ik,
+                                      trial=lambda traj, target: tried.append(target) or
+                                      {"lifted": True, "lift_m": 0.1, "seconds": 0.5})
+        first, second = trace["trials"]
+        assert not first["approach"]["ok"] and first["approach"]["reason"] == "invalid_goal" and "steps" not in first
+        assert second["approach"]["ok"] and tried == ["die"] and trace["selected_candidate_index"] == 1
+
+    def test_a_pick_candidate_the_gate_rejects_spends_no_connection(self, gate, monkeypatch):
+        monkeypatch.setattr(gate.env, "contacts_at",
+                            lambda q, held=None, placed=None:
+                            [(("robot", "hand"), ("wall", "base"))] if np.allclose(q, 1.0) else [],
+                            raising=False)
+        connects = []
+        connect = JointPlanner.connect
+        monkeypatch.setattr(JointPlanner, "connect", lambda self, *a, **k: connects.append(a) or connect(self, *a, **k))
+        motions, trace, _ = self._pick_only(gate, self._plans(0.2, 0.3), self._ik)
+        assert motions is None and connects == []
+        assert [t["gate"]["segment"] for t in trace["trials"]] == ["seg", "seg"]
 
     def test_place_carries_the_held_object_along_the_planned_connection(self, gate, monkeypatch):
         starts = []
