@@ -72,7 +72,7 @@ def _success(pkg, moved: dict, joints: dict | None = None) -> bool:
 
 
 @pytest.mark.parametrize("name", sorted(p.stem for p in SCENARIOS.glob("*.yaml")))
-def test_scenario_loads_with_teacher(name):
+def test_scenario_loads_with_its_plan(name):
     pkg = _package(name)
     assert pkg.legacy_task.skills
     assert all(o.fixed_position is not None for o in pkg.legacy_scene.objects)

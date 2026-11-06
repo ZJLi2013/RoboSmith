@@ -1,4 +1,4 @@
-teacher: pick_place_into_drawer
+name: pick_place_into_drawer
 steps:
   - open: drawer
   - pick: die

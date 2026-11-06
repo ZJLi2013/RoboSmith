@@ -6,7 +6,7 @@ All notable user-facing changes are documented here. This project follows Semant
 
 ### Added
 
-- Step bindings (`robotsmith.scenario.adapters.to_step_bindings`): each teacher step gets the completion condition it
+- Step bindings (`robotsmith.scenario.adapters.to_step_bindings`): each plan step gets the completion condition it
   can be judged by. A `place` binds to the success tree's single positive `on` / `inside` relation for the object the
   preceding `pick` took. A relation whose parent or target disagrees with the place fails at load. Trees with
   `any_of` / `not`, an object placed twice, or several candidate relations stay `unchecked`, as do steps not yet
@@ -42,6 +42,9 @@ All notable user-facing changes are documented here. This project follows Semant
 
 ### Changed
 
+- Plan files live in `plans/<same name>.yaml` beside the scenario, with the keys `name`, `steps` and `actions` (the
+  meta actions `load_plan` checks); `--planner file` runs their steps (was `teacher`). Files with the keys `teacher` /
+  `plan` still load, read as `name` / `actions`; a file mixing an old key with its new one is rejected.
 - Scenario `pick` steps are judged by the new `grasped` predicate: two different finger links touch the target and
   it rose at least 2 cm from the step's own start, read before the step is planned (`step_start_positions` in the
   judged state, separate from the episode start). `collect_world_state` adds `finger_contacts`, the finger links
@@ -110,7 +113,7 @@ All notable user-facing changes are documented here. This project follows Semant
   `gripper_fit` is a check only and no longer rewrites the scale. `render_asset_table.py --apply-upright-index`
   becomes `--record-upright pass|fail`.
 - Scenarios are YAML data validated by a JSON Schema instead of Python modules with `build()`; the scenario loader no
-  longer executes code. Teacher steps moved to `scenarios/teacher/<name>.yaml`. `robotsmith.cap` is renamed
+  longer executes code. Steps moved to the plan file `scenarios/plans/<name>.yaml`. `robotsmith.cap` is renamed
   `robotsmith.scenario`. The four scenarios were migrated; three success judgements change on purpose: a die on the
   drawer cabinet's top is no longer inside the drawer, anywhere on the lower shelf now counts, and `near: robot`
   samples a wider initial layout than the old hand-written regions.

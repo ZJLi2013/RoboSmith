@@ -3,8 +3,8 @@
 A scenario file holds the scene (objects and their relations) and the task
 (instruction + success tree, hidden from the executor). The scene is written
 inline or names a layout ``scenes/<name>.yaml`` beside the scenarios directory,
-so several tasks can share one layout. The optional teacher plan for scripted
-rollouts lives next to it in ``teacher/<same name>.yaml``.
+so several tasks can share one layout. The optional plan file lives next to it in
+``plans/<same name>.yaml``: the skill steps ``--planner file`` runs, and the meta action list (``actions``).
 """
 
 from __future__ import annotations
@@ -164,24 +164,26 @@ PLAN_ACTIONS = {
 }
 BINDING_POSES = {"grasp": {"pre", "grasp"}, "place": {"pre", "place", "retreat"}}
 
-TEACHER_SCHEMA = {
+PLAN_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["teacher", "steps"],
+    "required": ["name", "steps"],
     "properties": {
-        "teacher": _ID,
+        "name": _ID,
         "steps": {"type": "array", "minItems": 1, "items": {"oneOf": [
             {"type": "object", "additionalProperties": False, "required": [k], "properties": {k: _ID}}
             for k in ("pick", "open", "close")
         ] + [_leaf("place", {"target": _REF}, ["target"])]}},
-        "plan": {"type": "array", "minItems": 1, "items": {
+        "actions": {"type": "array", "minItems": 1, "items": {
             **_ONE, "additionalProperties": False, "properties": PLAN_ACTIONS}},
     },
 }
+# Plan files frozen before the rename (the sealed held-out family) keep these keys.
+OLD_KEYS = {"teacher": "name", "plan": "actions"}
 
 
 class PlanInvalid(ValueError):
-    """A teacher plan the first version cannot run: an unknown action, an unbound reference, or holding twice."""
+    """A plan the first version cannot run: an unknown action, an unbound reference, or holding twice."""
 
 
 def load_scenario(
@@ -190,7 +192,7 @@ def load_scenario(
     seed: int,
     library: AssetLibrary | None = None,
 ) -> tuple[SceneSpec, TaskSpec, SkillIntentSequenceSpec | None]:
-    """Scene, task and teacher intents (None without a teacher file) for one seed."""
+    """Scene, task and the plan file's intents (None without a plan file) for one seed."""
     path = Path(path)
     data = _read(path)
     jsonschema.validate(data, SCHEMA)
@@ -217,10 +219,10 @@ def load_scenario(
     solved = relations.solve(objects, library, rng)
     assets = {o["id"]: library.get(o["asset"]) for o in objects}
 
-    teacher = path.parent / "teacher" / path.name
+    plan_file = path.parent / "plans" / path.name
     intents, targets = None, {}
-    if teacher.exists():
-        intents, targets = _teacher(teacher, assets)
+    if plan_file.exists():
+        intents, targets = _plan_file(plan_file, assets)
 
     scene = SceneSpec(
         name=data["scenario"],
@@ -249,25 +251,35 @@ def load_scenario(
     return scene, task, intents
 
 
-def _teacher(path: Path, assets: dict) -> tuple[SkillIntentSequenceSpec, dict[str, TargetPositionSpec]]:
-    data = _read(path)
-    jsonschema.validate(data, TEACHER_SCHEMA)
+def read_plan_file(path: Path) -> dict:
+    """The plan file with the current keys; the only reader of plan files. Old keys are renamed, a file that mixes
+    an old key with its new one is rejected. Reads only."""
+    data = _read(Path(path))
+    mixed = [k for k, new in OLD_KEYS.items() if k in data and new in data]
+    if mixed:
+        raise PlanInvalid(f"{path}: both {mixed[0]!r} and {OLD_KEYS[mixed[0]]!r}")
+    return {OLD_KEYS.get(k, k): v for k, v in data.items()}
+
+
+def _plan_file(path: Path, assets: dict) -> tuple[SkillIntentSequenceSpec, dict[str, TargetPositionSpec]]:
+    data = read_plan_file(path)
+    jsonschema.validate(data, PLAN_SCHEMA)
     return steps_to_intents(data["steps"], assets)
 
 
 def load_plan(path: Path) -> list[dict]:
-    """The teacher file's meta action plan, checked by ``check_plan``."""
-    data = _read(Path(path))
-    if "plan" not in data:
-        raise PlanInvalid(f"{path}: no plan")
-    return check_plan(data["plan"])
+    """The plan file's meta actions, checked by ``check_plan``."""
+    data = read_plan_file(path)
+    if "actions" not in data:
+        raise PlanInvalid(f"{path}: no actions")
+    return check_plan(data["actions"])
 
 
 def check_plan(plan: list[dict]) -> list[dict]:
     """``plan`` unchanged when every action is a first-version meta action, every ``<binding>.<pose>`` names a
     pose of a candidate sampled earlier, and the plan attaches at most once and detaches what it holds."""
     try:
-        jsonschema.validate(plan, TEACHER_SCHEMA["properties"]["plan"])
+        jsonschema.validate(plan, PLAN_SCHEMA["properties"]["actions"])
     except jsonschema.ValidationError as e:
         raise PlanInvalid(e.message) from None
     bound: dict[str, dict] = {}
@@ -301,8 +313,8 @@ def check_plan(plan: list[dict]) -> list[dict]:
 
 
 def steps_to_intents(steps: list[dict], assets: dict) -> tuple[SkillIntentSequenceSpec, dict[str, TargetPositionSpec]]:
-    """Teacher-schema steps -> intents, plus a frame for every place target they use."""
-    jsonschema.validate(steps, TEACHER_SCHEMA["properties"]["steps"])
+    """Plan-file steps -> intents, plus a frame for every place target they use."""
+    jsonschema.validate(steps, PLAN_SCHEMA["properties"]["steps"])
     intents, targets = [], {}
     for step in steps:
         (name, arg), = step.items()

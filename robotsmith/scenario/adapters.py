@@ -214,7 +214,7 @@ def _joint_binding(intent, assets: dict) -> dict:
     task loader's tolerance: opened past ``end - tol``, closed below ``lower + tol``."""
     asset = assets.get(intent.target)
     if asset is None:
-        raise SolveError(f"teacher step {intent.name} {intent.target!r} has no asset")
+        raise SolveError(f"plan step {intent.name} {intent.target!r} has no asset")
     drag = resolve_drag_joint(asset, intent.name, dict(intent.params))
     if intent.name == "open":
         predicate, threshold = "joint_opened", drag.end - CONTACT_TOL_M
@@ -226,7 +226,7 @@ def _joint_binding(intent, assets: dict) -> dict:
 
 def to_step_bindings(intents: SkillIntentSequenceSpec, success: SuccessSpec,
                      assets: dict | None = None) -> list[dict]:
-    """Bind each teacher step to the completion condition it can be judged by, one entry per step.
+    """Bind each plan step to the completion condition it can be judged by, one entry per step.
 
     A ``pick`` binds to ``grasped``: both fingers on its target and a lift of ``PICK_LIFT_M`` from the step's
     start. ``open`` / ``close`` bind to their joint through ``_joint_binding`` (``assets`` maps scene object
@@ -271,7 +271,7 @@ def to_step_bindings(intents: SkillIntentSequenceSpec, success: SuccessSpec,
         else:
             rel = candidates[0]
             if (rel["parent"], rel.get("target")) != (parent, target):
-                raise SolveError(f"teacher step {i} places {obj} at {intent.target}, but success wants "
+                raise SolveError(f"plan step {i} places {obj} at {intent.target}, but success wants "
                                  f"{rel['mode']} {rel['parent']}.{rel.get('target')}")
             bindings.append({"status": "bound", "predicate": "object_in_box", "params": rel})
     return bindings

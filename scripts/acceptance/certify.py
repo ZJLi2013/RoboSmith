@@ -2,7 +2,7 @@
 
   python scripts/acceptance/certify.py --family f0_open --split test --out out/f0_open_test
 
-Each instance runs the family's teacher steps once through ``EpisodeRun`` (skills, execution gate, executor)
+Each instance runs the family's plan-file steps once through ``EpisodeRun`` (skills, execution gate, executor)
 on the seed's layout. Every physics step after the reset is read for the contacts it resolved and judged by
 ``gate.certified`` for the span being executed: trial and replay steps by the verified motion's spans, step
 and task settles by the last replayed span. A positive instance is certified when the task predicate holds
@@ -203,11 +203,11 @@ def main() -> None:
     from robotsmith.sim.sim_env import SimEnv
 
     path = REPO / "scenarios" / "acceptance" / f"{args.family}.yaml"
-    teacher = path.parent / "teacher" / path.name
+    plan_file = path.parent / "plans" / path.name
     seeds = seeds_for(path, args.split, args.limit)
     args.out.mkdir(parents=True, exist_ok=True)
     shutil.copy(path, args.out / path.name)
-    shutil.copy(teacher, args.out / f"teacher_{path.name}")
+    shutil.copy(plan_file, args.out / f"plan_{path.name}")
     packages = {s: materialize_candidate(path, seed=s) for s in seeds}
     first = packages[seeds[0]].legacy_scene
     env = SimEnv.build(first, seed=seeds[0])

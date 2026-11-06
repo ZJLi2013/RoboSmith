@@ -1,4 +1,4 @@
-"""Episode object placement helpers for scripted rollouts."""
+"""Episode object placement helpers."""
 
 from __future__ import annotations
 

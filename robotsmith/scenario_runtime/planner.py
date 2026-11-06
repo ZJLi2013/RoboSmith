@@ -1,4 +1,4 @@
-"""Agent planning: an LLM writes teacher-schema steps from the instruction and the scene's objects, the existing
+"""Agent planning: an LLM writes plan-file steps from the instruction and the scene's objects, the existing
 skills execute them with per-step judging, and plan-level failures go back to the LLM.
 
 Two roles: ``certifier`` also sees the success tree (its successful plan proves the task solvable); ``baseline``

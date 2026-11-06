@@ -1,9 +1,9 @@
-teacher: acc_f2_over_barrier
+name: acc_f0_open
 steps:
   - pick: die
   - place: {target: mat.top}
 # The same six-action composition for every family: the scene decides the candidates, not the plan.
-plan:
+actions:
   - sample: {kind: grasp, object: die, as: g}
   - gripper: {width: open}
   - move_to: g.pre

@@ -50,7 +50,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--n-episodes", type=int, default=1)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--settle-steps", type=int, default=30)
-    parser.add_argument("--planner", choices=("teacher", "agent"), default="teacher")
+    parser.add_argument("--planner", choices=("file", "agent"), default="file")
     parser.add_argument("--role", choices=("certifier", "baseline"), default="certifier",
                         help="with --planner agent: certifier sees the success tree, baseline does not")
     return parser.parse_args()
