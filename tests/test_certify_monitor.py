@@ -149,3 +149,20 @@ def test_a_hung_instance_is_killed_from_outside_and_resumed(tmp_path):
         (1, 1, "certified"), (2, 1, "error"), (2, 2, "error"), (3, 1, "certified")]
     assert all(r["why"] == "killed after 1.0 s" and r["certified"] is False for r in rows if r["outcome"] == "error")
     assert not log.with_suffix(".running").exists()
+
+
+def test_the_mark_is_replaced_while_the_supervisor_reads_it(tmp_path, monkeypatch):
+    batch = sys.modules[certify.run_batch.__module__]
+    calls, replace = [], batch.os.replace
+
+    def busy(src, dst):
+        calls.append(dst)
+        if len(calls) <= 2:
+            raise PermissionError("the supervisor has it open")
+        replace(src, dst)
+
+    monkeypatch.setattr(batch.os, "replace", busy)
+    running = tmp_path / "rows.running"
+    with (tmp_path / "rows.jsonl").open("w", encoding="utf-8") as fh:
+        rows = certify.run_batch([1], lambda seed: {"outcome": "certified"}, fh, running=running)
+    assert [r["outcome"] for r in rows] == ["certified"] and len(calls) == 3 and not running.exists()

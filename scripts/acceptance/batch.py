@@ -35,7 +35,7 @@ def run_batch(seeds, one, fh, prior=(), failed=None, show=None, running: Path | 
             if running:
                 tmp = running.with_suffix(".tmp")
                 tmp.write_text(json.dumps({"seed": seed, "attempt": attempt, "started": time.time()}))
-                os.replace(tmp, running)
+                _while_read(os.replace, tmp, running)
             t0 = time.perf_counter()
             try:
                 row = one(seed)
@@ -44,9 +44,19 @@ def run_batch(seeds, one, fh, prior=(), failed=None, show=None, running: Path | 
             row = {"seed": seed, "attempt": attempt, **row, "seconds": round(time.perf_counter() - t0, 1)}
             write(row)
             if running:
-                running.unlink(missing_ok=True)
+                _while_read(running.unlink, missing_ok=True)
         rows.append(row)
     return rows
+
+
+def _while_read(change, *args, **kwargs) -> None:
+    # Windows refuses to replace or delete a file another process has open: here, supervise reading the mark.
+    for _ in range(99):
+        try:
+            return change(*args, **kwargs)
+        except PermissionError:
+            time.sleep(0.01)
+    change(*args, **kwargs)
 
 
 def supervise(argv, log: Path, timeout: float = INSTANCE_TIMEOUT_S, failed=None, poll: float = 1.0) -> int:
