@@ -12,6 +12,7 @@ import subprocess
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from functools import cached_property
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -372,6 +373,20 @@ class SimEnv:
             pairs = self.scene.sim.rigid_solver.detect_collision()
         unknown = ("env", "?")
         return [(owner.get(int(a), unknown), owner.get(int(b), unknown)) for a, b in pairs]
+
+    @cached_property
+    def joint_limits(self) -> tuple[np.ndarray, np.ndarray]:
+        """``(lower, upper)`` of the arm and finger DOFs, in ``motors_dof`` order."""
+        lo, hi = self.franka.get_dofs_limit(self.motors_dof)
+        return (to_numpy(lo).reshape(-1).astype(np.float64), to_numpy(hi).reshape(-1).astype(np.float64))
+
+    @cached_property
+    def joined_links(self) -> frozenset:
+        """Robot link-name pairs that touch by construction: parent and child, or two children of one parent."""
+        name = {lk.idx: lk.name for lk in self.franka.links}
+        parent = {lk.name: name.get(lk.parent_idx) for lk in self.franka.links}
+        return frozenset(frozenset((a, b)) for a in parent for b in parent
+                         if a != b and (parent[a] == b or parent[b] == a or parent[a] == parent[b] is not None))
 
     def state_fingerprint(self) -> str:
         """Hash of the real-write count and every rigid entity's joint positions and velocities."""

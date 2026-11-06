@@ -22,7 +22,7 @@ RELEASE = np.array([0.45, -0.05, 0.90])
 
 
 def test_gate_on_the_wall_scene():
-    from robotsmith.execution.gate import ExecutionGate, MotionRejected, Span, StaleMotion
+    from robotsmith.execution.gate import ExecutionGate, Holding, MotionRejected, Span, StaleMotion
     from robotsmith.grasp.transforms import pose_matrix
     from robotsmith.scenario_runtime import materialize_candidate
     from robotsmith.sim.sim_env import SimEnv
@@ -38,6 +38,7 @@ def test_gate_on_the_wall_scene():
     release = carry + [Span("retreat", 2, 3, allow="grip")]
     t_hand_die = np.linalg.inv(pose_matrix(*env.hand_pose(q_grasp))) @ pose_matrix(*env.object_pose("die"))
     held_at = lambda q: (pose_matrix(*env.hand_pose(q)) @ t_hand_die)[:3, 3]  # noqa: E731
+    holding = Holding("die", t_hand_die)
 
     readings = {"die_pos": np.round(die, 4).tolist(),
                 "held_offset_m": {k: round(float(np.linalg.norm(held_at(q) - p)), 4)
@@ -49,15 +50,17 @@ def test_gate_on_the_wall_scene():
     clear = gate.verify([q_clear, q_clear], [Span("move", 0, 2)], target="die", q_start=q_clear)
     readings["clear_checked"] = clear.checked
     with pytest.raises(MotionRejected) as into:
-        gate.verify([q_grasp, q_into], carry, target="die", q_start=q_grasp)
+        gate.verify([q_grasp, q_into], carry, target="die", q_start=q_grasp, holding=holding)
     readings["held_into_wall"] = into.value.to_dict()
-    over = gate.verify([q_grasp, q_over], carry, target="die", q_start=q_grasp)
+    over = gate.verify([q_grasp, q_over], carry, target="die", q_start=q_grasp, holding=holding)
     readings["held_over_wall_checked"] = over.checked
     # The palm goes down to where the die was let go.
     with pytest.raises(MotionRejected) as through:
-        gate.verify([q_grasp, q_release, ik(RELEASE - [0, 0, TCP])], release, target="die", q_start=q_grasp)
+        gate.verify([q_grasp, q_release, ik(RELEASE - [0, 0, TCP])], release, target="die", q_start=q_grasp,
+                    holding=holding)
     readings["retreat_through_released"] = through.value.to_dict()
-    up = gate.verify([q_grasp, q_release, ik(RELEASE + [0, 0, 0.1])], release, target="die", q_start=q_grasp)
+    up = gate.verify([q_grasp, q_release, ik(RELEASE + [0, 0, 0.1])], release, target="die", q_start=q_grasp,
+                     holding=holding)
     readings["retreat_up_checked"] = up.checked
     gate.check_current(over)
     env.step()

@@ -6,7 +6,7 @@ Each instance runs the family's plan-file steps once through ``EpisodeRun`` (ski
 on the seed's layout. Every physics step after the reset is read for the contacts it resolved and judged by
 ``gate.certified`` for the span being executed: trial and replay steps by the verified motion's spans, step
 and task settles by the last replayed span. A positive instance is certified when the task predicate holds
-and no step of any stage broke the rule; a negative one when its first step is infeasible and nothing ran
+and no step of any stage broke the rule; a negative one when its first step is refused and nothing ran
 after the reset. Writes ``instances.jsonl`` (one row per instance, as it runs), the inputs and ``summary.json``.
 """
 
@@ -25,7 +25,7 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from batch import HUNG, INSTANCE_TIMEOUT_S, run_batch  # noqa: E402
-from robotsmith.execution.gate import SUPPORT, Span, certified  # noqa: E402
+from robotsmith.execution.gate import REFUSALS, SUPPORT, Span, certified  # noqa: E402
 
 SETTLE_STEPS = 30
 NEGATIVE = {"f4_caged"}
@@ -114,8 +114,8 @@ def run_instance(env, pkg, family, mon, record_episode):
                      env_state_names=())
     verify = run.gate.verify
 
-    def verified(trajectory, spans, *, target, q_start, rest=()):
-        m = verify(trajectory, spans, target=target, q_start=q_start, rest=rest)
+    def verified(trajectory, spans, *, target, rest=(), **kw):
+        m = verify(trajectory, spans, target=target, rest=rest, **kw)
         meta[id(m.trajectory)] = (m.spans, target, {SUPPORT, *rest}, run.skills[-1].name)
         return m
 
@@ -144,7 +144,7 @@ def run_instance(env, pkg, family, mon, record_episode):
     try:
         mon.enter("between")
         run.run_steps(list(task.skills), list(task.step_bindings))
-        if run.infeasible is not None:
+        if run.stopped is not None:
             success, judged = False, None
         else:
             mon.enter("judge", _settle_ctx(last[0]) if last[0] else None)
@@ -160,7 +160,7 @@ def run_instance(env, pkg, family, mon, record_episode):
     steps = {k: v for k, v in mon.steps.items() if k != "init"}
     row.update(
         steps=steps, violating_steps=dict(mon.violating), first_violation=mon.first,
-        success=bool(success), frame_count=run.frame_count, infeasible=run.infeasible,
+        success=bool(success), frame_count=run.frame_count, stopped=run.stopped,
         handoffs=[{k: h.get(k) for k in ("skill", "phase", "done", "cause")} for h in run.handoffs],
         trials=[t.get("trials") for t in run.skill_traces if "trials" in t],
         carry_tries=[t.get("carry_tries") for t in run.skill_traces if "carry_tries" in t],
@@ -170,11 +170,11 @@ def run_instance(env, pkg, family, mon, record_episode):
     if family in NEGATIVE:
         executed = sum(steps.values())
         first = run.handoffs[0] if run.handoffs else {}
-        row["certified"] = bool(first.get("cause") == "infeasible" and executed == 0)
-        row["outcome"] = "negative_ok" if row["certified"] else ("executed" if executed else "not_infeasible")
+        row["certified"] = bool(first.get("cause") in REFUSALS and executed == 0)
+        row["outcome"] = "negative_ok" if row["certified"] else ("executed" if executed else "not_refused")
     else:
         row["certified"] = bool(success and clean)
-        row["outcome"] = ("certified" if row["certified"] else "infeasible" if run.infeasible
+        row["outcome"] = ("certified" if row["certified"] else run.stopped["cause"] if run.stopped
                           else "violation" if not clean else "task_failed")
     return row
 

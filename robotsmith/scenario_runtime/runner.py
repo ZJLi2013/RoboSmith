@@ -16,7 +16,7 @@ from typing import Callable
 
 import numpy as np
 
-from robotsmith.execution.gate import ExecutionGate, Infeasible
+from robotsmith.execution.gate import ExecutionFailed, ExecutionGate, Refused
 from robotsmith.grasp.geometric import GeometricGraspPlanner
 from robotsmith.scenario_runtime import handoff
 from robotsmith.sim.franka import HOME_QPOS, to_numpy_f32
@@ -40,8 +40,9 @@ class ScenarioEpisodeResult:
     # The settle the last step recorded and judged, still the world's current state; None when the
     # episode ended on a step that did not settle.
     final_window: dict | None = None
-    # The handoff of the infeasible step the episode stopped at; nothing was executed for it.
-    infeasible: dict | None = None
+    # The handoff of the step the episode stopped at with no motion to record: refused before any physics
+    # step, or failed after its trials stepped physics.
+    stopped: dict | None = None
 
 
 def run_scenario_episode(
@@ -113,7 +114,7 @@ class EpisodeRun:
         self.held: str | None = None
         self.frame_count = 0
         self.window = None
-        self.infeasible = None
+        self.stopped = None
 
     def _record_step(self, q):
         self.record_fn(self.env, self.dataset, [q], self.task_spec, camera_names=self.camera_names,
@@ -121,10 +122,10 @@ class EpisodeRun:
 
     def run_steps(self, skills: list, bindings: list[dict], *, stop_on_fail: bool = False) -> dict | None:
         """Execute ``skills`` with their ``bindings``; with ``stop_on_fail`` return the handoff of the first step
-        judged false (the remaining steps are not run), else ``None``. An infeasible step records no frames
-        and always ends the run; its handoff is returned."""
+        judged false (the remaining steps are not run), else ``None``. A refused or failed step records no frames
+        and always ends the run; its handoff (``cause`` = the label, ``evidence``, physics ``steps``) is returned."""
         env = self.env
-        self.infeasible = None
+        self.stopped = None
         for k, (skill, binding) in enumerate(zip(skills, list(bindings) + [None] * (len(skills) - len(bindings)))):
             i = len(self.skills)
             self.skills.append(skill)
@@ -147,11 +148,12 @@ class EpisodeRun:
                         scene_state, self.motion_params, self.qpos, self.held_category, self.held_place_z,
                         phase=phase, gate=self.gate, held=self.held,
                     )
-                except Infeasible as exc:
+                except (Refused, ExecutionFailed) as exc:
                     entry = {"skill": skill.name, "phase": phase, "target": skill.target, "object": obj,
-                             "done": False, "cause": "infeasible", "infeasible": {"reason": exc.reason, **exc.detail}}
+                             "done": False, "cause": exc.label, "evidence": exc.evidence,
+                             "steps": getattr(exc, "steps", 0)}
                     self.handoffs.append(entry)
-                    self.infeasible = entry
+                    self.stopped = entry
                     return entry
                 self.gate.check_current(motion)
                 seg = motion.trajectory
@@ -201,7 +203,7 @@ class EpisodeRun:
             handoffs=self.handoffs,
             final_qpos=self.qpos,
             final_window=self.window,
-            infeasible=self.infeasible,
+            stopped=self.stopped,
         )
 
 

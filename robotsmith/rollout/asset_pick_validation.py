@@ -10,7 +10,7 @@ import shutil
 
 import numpy as np
 
-from robotsmith.execution.gate import ExecutionGate, Infeasible, VerifiedMotion
+from robotsmith.execution.gate import ExecutionFailed, ExecutionGate, Refused, VerifiedMotion
 from robotsmith.scenario.adapters import (
     to_legacy_scene_config,
     to_legacy_skills,
@@ -62,13 +62,13 @@ class AssetPickValidationConfig:
 
 @dataclass
 class AssetPickEpisodePlan:
-    """Verified motions and state for one asset-pick validation episode; no motions when it is infeasible."""
+    """Verified motions and state for one asset-pick validation episode; no motions when the pick stopped."""
 
     initial_positions: dict[str, np.ndarray]
     scene_state: dict
     motions: list[VerifiedMotion]
     gate: ExecutionGate
-    infeasible: dict | None = None
+    stopped: dict | None = None
 
 
 def _asset_category(asset_name: str) -> str:
@@ -177,15 +177,16 @@ def _prepare_asset_pick_episode(
     try:
         motions = run_skills(task_spec.skills, env.planner, executor, env.solve_ik, scene_state, motion_params,
                              gate=gate)
-        infeasible = None
-    except Infeasible as exc:
-        motions, infeasible = [], {"reason": exc.reason, **exc.detail}
+        stopped = None
+    except (Refused, ExecutionFailed) as exc:
+        motions = []
+        stopped = {"cause": exc.label, "evidence": exc.evidence, "steps": getattr(exc, "steps", 0)}
     return AssetPickEpisodePlan(
         initial_positions=initial_positions,
         scene_state=scene_state,
         motions=motions,
         gate=gate,
-        infeasible=infeasible,
+        stopped=stopped,
     )
 
 
@@ -317,7 +318,7 @@ def run_asset_pick(config: AssetPickValidationConfig, asset_name: str) -> dict:
             "asset": asset_name,
             "success": bool(success),
             "frame_count": n_frames,
-            "infeasible": episode_plan.infeasible,
+            "stopped": episode_plan.stopped,
             "selected_candidate_index": pick_trace.get("selected_candidate_index"),
             "no_candidates": bool(pick_trace.get("no_candidates", False)),
             "no_trial_success": pick_trace.get("no_trial_success"),

@@ -186,3 +186,48 @@ def test_a_real_step_changes_the_fingerprint_and_a_query_does_not():
 
     env.step()
     assert env.state_fingerprint() != before
+
+
+class _ResettableFranka(_QueryEntity):
+    def control_dofs_position(self, *args, **kwargs):
+        pass
+
+    def zero_all_dofs_velocity(self):
+        pass
+
+
+def test_a_reset_changes_the_fingerprint():
+    from robotsmith.execution.gate import ExecutionGate, StaleMotion
+    from robotsmith.sim.franka import HOME_QPOS
+
+    env = _query_env([])
+    env.franka = _ResettableFranka([0.0, 0.0, 0.0], [], qpos=list(HOME_QPOS))
+    env.entity_map, env.object_quats, env.articulated_joint_dofs, env.articulated_joint_init = {}, {}, {}, {}
+    gate = ExecutionGate(env)
+    motion = gate.ungated([HOME_QPOS])
+    gate.check_current(motion)
+
+    env.reset({}, settle_steps=0)
+    assert env.franka.get_qpos() == pytest.approx(list(HOME_QPOS))
+    with pytest.raises(StaleMotion):
+        gate.check_current(motion)
+
+
+def _link(idx, name, parent):
+    return SimpleNamespace(idx=idx, name=name, parent_idx=parent)
+
+
+def test_joint_limits_and_adjacent_links_come_from_the_robot():
+    env = _query_env([])
+    names = ["link0", "link1", "link2", "link3", "link4", "link5", "link6", "link7", "hand"]
+    env.franka.links = ([_link(i, n, i - 1) for i, n in enumerate(names)]
+                        + [_link(9, "left_finger", 8), _link(10, "right_finger", 8)])
+    env.franka.get_dofs_limit = lambda dofs: ([-2.0] * 7 + [0.0, 0.0], [2.0] * 7 + [0.04, 0.04])
+
+    lo, hi = env.joint_limits
+    assert lo.tolist() == [-2.0] * 7 + [0.0, 0.0] and hi.tolist() == [2.0] * 7 + [0.04, 0.04]
+    joined = env.joined_links
+    for pair in [("link0", "link1"), ("link7", "hand"), ("hand", "left_finger"), ("left_finger", "right_finger")]:
+        assert frozenset(pair) in joined
+    for pair in [("link3", "link5"), ("link7", "left_finger"), ("link0", "hand")]:
+        assert frozenset(pair) not in joined

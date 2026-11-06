@@ -105,7 +105,8 @@ def plan_segment(
     held: str | None = None,
 ) -> tuple[VerifiedMotion, str | None, float | None]:
     """Plan one skill's motion from the given (live) scene_state, verified by ``gate`` against the
-    current scene (``held`` names the object in the hand). Raises ``Infeasible`` when no candidate passes.
+    current scene (``held`` names the object in the hand). Raises ``Refused`` when no candidate passes before
+    any physics step, ``ExecutionFailed`` when none passes after trials that stepped physics.
 
     Returns ``(motion, held_category, held_place_z)``; the carry-over state is
     threaded into the next segment. The segment-level runtime re-reads object and

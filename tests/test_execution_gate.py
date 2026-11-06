@@ -1,24 +1,30 @@
 """The execution gate's contract, on scenes that report scripted contacts."""
 
+import dataclasses
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
 from robotsmith.execution.executor import MotionExecutor
-from robotsmith.execution.gate import (ExecutionGate, Infeasible, MotionRejected, Span, StaleMotion,
-                                       VerifiedMotion, certified, permitted, spans_of)
+from robotsmith.execution.gate import (ExecutionFailed, ExecutionGate, Holding, MotionRejected, Refused, Span,
+                                       StaleMotion, VerifiedMotion, certified, permitted, poses_of, spans_of)
 from robotsmith.grasp.planner import GraspPlan
+from robotsmith.grasp.transforms import pose_matrix
 from robotsmith.motion.params import MotionParams
 from robotsmith.motion.planner import GenesisBackend
 from robotsmith.scenario_runtime import runner
-from robotsmith.skills import Skill
+from robotsmith.skills import Skill, run_skills
 
 WALL = (("robot", "left_finger"), ("wall", "base"))
 
 
 class _Scene:
-    """Reports ``hits[i]`` at the i-th queried point and records what each query asked."""
+    """Reports ``hits[i]`` at the i-th queried point and records what each query asked. The hand sits at
+    ``(0.5 + q[0], 0, 0.9)`` pointing down."""
+
+    joint_limits = (np.full(9, -10.0), np.full(9, 10.0))
+    joined_links = frozenset({frozenset(("link7", "hand")), frozenset(("hand", "left_finger"))})
 
     def __init__(self, hits=None, obj=(np.array([0.5, 0.0, 0.8]), np.array([1.0, 0, 0, 0]))):
         self.hits, self.obj, self.queries, self.writes = hits or {}, obj, [], 0
@@ -42,6 +48,11 @@ Q0 = np.zeros(9)
 
 def _points(*xs):
     return [np.full(9, x) for x in xs]
+
+
+def _holding_at(scene, q, target="die"):
+    """The target held where it is now, by the hand at ``q``."""
+    return Holding(target, np.linalg.inv(pose_matrix(*scene.hand_pose(q))) @ pose_matrix(*scene.object_pose(target)))
 
 
 def test_gate_rejects_a_path_that_crosses_a_wall_between_legal_endpoints():
@@ -78,15 +89,16 @@ def _pick_plan():
         ])
 
 
-def _pick_motion():
-    def ik(pos, quat, finger_pos, *, init_qpos=None):
-        q = np.zeros(9)
-        q[:3] = pos
-        q[7:] = finger_pos
-        return q
+def _ik(pos, quat, finger_pos, *, init_qpos=None):
+    q = np.zeros(9)
+    q[:3] = pos
+    q[7:] = finger_pos
+    return q
 
+
+def _pick_motion():
     params = MotionParams()
-    result = MotionExecutor().pick(_pick_plan(), GenesisBackend(ik), np.zeros(9), params)
+    result = MotionExecutor().pick(_pick_plan(), GenesisBackend(_ik), np.zeros(9), params)
     transit = _points(0.1, 0.2)
     return transit + result.trajectory, [Span("transit", 0, 2)] + spans_of(result.segments, 2), params
 
@@ -99,14 +111,32 @@ def test_pick_spans_tile_the_whole_trajectory_with_holds_and_rules():
         ("wp3", True, "rest")]
 
 
+def test_pick_poses_are_the_waypoints_at_the_points_that_reach_them():
+    params = MotionParams()
+    plan = _pick_plan()
+    result = MotionExecutor().pick(plan, GenesisBackend(_ik), np.zeros(9), params)
+    poses = poses_of(result.segments, 2)
+    assert len(poses) == len(plan.waypoints)
+    traj = _points(0.1, 0.2) + result.trajectory
+    for (i, (pos, quat)), wp in zip(sorted(poses.items()), plan.waypoints):
+        np.testing.assert_allclose(traj[i][:3], wp.pos)
+        np.testing.assert_allclose(pos, wp.pos)
+        np.testing.assert_allclose(quat, wp.quat)
+    # The approach's intermediate points ask for no pose.
+    approach = next(s for s in spans_of(result.segments, 2) if s.label == "wp0")
+    assert [i for i in range(approach.start, approach.end) if i in poses] == [approach.end - 1]
+
+
 @pytest.mark.parametrize("where", ["transit", "wp2", "tail"])
 def test_gate_rejects_a_violation_in_any_span_including_holds(where):
     traj, spans, _ = _pick_motion()
     by = {s.label: s for s in spans}
     index = {"transit": 1, "wp2": by["wp2"].end - 1, "tail": len(traj) - 1}[where]
     palm = (("robot", "hand"), ("wall", "base"))
+    scene = _Scene({index: [palm]})
+    holding = _holding_at(scene, traj[by["wp3"].start - 1])
     with pytest.raises(MotionRejected) as exc:
-        ExecutionGate(_Scene({index: [palm]})).verify(traj, spans, target="die", q_start=Q0)
+        ExecutionGate(scene).verify(traj, spans, target="die", q_start=Q0, holding=holding)
     assert exc.value.index == index
 
 
@@ -142,20 +172,37 @@ def test_certification_also_rejects_a_free_target_meeting_an_obstacle(pair, span
 
 def test_gate_checks_the_held_object_only_while_holding():
     scene = _Scene()
+    holding = _holding_at(scene, _points(0)[0])
     ExecutionGate(scene).verify(_points(0, 0.1, 0.2), [Span("close", 0, 1, allow="grip"),
-                                                       Span("lift", 1, 3, holding=True)], target="die", q_start=Q0)
+                                                       Span("lift", 1, 3, holding=True)], target="die", q_start=Q0,
+                                holding=holding)
     held = [h for _, h, _ in scene.queries]
     assert held[0] is None and held[1][0] == held[2][0] == "die"
-    # T is taken where holding starts from, the closed grip at point 0: hand right over the die,
-    # 0.1 m along hand z (top-down quat [0, 1, 0, 0]).
+    # The hand right over the die, 0.1 m along hand z (top-down quat [0, 1, 0, 0]).
     np.testing.assert_allclose(held[1][1][:3, 3], [0.0, 0.0, 0.1], atol=1e-9)
 
 
-def test_holding_from_the_first_point_takes_t_at_the_start_configuration():
+def test_holding_is_checked_where_it_attaches():
+    carry = [Span("close", 0, 1, allow="grip"), Span("lift", 1, 3, holding=True)]
     scene = _Scene()
-    ExecutionGate(scene).verify(_points(0.2, 0.3), [Span("transport", 0, 2, holding=True)], target="die",
-                                q_start=np.full(9, 0.1))
-    np.testing.assert_allclose(scene.queries[0][1][1][:3, 3], [-0.1, 0.0, 0.1], atol=1e-9)
+    good = _holding_at(scene, _points(0)[0])
+    ExecutionGate(scene).verify(_points(0, 0.1, 0.2), carry, target="die", q_start=Q0, holding=good)
+
+    off = Holding("die", good.t_hand_object @ pose_matrix(np.array([0.0, 0.0, 0.01])))
+    with pytest.raises(MotionRejected) as exc:
+        ExecutionGate(_Scene()).verify(_points(0, 0.1, 0.2), carry, target="die", q_start=Q0, holding=off)
+    assert exc.value.index == 1 and exc.value.rejection["reason"] == "binding_mismatch"
+    assert exc.value.rejection["position_m"] == pytest.approx(0.01)
+
+    # Holding from the first point attaches at the start configuration.
+    start = np.full(9, 0.1)
+    from_start = [Span("transport", 0, 2, holding=True)]
+    ExecutionGate(scene).verify(_points(0.2, 0.3), from_start, target="die", q_start=start,
+                                holding=_holding_at(scene, start))
+    with pytest.raises(MotionRejected):
+        ExecutionGate(scene).verify(_points(0.2, 0.3), from_start, target="die", q_start=start, holding=good)
+    with pytest.raises(ValueError):
+        ExecutionGate(scene).verify(_points(0.2, 0.3), from_start, target="die", q_start=start)
 
 
 def test_a_released_object_stays_where_the_hand_left_it():
@@ -163,7 +210,8 @@ def test_a_released_object_stays_where_the_hand_left_it():
     scene = _Scene({3: [hand_on_die]})
     spans = [Span("descend", 0, 2, holding=True, allow="rest"), Span("retreat", 2, 4, allow="grip")]
     with pytest.raises(MotionRejected) as exc:
-        ExecutionGate(scene).verify(_points(0.1, 0.3, 0.2, 0.0), spans, target="die", q_start=Q0)
+        ExecutionGate(scene).verify(_points(0.1, 0.3, 0.2, 0.0), spans, target="die", q_start=Q0,
+                                    holding=_holding_at(scene, Q0))
     assert exc.value.index == 3 and exc.value.span.label == "retreat" and exc.value.pair == hand_on_die
     placed = [p for _, _, p in scene.queries]
     assert placed[0] is placed[1] is None and placed[2][0] == placed[3][0] == "die"
@@ -185,7 +233,7 @@ def _episode(monkeypatch, plan):
     def no_ik(*a, **k):
         raise AssertionError("the episode re-solved IK")
 
-    env = SimpleNamespace(entity_map={}, planner=None, solve_ik=no_ik, state_fingerprint=lambda: "now")
+    env = SimpleNamespace(entity_map={}, planner=None, solve_ik=no_ik, state_fingerprint=lambda: "now", writes=0)
     recorded = []
 
     def record(env, dataset, seg, task_spec, **kw):
@@ -204,15 +252,24 @@ def _episode(monkeypatch, plan):
 
 
 def test_episode_replays_the_verified_trajectory_without_ik(monkeypatch):
-    motion = VerifiedMotion(_points(1, 2), (Span("a", 0, 2),), "now", 2)
-    run, recorded = _episode(monkeypatch, lambda *a, **k: (motion, None, None))
+    issued = []
+
+    def plan(*a, gate, **k):
+        issued.append(gate.ungated(_points(1, 2)))
+        return issued[-1], None, None
+
+    run, recorded = _episode(monkeypatch, plan)
     run.run_steps([Skill("pick", "die")], [])
-    assert recorded == [motion.trajectory] and recorded[0] is motion.trajectory
+    assert recorded == [issued[0].trajectory] and recorded[0] is issued[0].trajectory
 
 
 def test_episode_refuses_a_motion_verified_on_another_state(monkeypatch):
-    motion = VerifiedMotion(_points(1), (Span("a", 0, 1),), "before", 1)
-    run, recorded = _episode(monkeypatch, lambda *a, **k: (motion, None, None))
+    def plan(*a, gate, **k):
+        motion = gate.ungated(_points(1))
+        gate.env.state_fingerprint = lambda: "after"
+        return motion, None, None
+
+    run, recorded = _episode(monkeypatch, plan)
     with pytest.raises(StaleMotion):
         run.run_steps([Skill("pick", "die")], [])
     assert recorded == []
@@ -223,10 +280,166 @@ def test_rejected_step_records_zero_frames(monkeypatch):
 
     def plan(skill, *a, **k):
         calls.append(skill.name)
-        raise Infeasible("no pick candidate passed the gate and its trial", {"candidates": 2})
+        raise Refused("search_exhausted", {"reason": "no pick candidate passed the gate and its trial",
+                                           "candidates": 2})
 
     run, recorded = _episode(monkeypatch, plan)
     entry = run.run_steps([Skill("pick", "die"), Skill("place", "mat")], [])
     assert recorded == [] and run.frame_count == 0 and calls == ["pick"]
-    assert entry["cause"] == "infeasible" and entry["done"] is False
-    assert entry["infeasible"] == {"reason": "no pick candidate passed the gate and its trial", "candidates": 2}
+    assert entry["cause"] == "search_exhausted" and entry["done"] is False and entry["steps"] == 0
+    assert entry["evidence"] == {"reason": "no pick candidate passed the gate and its trial", "candidates": 2}
+    assert run.result().stopped is entry
+
+
+def test_check_point_rejects_bad_numbers_limits_fk_residual_and_self_collision():
+    scene = _Scene()
+    scene.joint_limits = (np.full(9, -1.0), np.full(9, 1.0))
+    gate, span, q = ExecutionGate(scene), Span("move", 0, 1), np.full(9, 0.2)
+    check = lambda q, **kw: gate.check_point(q, span, target="die", **kw)
+
+    assert check(q) is None
+    assert check(np.r_[q[:8], np.nan])["reason"] == "invalid_value"
+    assert check(q[:7])["reason"] == "invalid_value"
+    assert check(np.r_[1.5, q[1:]]) == {"reason": "joint_limit", "joints": [0]}
+
+    hand = scene.hand_pose(q)
+    assert check(q, pose=hand) is None
+    assert check(q, pose=(hand[0] + [0.0, 0.01, 0.0], hand[1]))["reason"] == "fk_residual"
+    tilted = np.array([0.0, np.cos(0.05), np.sin(0.05), 0.0])
+    assert check(q, pose=(hand[0], tilted))["reason"] == "fk_residual"
+
+    joined = (("robot", "link7"), ("robot", "hand"))
+    apart = (("robot", "link3"), ("robot", "link5"))
+    scene.hits = {len(scene.queries): [joined]}
+    assert check(q) is None
+    scene.hits = {len(scene.queries): [apart]}
+    assert check(q) == {"reason": "self_collision", "pair": apart}
+
+    # Only points that ask for a pose are held to one: a free point between two posed ones is not.
+    ends = {0: scene.hand_pose(_points(0)[0]), 2: scene.hand_pose(_points(0.4)[0])}
+    ExecutionGate(_Scene()).verify(_points(0, 0.2, 0.4), [Span("move", 0, 3)], target="die", q_start=Q0, poses=ends)
+    with pytest.raises(MotionRejected) as exc:
+        ExecutionGate(_Scene()).verify(_points(0, 0.2, 0.4), [Span("move", 0, 3)], target="die", q_start=Q0,
+                                       poses={1: ends[2]})
+    assert exc.value.index == 1 and exc.value.rejection["reason"] == "fk_residual"
+
+
+class _StateScene(_Scene):
+    """Contacts that depend on what is posed: the hand meets a wall at x 0.25, the held die meets it at 0.55,
+    and the hand passes through the released die at 0.85."""
+
+    def contacts_at(self, qpos, held=None, placed=None):
+        self.queries.append((np.asarray(qpos).copy(), held, placed))
+        x = round(float(qpos[0]), 2)
+        if x == 0.25:
+            return [(("robot", "hand"), ("wall", "base"))]
+        if held and x == 0.55:
+            return [(("die", "base"), ("wall", "base"))]
+        if placed and x == 0.85:
+            return [(("robot", "hand"), ("die", "base"))]
+        return []
+
+
+def test_check_point_and_verify_agree_empty_held_and_released():
+    spans = [Span("approach", 0, 2), Span("close", 2, 3, allow="grip"), Span("carry", 3, 5, holding=True),
+             Span("retreat", 5, 7, allow="grip")]
+    clean = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7]
+    for bad, index in ((None, None), (0.25, 1), (0.55, 4), (0.85, 6)):
+        xs = list(clean)
+        if index is not None:
+            xs[index] = bad
+        scene = _StateScene()
+        gate = ExecutionGate(scene)
+        holding = _holding_at(scene, _points(xs[2])[0])
+        if index is None:
+            gate.verify(_points(*xs), spans, target="die", q_start=Q0, holding=holding)
+        else:
+            with pytest.raises(MotionRejected) as exc:
+                gate.verify(_points(*xs), spans, target="die", q_start=Q0, holding=holding)
+            assert exc.value.index == index
+        asked = list(scene.queries)
+        assert all((h is not None) == (3 <= i < 5) and (p is not None) == (i >= 5) for i, (_, h, p) in enumerate(asked))
+        # The same point asked alone, posed as verify posed it, gets the same answer.
+        for i, (q, held, placed) in enumerate(asked):
+            span = next(s for s in spans if s.start <= i < s.end)
+            why = gate.check_point(q, span, target="die", held=held, placed=placed)
+            assert (why is None) == (i != index)
+            if i == index:
+                assert why == exc.value.rejection
+
+
+def test_a_verified_motion_cannot_be_changed_after_issue():
+    scene = _Scene()
+    traj = _points(0, 0.1, 0.2)
+    t = _holding_at(scene, traj[0]).t_hand_object.copy()
+    motion = ExecutionGate(scene).verify(traj, [Span("close", 0, 1, allow="grip"), Span("lift", 1, 3, holding=True)],
+                                         target="die", q_start=Q0, holding=Holding("die", t))
+    traj[1][:] = 9.0
+    t[:] = 0.0
+    assert float(motion.trajectory[1][0]) == 0.1 and motion.holding.t_hand_object[3, 3] == 1.0
+    with pytest.raises(ValueError):
+        motion.trajectory[0][0] = 5.0
+    with pytest.raises(ValueError):
+        motion.holding.t_hand_object[0, 0] = 5.0
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        motion.trajectory = ()
+    with pytest.raises(AttributeError):
+        motion.trajectory.append(np.zeros(9))
+
+
+def test_only_the_gate_issues_a_motion_it_accepts():
+    scene = _Scene()
+    gate = ExecutionGate(scene)
+    forged = VerifiedMotion(tuple(_points(1)), (Span("a", 0, 1),), scene.state_fingerprint(), 1)
+    with pytest.raises(StaleMotion):
+        gate.check_current(forged)
+    other = ExecutionGate(scene).verify(_points(0), [Span("a", 0, 1)], target="die", q_start=Q0)
+    with pytest.raises(StaleMotion):
+        gate.check_current(other)
+    mine = gate.verify(_points(0), [Span("a", 0, 1)], target="die", q_start=Q0)
+    gate.check_current(mine)
+    scene.writes += 1
+    with pytest.raises(StaleMotion):
+        gate.check_current(mine)
+
+
+class _Planner:
+    def plan(self, *a, **k):
+        quat = np.array([0.0, 1.0, 0.0, 0.0])
+        return [SimpleNamespace(grasp_pos=np.array([0.5, 0.0, 0.85]), grasp_quat=quat, metadata={"candidate_index": i})
+                for i in range(2)]
+
+
+class _Executor:
+    last_motion_trace = None
+
+    def pick(self, *a, **k):
+        return SimpleNamespace(trajectory=_points(0.1, 0.2), segments=[
+            {"label": "seg", "span": [0, 2], "holding": False, "allow": None}])
+
+
+def test_a_refused_step_steps_no_physics():
+    with pytest.raises(ValueError):
+        Refused("blocked", {})
+
+    scene, trials = _Scene(), []
+    scene.contacts_at = lambda q, held=None, placed=None: [(("robot", "hand"), ("cage", "base"))]
+
+    def trial(traj, target):
+        trials.append(target)
+        scene.writes += len(traj)
+        return {"lifted": False, "lift_m": 0.0, "seconds": 0.1}
+
+    state = {"home_qpos": Q0, "positions": {"die": np.array([0.5, 0.0, 0.8])}, "grasp_trial": trial}
+    with pytest.raises(Refused) as exc:
+        run_skills([Skill("pick", "die")], _Planner(), _Executor(), None, state, MotionParams(),
+                   gate=ExecutionGate(scene))
+    assert exc.value.label == "search_exhausted" and trials == [] and scene.writes == 0
+    assert [t["gate"]["reason"] for t in exc.value.evidence["trials"]] == ["collision", "collision"]
+
+    # Trials that stepped physics and lifted nothing are a failed execution, not a zero-step refusal.
+    del scene.contacts_at
+    with pytest.raises(ExecutionFailed) as failed:
+        run_skills([Skill("pick", "die")], _Planner(), _Executor(), None, dict(state), MotionParams(),
+                   gate=ExecutionGate(scene))
+    assert failed.value.label == "execution_failed" and trials == ["die", "die"] and failed.value.steps == 4

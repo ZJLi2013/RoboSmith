@@ -126,9 +126,9 @@ def run_scenario_smoke(
                 env_state_names=env_state_names,
             )
         episode_frame_counts[ep] = result.frame_count
-        if result.infeasible is not None:
-            # Judging would settle, i.e. step physics the gate never saw; an infeasible episode fails as it stands.
-            success, judge_state = False, {"infeasible": _json_safe(result.infeasible)}
+        if result.stopped is not None:
+            # Judging would settle, i.e. step physics the gate never saw; a stopped episode fails as it stands.
+            success, judge_state = False, {"stopped": _json_safe(result.stopped)}
         else:
             success, judge_state = evaluate_scenario_task(
                 env,
@@ -152,7 +152,7 @@ def run_scenario_smoke(
             ),
             "handoffs": _json_safe(result.handoffs),
             "failed_step": None if success else _json_safe(handoff.first_failure(result.handoffs)),
-            "failed_leaves": ([] if success or result.infeasible is not None
+            "failed_leaves": ([] if success or result.stopped is not None
                               else failed_leaves(package.legacy_task.success, judge_state)),
             **({"planner": planner_record.to_dict()} if planner_record is not None else {}),
         })

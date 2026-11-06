@@ -14,7 +14,7 @@ from robotsmith.assets.schema import UrdfJoint
 from robotsmith.execution.executor import MotionExecutor
 from robotsmith.motion.params import MotionParams
 from robotsmith.motion.planner import GenesisBackend
-from robotsmith.execution.gate import Infeasible
+from robotsmith.execution.gate import ExecutionFailed, Refused
 from robotsmith.skills import Skill, run_skills
 from robotsmith.assets.geometry import rotate_vec_wxyz
 from robotsmith.skills.frames import (
@@ -120,6 +120,7 @@ class TestResolveFrame:
 class _FakePlan:
     def __init__(self):
         self.grasp_pos = np.array([0.5, 0.0, 0.12])
+        self.grasp_quat = np.array([0.0, 1.0, 0.0, 0.0])
         self.pre_grasp_pos = None
         self.retreat_pos = None
         self.metadata = {}
@@ -190,7 +191,7 @@ class TestRegistryDispatch:
         markers = [t[-1] for t in traj if np.allclose(t, t[-1])]
         assert markers == [1.0, 2.0, 3.0, 3.0]
 
-    def test_pick_with_every_candidate_filtered_out_records_counts_and_is_infeasible(self, gate):
+    def test_pick_with_every_candidate_filtered_out_records_counts_and_is_refused(self, gate):
         class EmptyPlanner(_FakePlanner):
             last_filter_counts = {"raw": 8, "z_reject": 8, "accepted": 0}
 
@@ -198,7 +199,7 @@ class TestRegistryDispatch:
                 return []
 
         ex, state = _FakeExecutor(), _scene_state()
-        with pytest.raises(Infeasible):
+        with pytest.raises(Refused):
             run_skills([Skill("pick", "die")], EmptyPlanner(), ex, lambda *a, **k: np.zeros(9),
                        state, MotionParams(), gate=gate)
         assert ex.calls == []
@@ -225,7 +226,7 @@ class TestRegistryDispatch:
         try:
             motions = run_skills([Skill("pick", "die")], ThreePlans(), ex, lambda *a, **k: np.zeros(9), state,
                                  MotionParams(), gate=gate)
-        except Infeasible:
+        except (Refused, ExecutionFailed):
             motions = None
         return motions, state["skill_traces"][0], calls
 
@@ -259,10 +260,10 @@ class TestRegistryDispatch:
         monkeypatch.setattr(gate.env, "contacts_at", contacts_at, raising=False)
         motions, trace, calls = self._trial_run(gate, [True, True, True])
         assert calls == ["die"] and trace["selected_candidate_index"] == 1
-        assert trace["trials"][0]["gate"] == {"segment": "seg", "index": 0,
+        assert trace["trials"][0]["gate"] == {"segment": "seg", "index": 0, "reason": "collision",
                                               "pair": [["robot", "hand"], ["wall", "base"]]}
 
-    def test_trial_all_tries_every_candidate_and_none_lifting_is_infeasible(self, gate):
+    def test_trial_all_tries_every_candidate_and_none_lifting_fails_the_step(self, gate):
         _, trace, calls = self._trial_run(gate, [False, True, True], try_all=True)
         assert len(calls) == 3 and trace["selected_candidate_index"] == 1
         motions, trace, _ = self._trial_run(gate, [False, False, False])

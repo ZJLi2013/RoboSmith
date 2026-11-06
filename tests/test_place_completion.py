@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from robotsmith.execution.gate import Infeasible
+from robotsmith.execution.gate import Refused
 from robotsmith.scenario_runtime import runner
 from robotsmith.scenario_runtime.runner import evaluate_scenario_task, run_scenario_episode
 from robotsmith.sim.world_state import settle_window
@@ -174,14 +174,14 @@ def test_close_after_place_rejudges_the_task_on_a_new_settle(monkeypatch):
     assert state["window"]["steps"] == [t + m for m in MARKS]
 
 
-def _commanding_run(monkeypatch, infeasible_at=None):
+def _commanding_run(monkeypatch, refused_at=None):
     """Each step plans two distinct verified points; the record commands each point and steps, as the
     recorder does. Return the env, result, verified points and every commanded target."""
     verified, commanded = [], []
 
     def plan(skill, *a, **kw):
-        if skill.name == infeasible_at:
-            raise Infeasible("no carry height passed the gate", {})
+        if skill.name == refused_at:
+            raise Refused("search_exhausted", {"reason": "no carry height passed the gate"})
         q = [np.full(9, len(verified) + 1.0), np.full(9, len(verified) + 2.0)]
         verified.extend(q)
         return kw["gate"].ungated(q), None, None
@@ -206,14 +206,14 @@ def test_every_commanded_target_is_a_verified_point(monkeypatch):
     env, result, verified, commanded = _commanding_run(monkeypatch)
     assert len(verified) == 6 and len(commanded) == env.scene.t == 6 + 15
     assert all(any(np.array_equal(c, v) for v in verified) for c in commanded)
-    assert result.infeasible is None
+    assert result.stopped is None
 
 
-def test_an_infeasible_step_steps_no_physics_after_it(monkeypatch):
-    env, result, verified, commanded = _commanding_run(monkeypatch, infeasible_at="place")
+def test_a_refused_step_steps_no_physics_after_it(monkeypatch):
+    env, result, verified, commanded = _commanding_run(monkeypatch, refused_at="place")
     assert env.scene.t == len(commanded) == len(verified) == 2
-    assert result.infeasible["cause"] == "infeasible" and result.infeasible["skill"] == "place"
-    assert result.final_window is None and result.handoffs[-1] is result.infeasible
+    assert result.stopped["cause"] == "search_exhausted" and result.stopped["skill"] == "place"
+    assert result.final_window is None and result.handoffs[-1] is result.stopped
 
 
 def test_failed_leaves_name_what_works_against_the_verdict():

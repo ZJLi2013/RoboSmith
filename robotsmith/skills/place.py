@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import numpy as np
 
-from robotsmith.execution.gate import Infeasible, MotionRejected, Span, VerifiedMotion, spans_of
+from robotsmith.execution.gate import Holding, MotionRejected, Refused, Span, VerifiedMotion, poses_of, spans_of
 from robotsmith.grasp.planner import GraspPlan
+from robotsmith.grasp.transforms import pose_matrix
 from robotsmith.skills.base import SkillContext
 from robotsmith.skills.frames import (
     _float_or_none,
@@ -103,15 +104,21 @@ def run_place(ctx: SkillContext) -> VerifiedMotion:
     q0 = np.asarray(ctx.qpos, dtype=np.float64)
     start, transit = _place_transport_seed(ctx, q0)
     heights = CARRY_HEIGHTS if ctx.phase in ("all", "transport") else (0.0,)
-    carry = ctx.gate.env.hand_pose(start) if len(heights) > 1 else None
+    env = ctx.gate.env
+    carry = env.hand_pose(start) if len(heights) > 1 else None
+    holding = None
+    if ctx.held:
+        holding = Holding(ctx.held, np.linalg.inv(pose_matrix(*env.hand_pose(q0)))
+                          @ pose_matrix(*env.object_pose(ctx.held)))
     tries, motion = [], None
     for h in heights:
         try:
             result = ctx.executor.place(place_plan, ctx.motion_planner, start, ctx.params, phase=ctx.phase,
                                         carry=carry, carry_height=h)
             spans = [Span("transit", 0, len(transit), holding=True)] + spans_of(result.segments, len(transit))
-            motion = ctx.gate.verify(transit + result.trajectory, spans, target=ctx.held,
-                                       q_start=q0, rest={ctx.skill.target.split(".")[0]})
+            motion = ctx.gate.verify(transit + result.trajectory, spans, target=ctx.held, q_start=q0,
+                                     rest={ctx.skill.target.split(".")[0]}, holding=holding,
+                                     poses=poses_of(result.segments, len(transit)))
         except MotionRejected as exc:
             tries.append({"carry_height": h, "gate": exc.to_dict()})
         except RuntimeError as exc:
@@ -135,7 +142,7 @@ def run_place(ctx: SkillContext) -> VerifiedMotion:
         }
     )
     if motion is None:
-        raise Infeasible("no carry height passed the gate", {"tries": tries})
+        raise Refused("search_exhausted", {"reason": "no carry height passed the gate", "tries": tries})
     # The object is only released on the descend phase; transport still carries it,
     # so hold-state carry-over must survive into descend.
     if ctx.phase in ("all", "descend"):

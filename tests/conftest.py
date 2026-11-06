@@ -8,6 +8,8 @@ class ClearEnv:
     """A scene where nothing touches anything; ``writes`` stands in for the real-write count."""
 
     writes = 0
+    joint_limits = (np.full(9, -10.0), np.full(9, 10.0))
+    joined_links = frozenset()
 
     def contacts_at(self, qpos, held=None, placed=None):
         return []

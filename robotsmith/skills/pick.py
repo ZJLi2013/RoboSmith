@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from robotsmith.execution.gate import Infeasible, MotionRejected, Span, VerifiedMotion, spans_of
+from robotsmith.execution.gate import (ExecutionFailed, Holding, MotionRejected, Refused, Span, VerifiedMotion,
+                                       poses_of, spans_of)
 from robotsmith.grasp.planner import GraspPlan
+from robotsmith.grasp.transforms import pose_matrix
 from robotsmith.motion.params import MotionParams
 from robotsmith.skills.base import SkillContext
 from robotsmith.skills.registry import bound_leaf, register
@@ -89,7 +91,8 @@ def _pick_seed_transit(
 
 def _select(ctx: SkillContext, trial) -> tuple[GraspPlan, VerifiedMotion]:
     """Gate, then trial, the candidates in planner order from the same start state; keep the first that passes
-    both, verified again after the last trial. Raises ``Infeasible`` when none does.
+    both, verified again after the last trial. When none does, raises ``Refused("search_exhausted")`` if no trial
+    ran, else ``ExecutionFailed`` with the trials' physics steps.
 
     ``trial(trajectory, target)`` replays the trajectory in simulation, restores the scene and returns
     ``{"lifted", "lift_m", "seconds"}``. With ``scene_state["grasp_trial_all"]`` every candidate is
@@ -104,12 +107,12 @@ def _select(ctx: SkillContext, trial) -> tuple[GraspPlan, VerifiedMotion]:
         record = {"candidate_index": md.get("candidate_index"), "kind": md.get("kind"),
                   "closing_width": md.get("closing_width"), "lifted": False, "lift_m": None, "seconds": 0.0}
         try:
-            traj, spans = _pick_motion(ctx, plan)
-            motion = ctx.gate.verify(traj, spans, target=target, q_start=ctx.qpos)
+            request = _pick_request(ctx, plan)
+            motion = ctx.gate.verify(**request)
             if trial is not None:
-                record.update(trial(motion.trajectory, target))
+                record.update(trial(motion.trajectory, target), steps=len(motion.trajectory))
                 if record["lifted"]:
-                    motion = ctx.gate.verify(traj, spans, target=target, q_start=ctx.qpos)
+                    motion = ctx.gate.verify(**request)
         except MotionRejected as exc:
             record["gate"] = exc.to_dict()
         except RuntimeError as exc:
@@ -117,16 +120,16 @@ def _select(ctx: SkillContext, trial) -> tuple[GraspPlan, VerifiedMotion]:
         else:
             record["gate"] = "passed"
             if trial is None or record["lifted"]:
-                passing.append((plan, traj, spans, motion, record))
+                passing.append((plan, request, motion, record))
         trials.append(record)
         if passing and not try_all:
             break
     chosen = None
-    for plan, traj, spans, motion, record in passing:
+    for plan, request, motion, record in passing:
         if try_all:
             # Every later trial stepped physics and voided this motion's voucher.
             try:
-                motion = ctx.gate.verify(traj, spans, target=target, q_start=ctx.qpos)
+                motion = ctx.gate.verify(**request)
             except MotionRejected as exc:
                 record["reverify"] = exc.to_dict()
                 continue
@@ -139,16 +142,27 @@ def _select(ctx: SkillContext, trial) -> tuple[GraspPlan, VerifiedMotion]:
         "trials": trials, "trial_seconds": round(sum(t["seconds"] for t in trials), 3),
     })
     if chosen is None:
-        raise Infeasible("no pick candidate passed the gate and its trial",
-                         {"candidates": len(plans), "filter_counts": filter_counts, "trials": trials})
+        evidence = {"reason": "no pick candidate passed the gate and its trial", "candidates": len(plans),
+                    "filter_counts": filter_counts, "trials": trials}
+        steps = sum(t.get("steps", 0) for t in trials)
+        if steps:
+            raise ExecutionFailed(evidence, steps)
+        raise Refused("search_exhausted", evidence)
     return chosen
 
 
-def _pick_motion(ctx: SkillContext, plan: GraspPlan) -> tuple[list[np.ndarray], list[Span]]:
-    """Base-aim transit plus the executor's pick segment for ``plan``, with the gate's spans."""
+def _pick_request(ctx: SkillContext, plan: GraspPlan) -> dict:
+    """``gate.verify`` keywords for ``plan``: base-aim transit plus the executor's pick segment, its spans and
+    waypoint poses, and the target held at the candidate's grasp pose."""
     seed, transit = _pick_seed_transit(ctx, plan)
     result = ctx.executor.pick(plan, ctx.motion_planner, seed, _pick_motion_params(ctx))
-    return transit + result.trajectory, [Span("transit", 0, len(transit))] + spans_of(result.segments, len(transit))
+    target = ctx.skill.target
+    t_hand_object = (np.linalg.inv(pose_matrix(plan.grasp_pos, plan.grasp_quat))
+                     @ pose_matrix(*ctx.gate.env.object_pose(target)))
+    return {"trajectory": transit + result.trajectory,
+            "spans": [Span("transit", 0, len(transit))] + spans_of(result.segments, len(transit)),
+            "poses": poses_of(result.segments, len(transit)), "target": target, "q_start": ctx.qpos,
+            "holding": Holding(target, t_hand_object)}
 
 
 @register("pick", post=bound_leaf)

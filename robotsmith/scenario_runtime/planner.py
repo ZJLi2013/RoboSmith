@@ -16,6 +16,7 @@ from typing import Callable
 
 import numpy as np
 
+from robotsmith.execution.gate import REFUSALS
 from robotsmith.scenario.adapters import bindings_from_steps, to_legacy_skills
 from robotsmith.scenario.load import steps_to_intents
 from robotsmith.scenario_runtime.runner import EpisodeRun, collect_object_positions, reset_scene
@@ -105,7 +106,7 @@ def parse_steps(text: str, assets: dict, yaw_deg: dict, held: str | None = None)
 
 def route_failure(entry: dict, positions: dict, binding: dict | None) -> str:
     """``plan`` / ``physical`` / ``unknown`` from execution evidence, per the M6 contract."""
-    if entry.get("cause") == "infeasible":
+    if entry.get("cause") in REFUSALS:
         return "plan"
     if entry.get("skill") == "pick" or entry.get("cause") in ("grip?", "motion?"):
         return "physical"

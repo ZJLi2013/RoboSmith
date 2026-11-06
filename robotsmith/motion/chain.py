@@ -302,7 +302,8 @@ def _assemble_trajectory(
     tail_hold_steps: int,
 ) -> list[np.ndarray]:
     """Expand per-segment endpoints/paths into the full step-by-step trajectory; each segment's ``span`` is
-    its ``[start, end)`` in it, holds included (the tail hold belongs to the last segment)."""
+    its ``[start, end)`` in it, holds included (the tail hold belongs to the last segment), and ``reach`` the
+    point where its waypoint ``pose`` is reached (``None`` when the segment adds no point)."""
     traj: list[np.ndarray] = []
     for i, wp in enumerate(waypoints):
         start = len(traj)
@@ -311,9 +312,12 @@ def _assemble_trajectory(
             traj += path
         else:
             traj += _interpolate(q_targets[i], q_targets[i + 1], int(segments[i]["steps"]))
+        moved = len(traj) - start
         if wp.hold_after_steps > 0:
             traj += [q_targets[i + 1].copy() for _ in range(wp.hold_after_steps)]
         segments[i]["span"] = [start, len(traj)]
+        segments[i]["pose"] = (np.asarray(wp.pos, dtype=np.float64), np.asarray(wp.quat, dtype=np.float64))
+        segments[i]["reach"] = start + max(moved - 1, 0) if len(traj) > start else None
     if tail_hold_steps > 0:
         traj += [q_targets[-1].copy() for _ in range(tail_hold_steps)]
         segments[-1]["span"][1] = len(traj)

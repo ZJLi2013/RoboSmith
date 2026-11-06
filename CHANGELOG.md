@@ -42,6 +42,13 @@ All notable user-facing changes are documented here. This project follows Semant
 
 ### Changed
 
+- `ExecutionGate.check_point` is the one point check: joint limits, FK residual where a pose is asked for,
+  self-collision between links that are not joined, and contacts the gate does not permit; `verify` runs it on every
+  point. A motion that holds an object takes an explicit `Holding(target, t_hand_object)`, checked where it attaches.
+  A `VerifiedMotion` is read-only and only the gate issues one. A step stopped before any physics raises
+  `Refused(label, evidence)` (`search_exhausted`, `unsupported`, `infeasible`), and a pick whose trials stepped physics
+  and lifted nothing raises `ExecutionFailed`; both replace `Infeasible`. The episode result field `infeasible` is now
+  `stopped`, with `cause`, `evidence` and `steps`.
 - Plan files live in `plans/<same name>.yaml` beside the scenario, with the keys `name`, `steps` and `actions` (the
   meta actions `load_plan` checks); `--planner file` runs their steps (was `teacher`). Files with the keys `teacher` /
   `plan` still load, read as `name` / `actions`; a file mixing an old key with its new one is rejected.

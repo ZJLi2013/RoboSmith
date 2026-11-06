@@ -10,7 +10,7 @@ import random
 
 import numpy as np
 
-from robotsmith.execution.gate import Infeasible
+from robotsmith.execution.gate import Refused
 from robotsmith.rollout import asset_pick_validation as apv
 from robotsmith.rollout.asset_pick_validation import _make_scene, _make_task
 
@@ -56,14 +56,15 @@ def test_object_xy_pins_the_object_before_settling(monkeypatch):
     np.testing.assert_allclose(plan.initial_positions["object"], [0.42, -0.27, 0.025])
 
 
-def test_trial_selection_trials_from_a_snapshot_and_an_infeasible_pick_has_no_motion(monkeypatch):
+def test_trial_selection_trials_from_a_snapshot_and_a_refused_pick_has_no_motion(monkeypatch):
     monkeypatch.setattr(apv, "build_episode_positions",
                         lambda *a, **k: {"object": np.array([0.55, 0.10, 0.03])})
     resets, seen = [], {}
 
     def skills(task_skills, planner, executor, solve_ik, scene_state, params, *, gate):
         seen["trial"] = scene_state["grasp_trial"]
-        raise Infeasible("no pick candidate passed the gate and its trial", {"candidates": 3})
+        raise Refused("search_exhausted", {"reason": "no pick candidate passed the gate and its trial",
+                                           "candidates": 3})
 
     monkeypatch.setattr(apv, "run_skills", skills)
 
@@ -84,5 +85,6 @@ def test_trial_selection_trials_from_a_snapshot_and_an_infeasible_pick_has_no_mo
                                            motion_params=None, settle_steps=1, object_xy=(0.42, -0.27),
                                            grasp_selection="trial")
     assert seen["trial"] == env.trial_from_here and resets == [{"object": (0.42, -0.27)}]
-    assert plan.motions == [] and plan.infeasible == {
-        "reason": "no pick candidate passed the gate and its trial", "candidates": 3}
+    assert plan.motions == [] and plan.stopped == {
+        "cause": "search_exhausted", "steps": 0,
+        "evidence": {"reason": "no pick candidate passed the gate and its trial", "candidates": 3}}
