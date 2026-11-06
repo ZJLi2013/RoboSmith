@@ -169,6 +169,23 @@ F2 的拒绝点不随搬运高度变：place 先用一段固定的 transit 在�
 transit 之后，20 cm 的墙在转基座时就挡住了 die。所以这一族是 place 的搬运路线缺陷，不是门或场景的问题。
 单实例 45–50 s（F0、F1），F2 约 30 s，F4 约 11 s。
 
+#### 逐片迁移的 dev 对照
+
+模板链路逐片替换时，每片在 playground seed 0–9 上与这一行比较（同族同 seed，只差该片的改动），test seed 留到实现冻结后。
+基线在 commit `b467daf` 上读取，含 e1 / e2 的门加固、链路代码未改，四族各 10 个实例各跑一次、无重试：
+
+| 族 | certified | 其余 | 失败在哪 |
+|---|---|---|---|
+| F0 空桌面 | 10/10 | — | — |
+| F1 贴墙抓取 | 10/10 | — | — |
+| F2 越障搬运 | 0/10 | 10 `search_exhausted` | 都在 place：转基座的 transit 段被门拒，7 个接触对 die–barrier，seed 5、6、9 为机器人–barrier；5 个搬运高度都卡在这一段 |
+| F4 罩住 | 10/10 | — | 都在 pick 零步 `search_exhausted` |
+
+F2 的 episode 不是零物理步：pick 已经执行（试抓与正式回放），停在 place 时 place 自身零物理步。F0 / F1 在 seed 0–1 上
+与 c1 dev 的结果相同，门加固没有让已通过的实例变坏。下一片（place 的搬运段改由 `JointPlanner` 生成）以此判：
+F2 每个实例 certified 或与本表同位置停在 place 之前；过了搬运后在下放、松手或实际执行中失败，说明 F2 不只卡在搬运段。
+F0 / F1 的 20 个 seed 仍 certified，F4 仍 10/10。
+
 ### 下一版的认证口径
 
 [下一版](manipulation.md#下一版设计规划给出的-meta-action-组合未实现)的 certified：正例为任务谓词成立且实际执行零违规接触；
