@@ -59,7 +59,7 @@ plan 类失败重写剩余步骤，`execution_failed` 按 physical 失败上报�
 flowchart TD
     subgraph PK["pick._select：按候选顺序"]
         GEO["grasp/geometric.GeometricGraspPlanner.plan<br/>写回的抓法在前，再按有向包围盒枚举 top_down / side"]
-        PM["pick._pick_request<br/>_pick_seed_transit 转基座段 + MotionExecutor.pick<br/>Holding 取自候选的抓取位姿，poses 取自航点"]
+        PM["pick._pick_request<br/>IK 解首航点（初值 = home 转基座或 ik_seed）；MotionExecutor.pick 从那里起、首航点锁臂<br/>抓取段先单独 verify，再 JointPlanner.connect 规划进场段<br/>Holding 取自候选的抓取位姿，poses 取自航点"]
         V1{"ExecutionGate.verify"}
         TR["sim_env.SimEnv.trial_from_here<br/>重放、恢复快照；物体抬高超过 0.02 m 算抬起"]
         V2{"恢复后对同一条轨迹再 verify"}

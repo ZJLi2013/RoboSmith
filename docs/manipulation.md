@@ -196,7 +196,7 @@ place: sample(place | g) · move_to(p.pre) · move_linear(p.place) · detach(p.s
 |---|---|
 | 动作展开 | 各 meta action 实现 |
 | 候选搜索与组合内回溯 | `CompositionSearch`（替换 `pick._select`） |
-| 自由段 | `JointPlanner`（已实现；place 的搬运段已接入，替换了转基座与搬运高度；pick 接入后替换 `_pick_seed_transit`） |
+| 自由段 | `JointPlanner`（已实现；place 的搬运段与 pick 的进场段已接入，替换了转基座、搬运高度与进场插值） |
 | 合法性 | `ExecutionGate.check_point`：数值有效、关节限位、FK 残差（5 mm / 0.05 rad）、非邻接自碰撞、`contacts_at` + `permitted`；规划器与 `verify` 都调它（已实现，`verify` 已在用） |
 | 持物 | `PlanState.holding`；`gate.verify` 接收 `Holding` 并在 attach 点核对（`verify` 一侧已实现，现由 pick / place 构造；`PlanState` 未实现） |
 | 物理步 | `EpisodeRun`，含试抓、回放与 settle |
@@ -253,6 +253,16 @@ F2 的 10 个搬运全部连通。未 certified 的 3 个（seed 1、3、8）任
 barrier 5–8 个物理步，而门在签发时判这些点合法。这是已知问题，成因未定位（human 2026-11-06 决定不继续定位，先推进后续切片）。单实例耗时约为对照的两倍（F0 平均 85 s，对照约 50 s）：connect 约 8–10 s，
 规划路径按每 5 mm 一个物理步执行，比原先 40 步的插值搬运长得多。
 
+### pick 的规划进场
+
+`_pick_request` 用 IK 解候选的首航点（初值取 home 转基座，或候选的 `ik_seed`，手指取当前值），`MotionExecutor.pick` 从那里起：
+首航点锁臂，只在需要时张指，所以从当前构型到下探起点的手臂运动全部来自 `JointPlanner.connect`。抓取段先单独过门，被拒的
+候选不花规划；connect 被拒记进该候选的试抓记录，换下一个候选。`_pick_seed_transit` 已删除。
+
+在 playground seed 0–9 上逐实例与 place 的规划搬运（S1）相同（[e9 证据](../exps/r1/evidence/e9/README.md)）：F0 10/10、F1 10/10、
+F2 7/10（另 3 个仍是松手段的已知接触）、F4 10/10 零步拒绝；die_01 单资产抓取 3/3，与之前相同。单实例耗时比 S1 长约 45%
+（F0 平均 125 s）。
+
 ## 下一步
 
 模板式链路的四步迁移已完成（rocRobo 删除、`SimEnv` 快照接口、执行门、[调用链](call-chain.md)重写），读数见
@@ -262,7 +272,7 @@ barrier 5–8 个物理步，而门在签发时判这些点合法。这是已知
 2. `JointPlanner`，独立于技能，GPU 上测 F2 布局的持物 connect（已实现，F2 固定请求一次连通，见「规划器」）；
 3. 模板链路逐片替换，每片只改一件事，在 playground seed 0–9 上与[逐片迁移的 dev 对照](acceptance.md#逐片迁移的-dev-对照)比较：
    1. place 的搬运段由 `JointPlanner` 生成，删转基座与搬运高度（已实现，结果见「place 的规划搬运」）；
-   2. pick 的进场段由 `JointPlanner` 生成，删 `_pick_seed_transit`；
+   2. pick 的进场段由 `JointPlanner` 生成，删 `_pick_seed_transit`（已实现，结果见「pick 的规划进场」）；
    3. 同一目标的 pick + place 在第一个物理步前整组过门；
    4. `move_linear`、`gripper`、`attach`、`detach` 从 `MotionExecutor` 模板拆出，一次一个；
    5. `EpisodeRun`、单资产验证与 `certify` 走同一服务，删 `run_skills`、`plan_segment`；
