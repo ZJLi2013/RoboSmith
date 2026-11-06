@@ -71,7 +71,7 @@ agent 写步骤表（pick X、place X on Y…），技能执行，每步判定�
   （NumPy 2.5 起已弃用）只改调用方手里那份，下一次读取与回放仍是验证时的数值。调用方保留的输入数组与凭证不共享内存。
   另一种做法是签发时记内容哈希、`check_current` 时比对，它只能在执行前发现改动；不可变存储让改动无从发生，所以选它。
   限制：对 frozen dataclass 调 `object.__setattr__`、经 ctypes 按裸指针写内存能绕过 Python 层的保证，门不防这类刻意绕过。
-- 段边界来自运动链：每段带 `span` / `holding` / `allow`，段后保持与尾部保持计入所在段；pick 的转基座段与 place 的规划搬运段由技能层作为第一段加入。
+- 段边界来自运动链：每段带 `span` / `holding` / `allow`，段后保持与尾部保持计入所在段；pick 的规划进场段与 place 的规划搬运段由技能层作为第一段加入。
   pick 的手指闭合段是 `grip`、其后一段持物且 `rest`；place 的搬运持物，下放与松手持物且 `rest`，退回 `grip`。
 - `SimEnv.contacts_at(qpos, held=None, placed=None)`、`SimEnv.hand_pose(qpos)`、`SimEnv.object_pose(name)` 在一个快照事务里
   摆构型（`held=(name, T)` 把物体放在手 · T，`placed=(name, T_world)` 放在世界位姿）、跑碰撞检测或正运动学，返回前还原快照。

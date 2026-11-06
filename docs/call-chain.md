@@ -92,7 +92,7 @@ flowchart TD
     PM & PX --> EXE --> CH --> F & C & G
 ```
 
-门检查的是会被执行的每一个点：转基座段、手指段、段后保持与尾部保持都在 `spans` 里，`spans` 必须铺满整条轨迹。
+门检查的是会被执行的每一个点：pick 的规划进场段、手指段、段后保持与尾部保持都在 `spans` 里，`spans` 必须铺满整条轨迹。
 pick 的手指闭合段允许手指碰目标（`grip`），其后一段持物且允许离开支撑面（`rest`）；place 的规划搬运段持物，
 下放、松手持物且 `rest`，退回 `grip`。持物段把目标摆在 手 · T，T 由技能以 `Holding` 传入，门在持物开始之前的构型上核对
 手 · T 与目标位姿（≤ 5 mm / 0.05 rad）；松手之后目标留在 手(最后持物点) · T，退回时手掌碰到它会被拒绝。
@@ -104,7 +104,7 @@ pick 的手指闭合段允许手指碰目标（`grip`），其后一段持物且
 
 | 位置 | 在门里 | 不在门里 |
 |---|---|---|
-| pick / place 的整条轨迹 | 每个点，含 pick 的转基座段、place 的规划搬运段、手指与保持段；持物与松手后的物体；非相连连杆的自碰撞 | 相连（父子、同父）连杆的接触 |
+| pick / place 的整条轨迹 | 每个点，含 pick 的规划进场段、place 的规划搬运段、手指与保持段；持物与松手后的物体；非相连连杆的自碰撞 | 相连（父子、同父）连杆的接触 |
 | 试抓 `SimEnv.trial_from_here` | 试抓前后对同一条轨迹各过一次门 | 试抓本身是物理步进，判抬起，不判接触 |
 | settle 与任务判定 `settle_window` | 只下发最后一个已验证点 | 保持期间的物理演化 |
 | 开合抽屉 `open_close` | — | `gate.ungated`，不查接触；验收族里没有抽屉 |
@@ -129,7 +129,7 @@ pick 的手指闭合段允许手指碰目标（`grip`），其后一段持物且
   holding, label)`：关节空间 lazy RRT-Connect，状态与按 `lever_arms` 细分到每步 ≤ 5 mm 的连边点只经 `check_point`，路径由
   `verify(..., budget=)` 签发，返回 `Connection(motion, queries, seconds, nodes, direct)`。搜索与签发共用一个 budget：
   1500 次查询或 30 s，`queries` 是门实际检查的点数；超出抛 `Refused("search_exhausted")`，不签发。`place` 用它规划搬运段，
-  `pick` 还没用。
+  `pick` 用它规划到首航点的进场段。
 - `motion/planner.MotionPlanner` 只有 `solve_ik(pos, quat, finger_pos, *, init_qpos)`；唯一实现 `GenesisBackend` 包装
   `SimEnv.solve_ik`。
 - `motion/chain.execute_motion_chain(waypoints, motion_planner, start_qpos, params, *, tail_hold_steps,
