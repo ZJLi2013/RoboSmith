@@ -212,13 +212,20 @@ holding=None, label="move_to")` 已实现，技能还没接入。它是仓库内
   边内的点按二分顺序检查，碰撞早遇早停。
 - 先试直连；不通则双树生长，新节点只查状态。两树相遇后从每个节点直接连到能连通的最远后继（捷径），树边失败就剪掉
   它下面的子树再长。
-- 预算：每次 connect 至多 1500 次状态查询或 30 s，先到即 `Refused("search_exhausted", {"reason": "budget", …})`；
-  起止点非法为 `invalid_start` / `invalid_goal`，带门的拒绝原因。组合共享 120 s 并按候选轮转（未实现）。
+- 预算：每次 connect 至多 1500 次状态查询或 30 s，覆盖搜索与最终 `verify` 的逐点签发；`verify(..., budget=)` 在每点
+  检查前扣一次查询、检查后与返回凭证前核对截止时间。返回的 `queries` 就是门实际检查的点数，重验同一点也计数。用尽或
+  超时即 `Refused("search_exhausted", {"reason": "budget", "queries", "seconds"})`，不签发、零物理步；恰好用尽且按时签发
+  完成算成功。起止点非法为 `invalid_start` / `invalid_goal`，带门的拒绝原因。组合共享 120 s 并按候选轮转（未实现）。
+  做法同 MoveIt：`allowed_planning_time` 是规划与路径简化的总预算，简化只拿搜索剩下的时间；本项目的签发就是对插值后
+  路径的逐点重验，凭证是 connect 的产物，所以也算在内。两者的截止检查都在查询之间：正在运行的单点查询打断不了，
+  仿真挂住由 `batch.supervise` 在进程外强杀并记 `error`。
 - 起态装配：`SimEnv.hold(qpos, name, T)` 把机器人放到 qpos、物体放到手 · T，算一次真实写入，不步进。
 
 F2 playground seed 0 的固定持物请求（retreat 位姿 → mat 正上方同高）在 Genesis 上一次连通：两端过门、直连在第 88/203
 点以左手指碰 barrier 被拒、独立的抬高越障对照过门；`connect` 用 301 次查询、10.9 s、19 个节点，签发 247 点，最大每步
 位移 4.995 mm，零物理步（[e3 证据](../exps/r1/evidence/e3/README.md)）。这是单个请求的持物 connect，不是任务级 certified。
+那次的 301 次不含签发的 247 次检查；按全程预算计是 548 次，10.9 s 本就含签发，仍在预算内（[e4 证据](../exps/r1/evidence/e4/README.md)，
+未重跑 GPU）。
 
 限制：均匀采样的 7 维路径会绕远，CPU 受控样例里绕一道 0.2 rad 宽的墙要 0.6k–4k 次查询；比扩展步长（0.1 rad）还薄的
 障碍会让两树隔着它反复相遇、剪枝，同类薄墙要 7k–160k 次，超出预算。OMPL 算法更成熟，但 Python 绑定未在 ROCm 镜像上

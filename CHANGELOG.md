@@ -8,8 +8,9 @@ All notable user-facing changes are documented here. This project follows Semant
 
 - `robotsmith.motion.joint_planner.JointPlanner`: a lazy RRT-Connect in joint space whose every state and edge point
   is an `ExecutionGate.check_point` and whose path is issued by `verify`. Edges are subdivided by
-  `SimEnv.lever_arms` so no point of the robot or held object moves more than 5 mm per step; a connect stops at
-  1500 queries or 30 s with `Refused("search_exhausted")`. `SimEnv.hold(qpos, name, T)` poses a held object without
+  `SimEnv.lever_arms` so no point of the robot or held object moves more than 5 mm per step. One budget of 1500
+  state checks or 30 s covers the search and the final `verify` (`verify(..., budget=)`); past it the connect
+  issues nothing and raises `Refused("search_exhausted")`. `SimEnv.hold(qpos, name, T)` poses a held object without
   stepping. Skills do not call the planner yet.
 - `scripts/acceptance/batch.supervise`: the witness and certify batches run in a worker process; an attempt past
   600 s has its process group killed from outside, gets an `error` row, and the batch resumes. This replaces the

@@ -111,7 +111,8 @@ pick 的手指闭合段允许手指碰目标（`grip`），其后一段持物且
 ## 运动层与执行门的接口
 
 - `execution/gate.ExecutionGate`：`check_point(q, span, *, target, rest, held, placed, pose)` 返回 `None` 或拒绝原因；
-  `verify(trajectory, spans, *, target, q_start, rest, holding, poses)` 对每个点调它，返回只读
+  `verify(trajectory, spans, *, target, q_start, rest, holding, poses, budget)` 对每个点调它（给了 `budget` 就在每点前后
+  调它的 `spend()` / `check()`），返回只读
   `VerifiedMotion(trajectory, spans, fingerprint, checked, gated, holding)`（轨迹与 `Holding` 的变换存为 `bytes`，每次读取
   得到新的只读视图，所以每次读 `trajectory` 都是新 tuple，certify 按内容把回放段对回凭证），违规抛 `MotionRejected(span, index, rejection)`；
   `check_current(motion)` 不是本门签发或指纹不一致抛 `StaleMotion`；`ungated(trajectory)` 只给开合抽屉。许可规则在
@@ -123,8 +124,8 @@ pick 的手指闭合段允许手指碰目标（`grip`），其后一段持物且
   `step()`、`reset()` 与 `hold()` 递增。
 - `motion/joint_planner.JointPlanner(env, gate, *, seed, max_queries, max_seconds).connect(q_start, q_goal, *, target, rest,
   holding, label)`：关节空间 lazy RRT-Connect，状态与按 `lever_arms` 细分到每步 ≤ 5 mm 的连边点只经 `check_point`，路径由
-  `verify` 签发，返回 `Connection(motion, queries, seconds, nodes, direct)`；超出 1500 次查询或 30 s 抛
-  `Refused("search_exhausted")`。技能还没调用它。
+  `verify(..., budget=)` 签发，返回 `Connection(motion, queries, seconds, nodes, direct)`。搜索与签发共用一个 budget：
+  1500 次查询或 30 s，`queries` 是门实际检查的点数；超出抛 `Refused("search_exhausted")`，不签发。技能还没调用它。
 - `motion/planner.MotionPlanner` 只有 `solve_ik(pos, quat, finger_pos, *, init_qpos)`；唯一实现 `GenesisBackend` 包装
   `SimEnv.solve_ik`。
 - `motion/chain.execute_motion_chain(waypoints, motion_planner, start_qpos, params, *, tail_hold_steps,
