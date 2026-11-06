@@ -130,6 +130,8 @@ class SimEnv:
 
     _default_finger_open: float = 0.04
     _writes: int = 0
+    _posings: int = 0
+    _posed: int | None = None
 
     # ---- Factory ----
 
@@ -374,6 +376,22 @@ class SimEnv:
         unknown = ("env", "?")
         return [(owner.get(int(a), unknown), owner.get(int(b), unknown)) for a, b in pairs]
 
+    @contextmanager
+    def posed(self, qpos, objects: dict[str, np.ndarray]):
+        """The arm at ``qpos`` and each of ``objects`` at its world pose ``T_world``, without stepping, until exit
+        restores the scene. Queries inside read the posed state; a motion verified inside belongs to it and is not
+        current afterwards, nor in another transaction."""
+        self._posings += 1
+        outer, self._posed = self._posed, self._posings
+        try:
+            with self._snapshot():
+                self._set_arm(qpos)
+                for name, t_world in objects.items():
+                    self._put(name, np.asarray(t_world, dtype=np.float64))
+                yield
+        finally:
+            self._posed = outer
+
     @cached_property
     def joint_limits(self) -> tuple[np.ndarray, np.ndarray]:
         """``(lower, upper)`` of the arm and finger DOFs, in ``motors_dof`` order."""
@@ -435,8 +453,9 @@ class SimEnv:
         self._put(name, pose_matrix(*self._hand()) @ np.asarray(t_hand_obj, dtype=np.float64))
 
     def state_fingerprint(self) -> str:
-        """Hash of the real-write count and every rigid entity's joint positions and velocities."""
-        h = hashlib.sha1(str(self._writes).encode())
+        """Hash of the real-write count, the open ``posed`` transaction, and every rigid entity's joint positions
+        and velocities."""
+        h = hashlib.sha1((str(self._writes) if self._posed is None else f"{self._writes}:{self._posed}").encode())
         for ent in [self.franka, *self.entity_map.values()]:
             if getattr(ent, "n_dofs", 0):
                 h.update(to_numpy(ent.get_qpos()).astype(np.float32).tobytes())

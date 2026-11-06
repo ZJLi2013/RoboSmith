@@ -17,6 +17,7 @@ from robotsmith.motion.planner import GenesisBackend
 from robotsmith.execution.gate import ExecutionFailed, Refused
 from robotsmith.motion.joint_planner import JointPlanner
 from robotsmith.skills import Skill, run_skills
+from robotsmith.skills.registry import SKILL_DEFS, SkillDef
 from robotsmith.assets.geometry import rotate_vec_wxyz
 from robotsmith.skills.frames import (
     _resolve_handle_drag,
@@ -186,7 +187,8 @@ class TestRegistryDispatch:
         motions = run_skills(skills, _FakePlanner(), ex, lambda *a, **k: np.zeros(9),
                              _scene_state(), MotionParams(), gate=gate)
         traj = _frames(motions)
-        assert ex.calls == ["pick", "place", ("drag", "open"), ("drag", "close")]
+        # The first place is pick's check that the place is reachable from where the pick ends.
+        assert ex.calls == ["pick", "place", "place", ("drag", "open"), ("drag", "close")]
         assert [m.gated for m in motions] == [True, True, False, False]
         # Each fake segment is tagged by a distinct constant qpos (pick=1, place=2,
         # drag=3). pick and place prepend their planned approach and transport, so assert
@@ -314,6 +316,34 @@ class TestRegistryDispatch:
             motions = None
         return motions, state["skill_traces"][0], starts
 
+    def _pick_then_place(self, gate, plans, trial=None, frames=None):
+        class Plans(_FakePlanner):
+            def plan(self, *a, **k):
+                return plans
+
+        state = {**_scene_state(), "positions": {"die": np.array([0.5, 0.0, 0.0]), "mat": np.array([0.4, -0.2, 0.0])},
+                 "grasp_trial": trial, "target_frames": frames or {}}
+        try:
+            motions = run_skills([Skill("pick", "die"), Skill("place", "mat")], Plans(), _FakeExecutor(), self._ik,
+                                 state, MotionParams(), gate=gate)
+        except (Refused, ExecutionFailed):
+            motions = None
+        return motions, state
+
+    @staticmethod
+    def _fake_place(gate, monkeypatch, refuse_below=None):
+        """Replace the place primitive; return the (held_place_z, posed objects) of each call."""
+        calls = []
+
+        def place(ctx):
+            calls.append((ctx.held_place_z, gate.env.poses[-1][1] if gate.env.poses else None))
+            if refuse_below is not None and ctx.held_place_z < refuse_below:
+                raise Refused("search_exhausted", {"reason": "no transport to the standoff"})
+            return ctx.gate.ungated([np.asarray(ctx.qpos)])
+
+        monkeypatch.setitem(SKILL_DEFS, "place", SkillDef(place, SKILL_DEFS["place"].post, SKILL_DEFS["place"].settle_s))
+        return calls
+
     @staticmethod
     def _plans(*xs):
         plans = [_FakePlan() for _ in xs]
@@ -373,7 +403,7 @@ class TestRegistryDispatch:
         assert place.spans[0].label == "transport" and place.spans[0].holding
         assert state["skill_traces"][1]["transport"]["ok"] and state["skill_traces"][1]["transport"]["direct"]
 
-    def test_a_place_whose_connection_is_refused_steps_nothing(self, gate, monkeypatch):
+    def test_a_pick_whose_every_place_is_refused_is_refused_with_the_place_records(self, gate, monkeypatch):
         monkeypatch.setattr(gate.env, "contacts_at",
                             lambda q, held=None, placed=None:
                             [(("die", "base"), ("barrier", "base"))] if held and np.allclose(q[:7], 0.0) else [],
@@ -382,8 +412,40 @@ class TestRegistryDispatch:
         with pytest.raises(Refused) as exc:
             self._pick_place(gate, ex)
         assert exc.value.label == "search_exhausted" and ex.calls == ["pick"] and gate.env.writes == 0
-        transport = exc.value.evidence["transport"]
-        assert not transport["ok"] and transport["queries"] >= 1 and transport["reason"]
+        (trial,) = exc.value.evidence["trials"]
+        place = trial["place"]
+        assert not place["ok"] and place["label"] == "search_exhausted" and "steps" not in trial
+        assert not place["transport"]["ok"] and place["transport"]["queries"] >= 1 and place["transport"]["reason"]
+
+    def test_a_pick_candidate_whose_place_is_refused_is_not_tried(self, gate, monkeypatch):
+        calls = self._fake_place(gate, monkeypatch, refuse_below=0.13)
+        plans = self._plans(0.2, 0.3)
+        plans[1].grasp_pos = np.array([0.5, 0.0, 0.15])
+        tried = []
+        motions, state = self._pick_then_place(gate, plans, trial=lambda traj, target: tried.append(target) or
+                                               {"lifted": True, "lift_m": 0.1, "seconds": 0.5})
+        first, second = state["skill_traces"][0]["trials"]
+        assert first["place"] == {"ok": False, "label": "search_exhausted", "reason": "no transport to the standoff"}
+        assert "steps" not in first and second["place"] == {"ok": True} and tried == ["die"]
+        assert state["skill_traces"][0]["selected_candidate_index"] == 1 and len(motions) == 2
+        assert [z for z, _ in calls] == pytest.approx([0.12, 0.15, 0.15])
+        assert [set(posed or ()) for _, posed in calls] == [{"die"}, {"die"}, set()]
+
+    def test_a_placeable_pick_is_unchanged_by_the_place_check(self, gate):
+        alone, _, _ = self._pick_only(gate, self._plans(0.2), self._ik)
+        motions, state = self._pick_then_place(gate, self._plans(0.2))
+        assert np.array_equal(np.array(motions[0].trajectory), np.array(alone[0].trajectory))
+        assert motions[0].spans == alone[0].spans
+        assert [t["skill"] for t in state["skill_traces"]] == ["pick", "place"]
+        assert state["skill_traces"][0]["trials"][0]["place"] == {"ok": True}
+        gate.check_current(motions[0])
+
+    def test_no_place_check_before_a_place_on_a_dynamic_anchor(self, gate, monkeypatch):
+        calls = self._fake_place(gate, monkeypatch)
+        motions, state = self._pick_then_place(gate, self._plans(0.2),
+                                               frames={"mat": SimpleNamespace(kind="articulated_opening")})
+        assert len(motions) == 2 and "place" not in state["skill_traces"][0]["trials"][0]
+        assert [posed for _, posed in calls] == [None]
 
     def test_place_lets_the_held_object_rest_on_the_target_entity_of_a_surface(self, gate, monkeypatch):
         monkeypatch.setattr(_FakeExecutor, "place",

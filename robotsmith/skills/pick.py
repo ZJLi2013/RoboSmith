@@ -1,7 +1,8 @@
 """``pick`` primitive: select an executable grasp and lift the object.
 
 The approach to each candidate's first waypoint is a ``JointPlanner`` connection; the descend, grasp and lift are
-the executor's segment from there. Each candidate's whole trajectory goes through the execution gate first; one that passes is tried in
+the executor's segment from there. Each candidate's whole trajectory goes through the execution gate first, and a
+following single-phase place is planned from where it ends; one that passes both is tried in
 simulation (``scene_state["grasp_trial"]``) and, if it lifts the target, verified again on the restored
 scene and executed. Without a trial callback the first candidate that passes the gate is used.
 """
@@ -16,8 +17,8 @@ from robotsmith.grasp.planner import GraspPlan
 from robotsmith.grasp.transforms import pose_matrix
 from robotsmith.motion.joint_planner import JointPlanner
 from robotsmith.motion.params import MotionParams
-from robotsmith.skills.base import SkillContext
-from robotsmith.skills.registry import bound_leaf, register
+from robotsmith.skills.base import Skill, SkillContext
+from robotsmith.skills.registry import bound_leaf, plan_segment, register, skill_phases
 
 
 def _candidates(ctx: SkillContext) -> tuple[list[GraspPlan], dict]:
@@ -77,8 +78,9 @@ def _ik_init(ctx: SkillContext, plan: GraspPlan) -> np.ndarray:
 
 def _select(ctx: SkillContext, trial) -> tuple[GraspPlan, VerifiedMotion]:
     """Gate, then trial, the candidates in planner order from the same start state; keep the first that passes
-    both, verified again after the last trial. When none does, raises ``Refused("search_exhausted")`` if no trial
-    ran, else ``ExecutionFailed`` with the trials' physics steps.
+    both, verified again after the last trial. When the next skill is a single-phase place, a candidate whose place
+    is refused from where its pick ends is not tried. When none passes, raises ``Refused("search_exhausted")`` if no
+    trial ran, else ``ExecutionFailed`` with the trials' physics steps.
 
     ``trial(trajectory, target)`` replays the trajectory in simulation, restores the scene and returns
     ``{"lifted", "lift_m", "seconds"}``. With ``scene_state["grasp_trial_all"]`` every candidate is
@@ -87,6 +89,7 @@ def _select(ctx: SkillContext, trial) -> tuple[GraspPlan, VerifiedMotion]:
     plans, filter_counts = _candidates(ctx)
     try_all = bool(ctx.scene_state.get("grasp_trial_all"))
     target = ctx.skill.target
+    place = _static_place(ctx)
     trials, passing = [], []
     for plan in plans:
         md = plan.metadata
@@ -95,7 +98,8 @@ def _select(ctx: SkillContext, trial) -> tuple[GraspPlan, VerifiedMotion]:
         try:
             request, record["approach"] = _pick_request(ctx, plan)
             motion = ctx.gate.verify(**request)
-            if trial is not None:
+            placeable = place is None or _place_check(ctx, plan, request, place, record)
+            if placeable and trial is not None:
                 record.update(trial(motion.trajectory, target), steps=len(motion.trajectory))
                 if record["lifted"]:
                     motion = ctx.gate.verify(**request)
@@ -107,7 +111,7 @@ def _select(ctx: SkillContext, trial) -> tuple[GraspPlan, VerifiedMotion]:
             record["motion_error"] = str(exc)
         else:
             record["gate"] = "passed"
-            if trial is None or record["lifted"]:
+            if placeable and (trial is None or record["lifted"]):
                 passing.append((plan, request, motion, record))
         trials.append(record)
         if passing and not try_all:
@@ -165,10 +169,36 @@ def _pick_request(ctx: SkillContext, plan: GraspPlan) -> tuple[dict, dict]:
             {"ok": True, "queries": c.queries, "seconds": c.seconds, "nodes": c.nodes, "direct": c.direct})
 
 
-@register("pick", post=bound_leaf)
-def run_pick(ctx: SkillContext) -> VerifiedMotion:
-    plan, motion = _select(ctx, ctx.scene_state.get("grasp_trial"))
-    ctx.held_category = ctx.category
+def _static_place(ctx: SkillContext) -> Skill | None:
+    """The next skill when it is a place onto a static anchor, planned in one phase; else ``None``."""
+    if ctx.index + 1 >= len(ctx.skills):
+        return None
+    nxt = ctx.skills[ctx.index + 1]
+    frame = ctx.scene_state.get("target_frames", {}).get(nxt.target)
+    return nxt if nxt.name == "place" and skill_phases(nxt, frame) == ["all"] else None
+
+
+def _place_check(ctx: SkillContext, plan: GraspPlan, request: dict, place: Skill, record: dict) -> bool:
+    """Plan ``place`` with the arm at the end of this candidate's pick and the target at its grasp in the hand, and
+    record the outcome as ``record["place"]``. The scene is unchanged on return, the planned motion is discarded and
+    its trace does not reach the run's ``skill_traces``."""
+    env = ctx.gate.env
+    q_end = np.asarray(request["trajectory"][-1], dtype=np.float64)
+    target = ctx.skill.target
+    held_at = pose_matrix(*env.hand_pose(q_end)) @ request["holding"].t_hand_object
+    with env.posed(q_end, {target: held_at}):
+        try:
+            plan_segment(place, ctx.index + 1, ctx.skills, ctx.planner, ctx.executor, None,
+                         {**ctx.scene_state, "skill_traces": []}, ctx.params, q_end, ctx.category,
+                         _held_place_z(ctx, plan), ctx.motion_planner, gate=ctx.gate, held=target)
+        except Refused as exc:
+            record["place"] = {"ok": False, "label": exc.label, **exc.evidence}
+            return False
+    record["place"] = {"ok": True}
+    return True
+
+
+def _held_place_z(ctx: SkillContext, plan: GraspPlan) -> float:
     # Grasp-relative offset: EE-flange height above the picked object's *support
     # surface* (object bottom = center − half-height), NOT above the table. A
     # later place re-adds this to the destination marker's world z so the object
@@ -176,5 +206,12 @@ def run_pick(ctx: SkillContext) -> VerifiedMotion:
     # For a tabletop pick this equals the old (grasp_z − table_z).
     obj_h = float(ctx.scene_state.get("object_heights", {}).get(ctx.skill.target, 0.0) or 0.0)
     support_z = float(ctx.obj_pos[2]) - obj_h / 2.0
-    ctx.held_place_z = max(float(plan.grasp_pos[2]) - support_z, 0.0)
+    return max(float(plan.grasp_pos[2]) - support_z, 0.0)
+
+
+@register("pick", post=bound_leaf)
+def run_pick(ctx: SkillContext) -> VerifiedMotion:
+    plan, motion = _select(ctx, ctx.scene_state.get("grasp_trial"))
+    ctx.held_category = ctx.category
+    ctx.held_place_z = _held_place_z(ctx, plan)
     return motion

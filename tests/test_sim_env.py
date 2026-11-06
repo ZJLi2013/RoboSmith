@@ -188,6 +188,28 @@ def test_a_real_step_changes_the_fingerprint_and_a_query_does_not():
     assert env.state_fingerprint() != before
 
 
+def test_posed_restores_the_fingerprint_and_voids_motions_verified_inside():
+    from robotsmith.execution.gate import ExecutionGate, StaleMotion
+
+    env = _query_env([])
+    arm, die = env.franka, env.entity_map["die"]
+    env.scene.get_state = lambda: (list(arm.qpos), list(die.pos))
+    env.scene.reset = lambda state: (setattr(arm, "qpos", list(state[0])), setattr(die, "pos", list(state[1])))
+    gate = ExecutionGate(env)
+    before = env.state_fingerprint()
+    with env.posed([0.0] * 9, {"die": np.eye(4)}):
+        inside = gate.ungated([[0.0] * 9])
+        gate.check_current(inside)
+    assert env.state_fingerprint() == before
+    with pytest.raises(StaleMotion):
+        gate.check_current(inside)
+    with env.posed([0.3] * 9, {}):
+        assert arm.qpos == pytest.approx([0.3] * 9)
+        with pytest.raises(StaleMotion):
+            gate.check_current(inside)
+    assert arm.qpos == pytest.approx([0.0] * 9) and env.state_fingerprint() == before
+
+
 class _ResettableFranka(_QueryEntity):
     def control_dofs_position(self, *args, **kwargs):
         pass

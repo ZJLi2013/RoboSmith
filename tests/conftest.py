@@ -1,3 +1,5 @@
+from contextlib import contextmanager
+
 import numpy as np
 import pytest
 
@@ -8,6 +10,7 @@ class ClearEnv:
     """A scene where nothing touches anything; ``writes`` stands in for the real-write count."""
 
     writes = 0
+    poses = ()
     joint_limits = (np.full(9, -10.0), np.full(9, 10.0))
     joined_links = frozenset()
 
@@ -23,8 +26,17 @@ class ClearEnv:
     def object_pose(self, name):
         return np.zeros(3), np.array([1.0, 0.0, 0.0, 0.0])
 
+    @contextmanager
+    def posed(self, qpos, objects):
+        outer = self.poses
+        self.poses = (*outer, (np.asarray(qpos), dict(objects)))
+        try:
+            yield
+        finally:
+            self.poses = outer
+
     def state_fingerprint(self):
-        return str(self.writes)
+        return f"{self.writes}:posed{len(self.poses)}" if self.poses else str(self.writes)
 
 
 @pytest.fixture

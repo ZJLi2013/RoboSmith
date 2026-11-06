@@ -212,7 +212,8 @@ def test_every_commanded_target_is_a_verified_point(monkeypatch):
 def test_a_refused_step_steps_no_physics_after_it(monkeypatch):
     env, result, verified, commanded = _commanding_run(monkeypatch, refused_at="place")
     assert env.scene.t == len(commanded) == len(verified) == 2
-    assert result.stopped["cause"] == "search_exhausted" and result.stopped["skill"] == "place"
+    assert result.stopped["cause"] == "execution_failed" and result.stopped["skill"] == "place"
+    assert result.stopped["evidence"]["refused"] == "search_exhausted" and result.stopped["steps"] == 2
     assert result.final_window is None and result.handoffs[-1] is result.stopped
 
 

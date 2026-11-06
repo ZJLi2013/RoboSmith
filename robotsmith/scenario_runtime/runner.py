@@ -113,6 +113,7 @@ class EpisodeRun:
         self.held_place_z: float | None = None
         self.held: str | None = None
         self.frame_count = 0
+        self.pick_start = 0
         self.window = None
         self.stopped = None
 
@@ -123,7 +124,9 @@ class EpisodeRun:
     def run_steps(self, skills: list, bindings: list[dict], *, stop_on_fail: bool = False) -> dict | None:
         """Execute ``skills`` with their ``bindings``; with ``stop_on_fail`` return the handoff of the first step
         judged false (the remaining steps are not run), else ``None``. A refused or failed step records no frames
-        and always ends the run; its handoff (``cause`` = the label, ``evidence``, physics ``steps``) is returned."""
+        and always ends the run; its handoff (``cause`` = the label, ``evidence``, physics ``steps``) is returned.
+        A place refused while holding what a pick picked is ``execution_failed`` with the refusal's label under
+        ``evidence["refused"]`` and the frames recorded since that pick began."""
         env = self.env
         self.stopped = None
         for k, (skill, binding) in enumerate(zip(skills, list(bindings) + [None] * (len(skills) - len(bindings)))):
@@ -137,6 +140,8 @@ class EpisodeRun:
             # into transport/descend so descend re-reads the recoiled drawer.
             phases = skill_phases(skill, self.target_frames.get(skill.target))
             step_start = None
+            if skill.name == "pick":
+                self.pick_start = self.frame_count
             for phase in phases:
                 scene_state = _live_scene_state(env, self.target_frames, self.skill_traces)
                 if step_start is None:
@@ -152,6 +157,10 @@ class EpisodeRun:
                     entry = {"skill": skill.name, "phase": phase, "target": skill.target, "object": obj,
                              "done": False, "cause": exc.label, "evidence": exc.evidence,
                              "steps": getattr(exc, "steps", 0)}
+                    if isinstance(exc, Refused) and skill.name == "place" and self.held is not None:
+                        # The pick that holds the object has stepped physics: the pick + place is committed.
+                        entry.update(cause=ExecutionFailed.label, evidence={"refused": exc.label, **exc.evidence},
+                                     steps=self.frame_count - self.pick_start)
                     self.handoffs.append(entry)
                     self.stopped = entry
                     return entry
