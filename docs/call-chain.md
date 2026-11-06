@@ -13,7 +13,7 @@ flowchart TD
     CLI["scripts/datagen/run_generated_scenario.py<br/>main → materialize_candidate → run_scenario_smoke"]
 
     subgraph ORCH["编排：做哪几步"]
-        T["--planner teacher（默认）<br/>scenarios/teacher/ 下同名 YAML 的步骤表<br/>runner.run_scenario_episode"]
+        T["--planner file（默认）<br/>scenarios/plans/ 下同名 YAML 的 steps<br/>runner.run_scenario_episode"]
         A["--planner agent --role certifier|baseline<br/>planner.run_agentic_episode<br/>render_request → call_llm → parse_steps"]
         RF["planner.route_failure<br/>plan 类失败（含 infeasible）重写剩余步骤，最多 MAX_REPLANS = 2 次"]
         RUN["runner.EpisodeRun.run_steps<br/>每步按 skill_phases 分段；每段先 _live_scene_state 重读仿真"]
@@ -48,7 +48,8 @@ flowchart TD
     INF -->|入口不做任务判定的 settle，直接判失败| CLI
 ```
 
-技能内部见下一张图。teacher 与 agent 两条路径共用 `EpisodeRun`，只是步骤表的来源不同。agent 路径上 `infeasible` 也按
+技能内部见下一张图。file 与 agent 两条路径共用 `EpisodeRun`，只是步骤表的来源不同。plan 文件里的 `actions`
+（六动作组合）现在只被 `load_plan` 校验，还没有执行路径。agent 路径上 `infeasible` 也按
 plan 类失败重写剩余步骤；重写后的步骤全部执行完，episode 就不再算不可行。
 
 ## 一个技能：候选、整条轨迹、过门
@@ -126,7 +127,7 @@ pick 的手指闭合段允许手指碰目标（`grip`），其后一段持物且
 
 | 开关 | 默认 | 作用 |
 |---|---|---|
-| `--planner` | `teacher` | 步骤表来自 YAML（`teacher`）还是 LLM（`agent`） |
+| `--planner` | `file` | 步骤表来自 plan 文件（`file`）还是 LLM（`agent`） |
 | `--role` | `certifier` | agent 路径下是否看见成功树（`certifier` 看见，`baseline` 不看见） |
 | `ROBOSMITH_LLM_*` | — | agent 路径调用的网关、模型与密钥 |
 

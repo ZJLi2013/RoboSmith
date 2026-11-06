@@ -69,7 +69,7 @@ docker run --rm --device=/dev/kfd --device=/dev/dri --group-add video \
 
 ## 4. Write your own scenario
 
-Copy a scenario YAML from [`scenarios/`](../scenarios/) and its teacher plan from `scenarios/teacher/` (same file
+Copy a scenario YAML from [`scenarios/`](../scenarios/) and its plan file from `scenarios/plans/` (same file
 name), change the objects, relations, success tree, and steps, and pass it with
 `SCENARIO=scenarios/<your_file>.yaml`. To have an agent draft one, give it
 [`scenarios/AGENT_PROMPT.md`](../scenarios/AGENT_PROMPT.md) explicitly. To validate a single asset's picks, use

@@ -28,14 +28,18 @@
 | F4 罩住 | `f4_caged.yaml` | 物体被无开口的罩子（`cage_01`）罩住 | — | 不可解 |
 | F5 留出 | `heldout/f5_clutter.yaml` | 解封前不在本文写 | 解封前不在本文写 | 可解 |
 
-五族的任务相同：把 die 放到垫子（`mat_01.top`）上；步骤表与组合在 `teacher/`（留出族在 `heldout/teacher/`）。
-被测的是技能层以下，所以不让 LLM 写步骤。split：`playground` 0–9，`test` 100–119。
+五族的任务相同：把 die 放到垫子（`mat_01.top`）上；plan 文件在 `plans/`（留出族在 `heldout/plans/`），
+`steps` 是现有链路跑的技能步骤，`actions` 是六动作组合。被测的是技能层以下，所以不让 LLM 写步骤。
+split：`playground` 0–9，`test` 100–119。
 
-### teacher 的 `plan`：六动作组合
+### plan 文件的 `actions`：六动作组合
 
-`plan` 是[下一版](manipulation.md#下一版设计规划给出的-meta-action-组合未实现)交给运行时的组合，五族逐字相同：
+`actions` 是[下一版](manipulation.md#下一版设计规划给出的-meta-action-组合未实现)交给运行时的组合，五族逐字相同：
 候选由场景几何决定，组合里没有场景名、见证轨迹或搬运高度。`robotsmith/scenario/load.py` 的 `load_plan` /
-`check_plan` 校验它，六动作以外的请求（如 `push`）报 `PlanInvalid`。
+`check_plan` 校验它，六动作以外的请求（如 `push`）报 `PlanInvalid`。现有链路还不执行它。
+
+`read_plan_file` 是读 plan 文件的唯一入口（`load_scenario` 与 `load_plan` 都经它）。留出族的 plan 文件在改名前冻结，保留旧键 `teacher` / `plan`，
+读时映射为 `name` / `actions`；同一文件新旧键混用报 `PlanInvalid`。这样留出文件只迁路径、字节与 a2 的 sha256 不变。
 
 | 动作 | 参数 | 含义 |
 |---|---|---|
@@ -86,7 +90,7 @@ python scripts/acceptance/witness.py --family f2_over_barrier --seeds 100 119 --
 - **die** 碰到表中以外的东西（障碍、搬运中的桌面或垫子）算违规。
 
 负例（F4）不执行抓放，只确认 die 静止后仍在罩内（xy 偏离罩心 < 25 mm），它的 `witness_ok` 不表示任何执行成功。
-见证只证明实例可解，它的路点不进 teacher，也不作运行时的候选。
+见证只证明实例可解，它的路点不进 plan 文件，也不作运行时的候选。
 
 test seed 100–119 上 `phase-v2` 的读数（commit `0b5f981`，每族 20 个实例，无重试）：
 
@@ -115,18 +119,19 @@ F2 只跑了 2 个实例：穿透接触让求解器变慢，批次在第 3 个�
 
 留出族检验链路在没调过参的约束上是否仍成立，所以它的约束与参数在解封前只给允许的读者看。
 
-- **位置**：族定义、teacher、见证参数（`witness.json`）与约束和选择理由（`README.md`，封存）在
+- **位置**：族定义、plan 文件、见证参数（`witness.json`）与约束和选择理由（`README.md`，封存）在
   `scenarios/acceptance/heldout/`，逐实例结果只放在实验记录的封存目录里。公共 `witness.py` 只有
   `--heldout` 机制，不含任何留出族名或参数；`certify.py` 只解析 `scenarios/acceptance/<family>.yaml`，解析不到留出族。
 - **冻结**：只有构造它的 task 写这些文件；test 批次在已提交的输入上运行，manifest 记下 commit 与各文件的 sha256，
   之后只读。批次失败或输入未提交时不写 manifest，修正后整批重跑。
-- **读者**：解封前只有 `witness.py --heldout` 与该 task 的 verifier；实现与调参不读它的布局、teacher、见证或逐实例结果。
+- **路径迁移**：留出 plan 文件从改名前的 `teacher` 目录（manifest 里沿用这个旧键名）移到 `heldout/plans/`，只改路径，sha256 不变。
+- **读者**：解封前只有 `witness.py --heldout` 与该 task 的 verifier；实现与调参不读它的布局、plan 文件、见证或逐实例结果。
 - **解封**：只在最终评测，且新版实现与参数都已提交；解封时记下这个 commit，评测前对照 manifest 的 sha256。
 - **烧毁**：解封前被实现或调参读取或使用，这批留出作废，记录保留，另建一个未用于调参的留出族。
 
 ## 被测链路的 certified 读数
 
-`scripts/acceptance/certify.py` 对每个实例用 teacher 步骤跑一次 `EpisodeRun`（技能、执行门、执行器），不渲染：
+`scripts/acceptance/certify.py` 对每个实例用 plan 文件的 `steps` 跑一次 `EpisodeRun`（技能、执行门、执行器），不渲染：
 
 ```text
 python scripts/acceptance/certify.py --family f1_wall_gap --split test --out out/f1_test

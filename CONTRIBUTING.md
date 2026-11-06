@@ -14,7 +14,7 @@ request, and rebase on `main` before asking for review.
 
 Open an Issue first when a change:
 
-- changes a public API: the scenario YAML schema or relations, teacher plan steps, skill names, or success predicates;
+- changes a public API: the scenario YAML schema or relations, plan-file steps and actions, skill names, or success predicates;
 - changes an on-disk format: asset `asset.json` / `checks.jsonl` / `provenance.json`, scenario files, or the LeRobot output layout;
 - adds a runtime dependency, a new grasp model, or a new motion backend;
 - removes or renames a scenario, script, or asset.

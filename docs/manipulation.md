@@ -191,6 +191,6 @@ place: sample(place | g) · move_to(p.pre) · move_linear(p.place) · detach(p.s
 2. `JointPlanner`，独立于技能，GPU 上测 F2 布局的持物 connect；
 3. 6 个动作、`CompositionSearch` 与 pick / place recipe 一步切换；`EpisodeRun`、单资产验证与 `certify` 三个入口改用
    同一服务，删除 `MotionExecutor.pick / place`、`run_skills`、`plan_segment` 与转基座 / 抬高补丁；
-4. teacher / LLM 可直接提交 meta action 列表，走同一搜索与门。
+4. plan 文件的 `actions` 与 LLM 可直接提交 meta action 列表，走同一搜索与门。
 
 然后在组合式验收场景（含开发期不读的留出族）的 test seed 上读 certified 率。
