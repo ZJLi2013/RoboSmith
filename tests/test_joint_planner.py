@@ -7,6 +7,7 @@ import pytest
 
 from robotsmith.execution.gate import ExecutionGate, Holding, MotionRejected, Refused
 from robotsmith.grasp.transforms import pose_matrix
+from robotsmith.motion import joint_planner
 from robotsmith.motion.joint_planner import STEP_M, JointPlanner
 
 DOWN = np.array([0.0, 1.0, 0.0, 0.0])
@@ -83,10 +84,70 @@ def test_a_free_request_connects_directly():
     c = planner.connect(q(), q(j0=1.0), target="die")
     assert c.direct and c.nodes == 2
     np.testing.assert_allclose(c.motion.trajectory[-1], q(j0=1.0))
-    # Both ends, the points between them, then verify's own pass over the path.
-    assert c.queries == 2 + len(c.motion.trajectory) - 1
-    assert len(arm.queries) == c.queries + len(c.motion.trajectory)
     gate.check_current(c.motion)
+
+
+def _direct():
+    """A free direct request's path length n: it is searched with n + 1 checks and issued with n more."""
+    return len(_planner(_Arm())[0].connect(q(), q(j0=1.0), target="die").motion.trajectory)
+
+
+def _late(monkeypatch, when):
+    """The connect's clock stands at 0 s until ``when()``, then at 100 s."""
+    monkeypatch.setattr(joint_planner, "perf_counter", lambda: 100.0 if when() else 0.0)
+
+
+def test_the_returned_queries_are_the_points_the_gate_checked():
+    arm = _Arm()
+    c = _planner(arm)[0].connect(q(), q(j0=1.0), target="die")
+    assert c.queries == len(arm.queries) == 2 * len(c.motion.trajectory) + 1
+    arm = _Arm([(band(0, 0.4, 0.6, unless=(1, 0.3)), HAND_WALL, False)])
+    c = _planner(arm)[0].connect(q(), q(j0=1.0), target="die")
+    assert not c.direct and c.queries == len(arm.queries)
+
+
+def test_a_search_that_leaves_too_few_queries_to_issue_is_refused():
+    n, arm = _direct(), _Arm()
+    with pytest.raises(Refused) as exc:
+        _planner(arm, max_queries=2 * n)[0].connect(q(), q(j0=1.0), target="die")
+    assert exc.value.label == "search_exhausted" and exc.value.evidence["reason"] == "budget"
+    assert exc.value.evidence["queries"] == 2 * n == len(arm.queries)
+
+
+def test_queries_used_up_exactly_by_the_issue_still_connect():
+    n, arm = _direct(), _Arm()
+    planner, gate = _planner(arm, max_queries=2 * n + 1)
+    c = planner.connect(q(), q(j0=1.0), target="die")
+    assert c.queries == 2 * n + 1 == len(arm.queries)
+    gate.check_current(c.motion)
+
+
+def test_a_deadline_met_at_the_end_of_the_search_is_refused(monkeypatch):
+    n, arm = _direct(), _Arm()
+    planner, gate = _planner(arm)
+    issuing, verify = [], gate.verify
+    monkeypatch.setattr(gate, "verify", lambda *a, **kw: issuing.append(1) or verify(*a, **kw))
+    _late(monkeypatch, lambda: bool(issuing))
+    with pytest.raises(Refused) as exc:
+        planner.connect(q(), q(j0=1.0), target="die")
+    assert exc.value.evidence["reason"] == "budget" and len(arm.queries) == n + 1
+
+
+def test_a_deadline_met_while_issuing_is_refused(monkeypatch):
+    n, arm = _direct(), _Arm()
+    _late(monkeypatch, lambda: len(arm.queries) >= n + 1 + n // 2)
+    with pytest.raises(Refused) as exc:
+        _planner(arm)[0].connect(q(), q(j0=1.0), target="die")
+    assert exc.value.evidence["reason"] == "budget"
+    assert exc.value.evidence["queries"] == n + 1 + n // 2 == len(arm.queries)
+
+
+def test_a_deadline_met_after_the_last_query_is_refused(monkeypatch):
+    n, arm = _direct(), _Arm()
+    _late(monkeypatch, lambda: len(arm.queries) >= 2 * n + 1)
+    with pytest.raises(Refused) as exc:
+        _planner(arm)[0].connect(q(), q(j0=1.0), target="die")
+    assert exc.value.evidence["reason"] == "budget" and len(arm.queries) == 2 * n + 1
 
 
 def test_an_obstacle_is_gone_around_and_every_point_passes_the_gate():

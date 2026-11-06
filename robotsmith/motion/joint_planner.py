@@ -5,8 +5,8 @@ from __future__ import annotations
 
 import itertools
 import math
-import time
 from dataclasses import dataclass
+from time import perf_counter
 
 import numpy as np
 
@@ -56,8 +56,31 @@ class Connection:
     direct: bool
 
 
-class _Budget(Exception):
+class _OutOfBudget(Exception):
     pass
+
+
+class _Budget:
+    """One connect's queries and deadline, shared by the search and the final ``verify``: ``spend`` before each
+    state check, ``check`` after it and before a connection is returned. A check already running is not
+    interrupted; a hung one is ``batch.supervise``'s to kill."""
+
+    def __init__(self, max_queries: int, max_seconds: float):
+        self.max_queries, self.max_seconds = max_queries, max_seconds
+        self.queries, self.t0 = 0, perf_counter()
+
+    def seconds(self) -> float:
+        return perf_counter() - self.t0
+
+    def spend(self) -> None:
+        if self.queries >= self.max_queries:
+            raise _OutOfBudget
+        self.check()
+        self.queries += 1
+
+    def check(self) -> None:
+        if self.seconds() >= self.max_seconds:
+            raise _OutOfBudget
 
 
 class _Tree:
@@ -93,8 +116,9 @@ class _Tree:
 class JointPlanner:
     """Connects two configurations with the fingers held where they start. ``env`` gives ``joint_limits`` and
     ``lever_arms``; whether a point may run is only ``gate.check_point``'s answer, and the connection is
-    ``gate.verify``'s voucher. A query budget of ``max_queries`` or ``max_seconds`` ends the search, whichever
-    comes first; a refusal is ``Refused("search_exhausted")`` with the reason and zero physics steps."""
+    ``gate.verify``'s voucher. ``max_queries`` state checks or ``max_seconds``, whichever comes first, bound the
+    whole connect, search and verify together; a refusal is ``Refused("search_exhausted")`` with the reason and
+    zero physics steps."""
 
     def __init__(self, env, gate: ExecutionGate, *, seed: int = 0, max_queries: int = MAX_QUERIES,
                  max_seconds: float = MAX_SECONDS, extend_rad: float = EXTEND_RAD):
@@ -106,17 +130,16 @@ class JointPlanner:
         a, b = np.asarray(q_start, dtype=np.float64), np.asarray(q_goal, dtype=np.float64)
         if not np.array_equal(a[ARM.stop:], b[ARM.stop:]):
             raise ValueError("a connection keeps the fingers where they start")
-        t0, queries = time.perf_counter(), 0
+        budget = _Budget(self.max_queries, self.max_seconds)
         span = Span(label, 0, 1, holding=holding is not None)
         held = (target, holding.t_hand_object) if holding is not None else None
         lever = self.env.lever_arms(held)
 
         def legal(q) -> bool:
-            nonlocal queries, why
-            if queries >= self.max_queries or time.perf_counter() - t0 >= self.max_seconds:
-                raise _Budget
-            queries += 1
+            nonlocal why
+            budget.spend()
             why = self.gate.check_point(q, span, target=target, rest=rest, held=held)
+            budget.check()
             return why is None
 
         def clear(p, q) -> bool:
@@ -124,8 +147,8 @@ class JointPlanner:
             return all(legal(points[i - 1]) for i in _bisection(len(points)))
 
         def refuse(reason, **evidence):
-            raise Refused("search_exhausted", {"reason": reason, "queries": queries,
-                                               "seconds": round(time.perf_counter() - t0, 3), **evidence})
+            raise Refused("search_exhausted", {"reason": reason, "queries": budget.queries,
+                                               "seconds": round(budget.seconds(), 3), **evidence})
 
         why, nodes, direct = None, 2, False
         try:
@@ -137,12 +160,13 @@ class JointPlanner:
                 waypoints, direct = [a, b], True
             else:
                 waypoints, nodes = self._search(a, b, legal, clear)
-        except _Budget:
+            path = [p for w0, w1 in itertools.pairwise(waypoints) for p in subdivide(w0, w1, lever)]
+            motion = self.gate.verify(path, [Span(label, 0, len(path), holding=span.holding)], target=target,
+                                      q_start=a, rest=rest, holding=holding, budget=budget)
+            budget.check()
+        except _OutOfBudget:
             refuse("budget")
-        path = [p for w0, w1 in itertools.pairwise(waypoints) for p in subdivide(w0, w1, lever)]
-        motion = self.gate.verify(path, [Span(label, 0, len(path), holding=span.holding)], target=target,
-                                  q_start=a, rest=rest, holding=holding)
-        return Connection(motion, queries, round(time.perf_counter() - t0, 3), nodes, direct)
+        return Connection(motion, budget.queries, round(budget.seconds(), 3), nodes, direct)
 
     def _search(self, a, b, legal, clear) -> tuple[list[np.ndarray], int]:
         """Grow a tree from each end, checking only new nodes; once they meet, check the path's unchecked edges

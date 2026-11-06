@@ -73,6 +73,27 @@ def test_gate_checks_every_trajectory_point():
     assert [float(q[0]) for q, _, _ in scene.queries] == list(range(7)) and motion.checked == 7
 
 
+def test_verify_asks_the_budget_before_and_after_every_point():
+    scene, calls = _Scene(), []
+
+    class Budget:
+        def spend(self):
+            calls.append(("spend", len(scene.queries)))
+            if len(scene.queries) == 2:
+                raise TimeoutError
+
+        def check(self):
+            calls.append(("check", len(scene.queries)))
+
+    gate = ExecutionGate(scene)
+    motion = gate.verify(_points(0, 0), [Span("move", 0, 2)], target="die", q_start=Q0, budget=Budget())
+    assert calls == [("spend", 0), ("check", 1), ("spend", 1), ("check", 2)] and motion.checked == 2
+    scene.queries.clear()
+    with pytest.raises(TimeoutError):
+        gate.verify(_points(0, 0, 0), [Span("move", 0, 3)], target="die", q_start=Q0, budget=Budget())
+    assert len(scene.queries) == 2
+
+
 def test_gate_refuses_spans_that_leave_points_unchecked():
     with pytest.raises(ValueError):
         ExecutionGate(_Scene()).verify(_points(0, 1, 2), [Span("a", 0, 2)], target="die", q_start=Q0)

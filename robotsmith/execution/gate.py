@@ -197,9 +197,11 @@ class ExecutionGate:
         return None
 
     def verify(self, trajectory, spans, *, target: str, q_start, rest=(), holding: Holding | None = None,
-               poses=None) -> VerifiedMotion:
+               poses=None, budget=None) -> VerifiedMotion:
         """``check_point`` every point of ``trajectory`` (which starts from ``q_start``) under its span; raise
         ``MotionRejected`` at the first that fails. ``poses`` maps the points that must reach a hand pose to it.
+        A caller's ``budget`` is asked ``spend()`` before and ``check()`` after every point; what it raises ends
+        the verify with nothing issued.
 
         Holding spans need ``holding``: where it attaches (the point before the first holding point, or
         ``q_start``) hand · T must sit within 5 mm / 0.05 rad of the target's pose now, else ``binding_mismatch``.
@@ -229,8 +231,12 @@ class ExecutionGate:
             held = (target, holding.t_hand_object) if span.holding else None
             placed = released if released and not span.holding and span.start > held_points[-1] else None
             for i in range(span.start, span.end):
+                if budget is not None:
+                    budget.spend()
                 why = self.check_point(traj[i], span, target=target, rest=rest, held=held, placed=placed,
                                        pose=poses.get(i))
+                if budget is not None:
+                    budget.check()
                 if why is not None:
                     raise MotionRejected(span, i, why)
         return self._issue(traj, spans, len(traj), holding=holding if held_points else None)
