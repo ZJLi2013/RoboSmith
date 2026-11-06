@@ -231,3 +231,45 @@ def test_joint_limits_and_adjacent_links_come_from_the_robot():
         assert frozenset(pair) in joined
     for pair in [("link3", "link5"), ("link7", "left_finger"), ("link0", "hand")]:
         assert frozenset(pair) not in joined
+
+
+class _Body:
+    def __init__(self, idx, name, parent, pos, half):
+        self.idx, self.name, self.parent_idx, self.pos, self.half = idx, name, parent, np.asarray(pos, float), half
+        self.n_geoms = 1 if half else 0
+
+    def get_pos(self):
+        return self.pos
+
+    def get_quat(self):
+        return np.array(UP)
+
+    def get_AABB(self):
+        return np.stack([self.pos - self.half, self.pos + self.half])
+
+
+def test_lever_arms_bound_every_link_and_the_held_object():
+    from robotsmith.sim.franka import JOINT_NAMES
+
+    # link0 at the base, link1..link7 0.1 m apart up z, the hand 0.1 m above link7, fingers 2 cm to either side.
+    links = [_Body(0, "link0", -1, (0, 0, 0), 0.0)]
+    links += [_Body(i, f"link{i}", i - 1, (0, 0, 0.1 * i), 0.05) for i in range(1, 8)]
+    links += [_Body(8, "hand", 7, (0, 0, 0.8), 0.05),
+              _Body(9, "left_finger", 8, (0, 0.02, 0.85), 0.01), _Body(10, "right_finger", 8, (0, -0.02, 0.85), 0.01)]
+    joint_link = dict(zip(JOINT_NAMES, [links[i] for i in (1, 2, 3, 4, 5, 6, 7, 9, 10)]))
+    env = object.__new__(SimEnv)
+    env.franka = SimpleNamespace(
+        links=links, get_dofs_limit=lambda dofs: ([-2.0] * 7 + [0.0, 0.0], [2.0] * 7 + [0.04, 0.04]),
+        get_joint=lambda n: SimpleNamespace(link=joint_link[n], get_anchor_pos=lambda: joint_link[n].pos))
+    env.motors_dof, env.end_effector = list(range(9)), links[8]
+    env.entity_map = {"die": _Body(20, "die", -1, (0, 0, 0.9), 0.02)}
+
+    box = np.sqrt(3) * 0.05
+    finger = np.hypot(0.02, 0.05) + 0.04 + np.sqrt(3) * 0.01
+    assert finger > box
+    r = env.lever_arms()
+    assert r[6] == pytest.approx(0.1 + finger) and r[0] == pytest.approx(0.7 + finger)
+    assert r[7:].tolist() == [1.0, 1.0]
+    held = env.lever_arms(("die", np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0.1], [0, 0, 0, 1.0]])))
+    assert held[6] == pytest.approx(0.1 + max(finger, 0.1 + np.sqrt(3) * 0.02))
+    assert np.all(held[:7] >= r[:7]) and held[6] > r[6]

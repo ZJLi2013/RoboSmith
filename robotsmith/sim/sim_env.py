@@ -388,6 +388,52 @@ class SimEnv:
         return frozenset(frozenset((a, b)) for a in parent for b in parent
                          if a != b and (parent[a] == b or parent[b] == a or parent[a] == parent[b] is not None))
 
+    def lever_arms(self, held: tuple[str, np.ndarray] | None = None) -> np.ndarray:
+        """Per DOF in ``motors_dof`` order, r such that a step dq moves no point of the robot, nor of
+        ``held=(name, T_hand_obj)`` riding in the hand, further than ``r @ |dq|``. For an arm joint: the longest path
+        from its anchor along link origins to a link it moves plus that link's collision-AABB radius (the held
+        object counts as |T's offset| + its AABB radius from the hand origin), with a finger link's path stretched
+        by its full travel; 1 for the finger DOFs. Lengths between the origins of one rigid link do not change with
+        the pose and an AABB radius only overstates, so the current pose gives a bound for every pose. Reads only."""
+
+        def radius(box, p) -> float:
+            lo, hi = np.asarray(box.cpu().numpy() if hasattr(box, "cpu") else box, dtype=np.float64).reshape(-1, 2, 3)[0]
+            return float(np.linalg.norm(np.maximum(np.abs(lo - p), np.abs(hi - p))))
+
+        links = {lk.idx: lk for lk in self.franka.links}
+        origin = {i: to_numpy(lk.get_pos()).reshape(-1)[:3].astype(np.float64) for i, lk in links.items()}
+        children: dict[int, list[int]] = {}
+        for lk in links.values():
+            children.setdefault(lk.parent_idx, []).append(lk.idx)
+        lo, hi = self.joint_limits
+        travel = {self.franka.get_joint(n).link.idx: float(hi[k] - lo[k]) for k, n in enumerate(JOINT_NAMES) if k >= 7}
+        extra = {}
+        if held is not None:
+            name, t = held
+            pos, _ = self.object_pose(name)
+            extra[self.end_effector.idx] = (float(np.linalg.norm(np.asarray(t, dtype=np.float64)[:3, 3]))
+                                            + radius(self.entity_map[name].get_AABB(), pos))
+
+        def reach(i: int) -> float:
+            own = radius(links[i].get_AABB(), origin[i]) if links[i].n_geoms else 0.0
+            return max([own, extra.get(i, 0.0)]
+                       + [float(np.linalg.norm(origin[c] - origin[i])) + travel.get(c, 0.0) + reach(c)
+                          for c in children.get(i, [])])
+
+        out = np.ones(len(self.motors_dof))
+        for k, name in enumerate(JOINT_NAMES[:7]):
+            joint = self.franka.get_joint(name)
+            anchor = to_numpy(joint.get_anchor_pos()).reshape(-1)[:3].astype(np.float64)
+            out[k] = float(np.linalg.norm(origin[joint.link.idx] - anchor)) + reach(joint.link.idx)
+        return out
+
+    def hold(self, qpos, name: str, t_hand_obj) -> None:
+        """A real write, without stepping: the arm at ``qpos`` and ``name`` at hand · ``t_hand_obj``, both at rest."""
+        self._writes += 1
+        self._set_arm(qpos)
+        self.franka.control_dofs_position(np.asarray(qpos, dtype=np.float32), self.motors_dof)
+        self._put(name, pose_matrix(*self._hand()) @ np.asarray(t_hand_obj, dtype=np.float64))
+
     def state_fingerprint(self) -> str:
         """Hash of the real-write count and every rigid entity's joint positions and velocities."""
         h = hashlib.sha1(str(self._writes).encode())
