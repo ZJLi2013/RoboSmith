@@ -234,6 +234,25 @@ F2 playground seed 0 的固定持物请求（retreat 位姿 → mat 正上方同
 障碍会让两树隔着它反复相遇、剪枝，同类薄墙要 7k–160k 次，超出预算。OMPL 算法更成熟，但 Python 绑定未在 ROCm 镜像上
 验证，接口留在 `JointPlanner` 可换；VAMP、cuRobo 自带碰撞表示，会形成与仿真几何不一致的第二份世界，不选。
 
+### place 的规划搬运
+
+`run_place` 用 IK 解 `plan_place` 的 standoff（以当前关节为初值，手指取当前值），`JointPlanner.connect` 带持物从当前构型
+连到它，再由 `MotionExecutor.place(phase="descend")` 接下放、松手、退回；整条轨迹一次 `verify`、一张凭证。connect 被拒时
+place 零步 `Refused("search_exhausted")`，证据带 connect 的 reason 与 queries。转基座段与搬运高度已删除。
+
+在 playground seed 0–9 上与[逐片迁移的 dev 对照](acceptance.md#逐片迁移的-dev-对照)比较（[e7 证据](../exps/r1/evidence/e7/README.md)）：
+
+| 族 | certified | 对照 |
+|---|---|---|
+| F0 空桌面 | 10/10 | 10/10 |
+| F1 贴墙抓取 | 10/10 | 10/10 |
+| F2 越障搬运 | 7/10 | 0/10 |
+| F4 罩住 | 10/10 | 10/10 |
+
+F2 的 10 个搬运全部连通。未 certified 的 3 个（seed 1、3、8）任务谓词成立，但正式回放的松手段里机器人 `link5` 实际碰到
+barrier 5–8 个物理步，而门在签发时判这些点合法。这是已知问题，成因未定位（human 2026-11-06 决定不继续定位，先推进后续切片）。单实例耗时约为对照的两倍（F0 平均 85 s，对照约 50 s）：connect 约 8–10 s，
+规划路径按每 5 mm 一个物理步执行，比原先 40 步的插值搬运长得多。
+
 ## 下一步
 
 模板式链路的四步迁移已完成（rocRobo 删除、`SimEnv` 快照接口、执行门、[调用链](call-chain.md)重写），读数见
