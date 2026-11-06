@@ -30,7 +30,8 @@ agent 写步骤表（pick X、place X on Y…），技能执行，每步判定�
 
 1. **候选**：由资产几何生成抓取 / 放置 / 把手候选。
 2. **验证**：在仿真场景里查 IK 能否到达、最终路径上有无不允许的接触（带被抓物）；接触段显式列出允许接触的对象。
-3. **连接**：关键构型之间关节插值，整条稠密轨迹交给门逐点检查；不过就换下一个候选（抓取、搬运高度）。
+3. **连接**：place 的搬运段由 `JointPlanner` 经门规划，其余关键构型之间关节插值；整条稠密轨迹交给门逐点检查，
+   pick 不过就换下一个抓取候选，place 不过就零步拒绝。
 4. **失败显式**：任一步不过就结构化失败（阶段、候选、原因、证据）；试下一个候选是显式搜索，不是放行。
 5. **状态有唯一主人**：运行时持有实际的关节、物体与持物状态；试抓与正式执行共享同一道门。
 
@@ -42,7 +43,7 @@ agent 写步骤表（pick X、place X on Y…），技能执行，每步判定�
 |---|---|
 | Genesis 场景状态：快照、构型、状态指纹 | `SimEnv` |
 | 「这条轨迹能不能执行」、持物生命周期与接触许可规则 | `ExecutionGate`（许可规则只在 `permitted` 一处；读实际物理接触的验收用同模块的 `certified`，见 [certified 读数](acceptance.md#被测链路的-certified-读数)） |
-| 候选及其顺序（抓取、搬运高度） | 技能层（`run_pick` / `run_place`） |
+| 候选及其顺序（抓取）、place 的搬运目标 | 技能层（`run_pick` / `run_place`） |
 | 航点模板与每段的持物 / 允许接触 | `MotionExecutor` |
 | 关键位姿到稠密关节路径与段边界 | `motion.chain.execute_motion_chain` |
 | 抓取的物理是否成立（抬得起） | `SimEnv.trial_from_here`，只在过门之后调用 |
@@ -70,7 +71,7 @@ agent 写步骤表（pick X、place X on Y…），技能执行，每步判定�
   （NumPy 2.5 起已弃用）只改调用方手里那份，下一次读取与回放仍是验证时的数值。调用方保留的输入数组与凭证不共享内存。
   另一种做法是签发时记内容哈希、`check_current` 时比对，它只能在执行前发现改动；不可变存储让改动无从发生，所以选它。
   限制：对 frozen dataclass 调 `object.__setattr__`、经 ctypes 按裸指针写内存能绕过 Python 层的保证，门不防这类刻意绕过。
-- 段边界来自运动链：每段带 `span` / `holding` / `allow`，段后保持与尾部保持计入所在段；转基座段由技能层作为第一段加入。
+- 段边界来自运动链：每段带 `span` / `holding` / `allow`，段后保持与尾部保持计入所在段；pick 的转基座段与 place 的规划搬运段由技能层作为第一段加入。
   pick 的手指闭合段是 `grip`、其后一段持物且 `rest`；place 的搬运持物，下放与松手持物且 `rest`，退回 `grip`。
 - `SimEnv.contacts_at(qpos, held=None, placed=None)`、`SimEnv.hand_pose(qpos)`、`SimEnv.object_pose(name)` 在一个快照事务里
   摆构型（`held=(name, T)` 把物体放在手 · T，`placed=(name, T_world)` 放在世界位姿）、跑碰撞检测或正运动学，返回前还原快照。
@@ -194,8 +195,8 @@ place: sample(place | g) · move_to(p.pre) · move_linear(p.place) · detach(p.s
 | 概念 | owner |
 |---|---|
 | 动作展开 | 各 meta action 实现 |
-| 候选搜索与组合内回溯 | `CompositionSearch`（替换 `pick._select` 与 `CARRY_HEIGHTS` 循环） |
-| 自由段 | `JointPlanner`（已实现；接入后替换 `_transit_lerp`、`_pick_seed_transit`、`_place_transport_seed`） |
+| 候选搜索与组合内回溯 | `CompositionSearch`（替换 `pick._select`） |
+| 自由段 | `JointPlanner`（已实现；place 的搬运段已接入，替换了转基座与搬运高度；pick 接入后替换 `_pick_seed_transit`） |
 | 合法性 | `ExecutionGate.check_point`：数值有效、关节限位、FK 残差（5 mm / 0.05 rad）、非邻接自碰撞、`contacts_at` + `permitted`；规划器与 `verify` 都调它（已实现，`verify` 已在用） |
 | 持物 | `PlanState.holding`；`gate.verify` 接收 `Holding` 并在 attach 点核对（`verify` 一侧已实现，现由 pick / place 构造；`PlanState` 未实现） |
 | 物理步 | `EpisodeRun`，含试抓、回放与 settle |
@@ -203,7 +204,7 @@ place: sample(place | g) · move_to(p.pre) · move_linear(p.place) · detach(p.s
 ### 规划器
 
 `robotsmith/motion/joint_planner.py` 的 `JointPlanner(env, gate, *, seed=0).connect(q_start, q_goal, *, target, rest=(),
-holding=None, label="move_to")` 已实现，技能还没接入。它是仓库内的 lazy RRT-Connect（双树、固定种子），依赖只有 numpy：
+holding=None, label="move_to")` 已实现，place 用它规划搬运段，pick 还没接入。它是仓库内的 lazy RRT-Connect（双树、固定种子），依赖只有 numpy：
 
 - 合法性只问 `gate.check_point`，持物带调用方的 `Holding`；路径由 `gate.verify` 签发，返回
   `Connection(motion, queries, seconds, nodes, direct)`。查询与失败都零物理步、不改状态。
@@ -238,10 +239,14 @@ F2 playground seed 0 的固定持物请求（retreat 位姿 → mat 正上方同
 模板式链路的四步迁移已完成（rocRobo 删除、`SimEnv` 快照接口、执行门、[调用链](call-chain.md)重写），读数见
 [certified 读数](acceptance.md#被测链路的-certified-读数)。下一版按以下顺序迁移，每步单独可合入：
 
-1. 门加固：`check_point`、只读凭证、`Refused`、`verify` 接收 `Holding`（已实现，CPU 验证，GPU 未跑）；
+1. 门加固：`check_point`、只读凭证、`Refused`、`verify` 接收 `Holding`（已实现，CPU 验证）；
 2. `JointPlanner`，独立于技能，GPU 上测 F2 布局的持物 connect（已实现，F2 固定请求一次连通，见「规划器」）；
-3. 6 个动作、`CompositionSearch` 与 pick / place recipe 一步切换；`EpisodeRun`、单资产验证与 `certify` 三个入口改用
-   同一服务，删除 `MotionExecutor.pick / place`、`run_skills`、`plan_segment` 与转基座 / 抬高补丁；
+3. 模板链路逐片替换，每片只改一件事，在 playground seed 0–9 上与[逐片迁移的 dev 对照](acceptance.md#逐片迁移的-dev-对照)比较：
+   1. place 的搬运段由 `JointPlanner` 生成，删转基座与搬运高度（已实现，结果见「place 的规划搬运」）；
+   2. pick 的进场段由 `JointPlanner` 生成，删 `_pick_seed_transit`；
+   3. 同一目标的 pick + place 在第一个物理步前整组过门；
+   4. `move_linear`、`gripper`、`attach`、`detach` 从 `MotionExecutor` 模板拆出，一次一个；
+   5. `EpisodeRun`、单资产验证与 `certify` 走同一服务，删 `run_skills`、`plan_segment`；
 4. plan 文件的 `actions` 与 LLM 可直接提交 meta action 列表，走同一搜索与门。
 
 然后在组合式验收场景（含开发期不读的留出族）的 test seed 上读 certified 率。

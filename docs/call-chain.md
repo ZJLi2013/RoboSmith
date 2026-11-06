@@ -65,9 +65,10 @@ flowchart TD
         V2{"恢复后对同一条轨迹再 verify"}
     end
 
-    subgraph PL["place.run_place：按 CARRY_HEIGHTS 0 → 20 cm"]
+    subgraph PL["place.run_place"]
         PP["place._resolve_place_plan → grasp/planner.plan_place<br/>落点 = 目标点 + 抓取相对高度"]
-        PX["place._place_transport_seed 转基座段 + MotionExecutor.place(carry_height)"]
+        PC["place._connect：IK 解 standoff，手指取当前值<br/>JointPlanner.connect 带持物规划搬运段"]
+        PX["MotionExecutor.place(phase=descend)<br/>从 standoff 下放、松手、退回"]
         V3{"ExecutionGate.verify<br/>rest = 放置目标的 entity；Holding 取自实测手与物体位姿"}
     end
 
@@ -83,14 +84,16 @@ flowchart TD
     TR -- 没抬起 --> PM
     TR -- 抬起 --> V2
     V2 -- 通过 --> OKP["签发 VerifiedMotion"]
-    PP --> PX --> V3
-    V3 -- 拒绝，换下一个高度 --> PX
+    PP --> PC
+    PC -- 拒绝 --> RF["Refused(search_exhausted)，零物理步"]
+    PC -- 连通 --> PX --> V3
+    V3 -- 拒绝 --> RF
     V3 -- 通过 --> OKL["签发 VerifiedMotion"]
     PM & PX --> EXE --> CH --> F & C & G
 ```
 
 门检查的是会被执行的每一个点：转基座段、手指段、段后保持与尾部保持都在 `spans` 里，`spans` 必须铺满整条轨迹。
-pick 的手指闭合段允许手指碰目标（`grip`），其后一段持物且允许离开支撑面（`rest`）；place 的转基座与搬运持物，
+pick 的手指闭合段允许手指碰目标（`grip`），其后一段持物且允许离开支撑面（`rest`）；place 的规划搬运段持物，
 下放、松手持物且 `rest`，退回 `grip`。持物段把目标摆在 手 · T，T 由技能以 `Holding` 传入，门在持物开始之前的构型上核对
 手 · T 与目标位姿（≤ 5 mm / 0.05 rad）；松手之后目标留在 手(最后持物点) · T，退回时手掌碰到它会被拒绝。
 航点到达点带期望手部位姿（`poses`），门判 FK 残差；自由插值的中间点不带。
@@ -101,7 +104,7 @@ pick 的手指闭合段允许手指碰目标（`grip`），其后一段持物且
 
 | 位置 | 在门里 | 不在门里 |
 |---|---|---|
-| pick / place 的整条轨迹 | 每个点，含转基座、手指、保持段；持物与松手后的物体；非相连连杆的自碰撞 | 相连（父子、同父）连杆的接触 |
+| pick / place 的整条轨迹 | 每个点，含 pick 的转基座段、place 的规划搬运段、手指与保持段；持物与松手后的物体；非相连连杆的自碰撞 | 相连（父子、同父）连杆的接触 |
 | 试抓 `SimEnv.trial_from_here` | 试抓前后对同一条轨迹各过一次门 | 试抓本身是物理步进，判抬起，不判接触 |
 | settle 与任务判定 `settle_window` | 只下发最后一个已验证点 | 保持期间的物理演化 |
 | 开合抽屉 `open_close` | — | `gate.ungated`，不查接触；验收族里没有抽屉 |
@@ -125,15 +128,16 @@ pick 的手指闭合段允许手指碰目标（`grip`），其后一段持物且
 - `motion/joint_planner.JointPlanner(env, gate, *, seed, max_queries, max_seconds).connect(q_start, q_goal, *, target, rest,
   holding, label)`：关节空间 lazy RRT-Connect，状态与按 `lever_arms` 细分到每步 ≤ 5 mm 的连边点只经 `check_point`，路径由
   `verify(..., budget=)` 签发，返回 `Connection(motion, queries, seconds, nodes, direct)`。搜索与签发共用一个 budget：
-  1500 次查询或 30 s，`queries` 是门实际检查的点数；超出抛 `Refused("search_exhausted")`，不签发。技能还没调用它。
+  1500 次查询或 30 s，`queries` 是门实际检查的点数；超出抛 `Refused("search_exhausted")`，不签发。`place` 用它规划搬运段，
+  `pick` 还没用。
 - `motion/planner.MotionPlanner` 只有 `solve_ik(pos, quat, finger_pos, *, init_qpos)`；唯一实现 `GenesisBackend` 包装
   `SimEnv.solve_ik`。
 - `motion/chain.execute_motion_chain(waypoints, motion_planner, start_qpos, params, *, tail_hold_steps,
   raise_on_cartesian_discontinuity)` 做「航点 → IK（笛卡尔段逐步 IK）→ 关节插值」，返回 `MotionChainExecution`，
   每段带 `span`、`holding`、`allow`、航点位姿 `pose` 与到达下标 `reach`；`spans_of` 把它们转成门的 `Span`，`poses_of`
   转成 `verify` 的 `poses`。
-- `MotionExecutor.pick(plan, motion_planner, home_qpos, params)`、`place(..., *, phase, carry, carry_height)`、
-  `drag_handle(..., action)`；`carry_height > 0` 时搬运分成 `carry_up`、`transport`、`carry_down` 三段。
+- `MotionExecutor.pick(plan, motion_planner, home_qpos, params)`、`place(..., *, phase)`、`drag_handle(..., action)`；
+  `place` 的 `descend` 从当前构型先走一段到 standoff 的关节插值（规划搬运之后几乎不动），再下放、松手、退回。
 - `scenario/relations.rigid_moving_links`：关节子 link 加上与它固定连接的 link，给 `clear_of` 的扫掠占地用。
 - 启动脚本 `scripts/setup/run_scenario.sh` 只挂仓库与 Hugging Face 缓存，不挂 Docker socket。
 
