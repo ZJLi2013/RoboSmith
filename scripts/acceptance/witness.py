@@ -25,7 +25,7 @@ import numpy as np
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from batch import HUNG, INSTANCE_TIMEOUT_S, run_batch
+from batch import run_batch, supervise
 
 from robotsmith.scenario_runtime import materialize_candidate
 from robotsmith.scenario_runtime.runner import evaluate_scenario_task
@@ -225,8 +225,15 @@ def main() -> None:
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--control", action="store_true")
     ap.add_argument("--heldout", action="store_true")
-    ap.add_argument("--resume", action="store_true", help=f"continue the rows in --out (after exit code {HUNG})")
+    ap.add_argument("--resume", action="store_true", help="continue the rows in --out")
+    ap.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
     args = ap.parse_args()
+    head = {"family": args.family, "rule": RULE}
+    failed = {**head, "settle_ok": None, "witness_ok": False}
+    log = args.out.with_suffix(".jsonl")
+    if not args.worker:
+        log.parent.mkdir(parents=True, exist_ok=True)
+        sys.exit(supervise([sys.executable, __file__, *sys.argv[1:], "--worker"], log, failed=failed))
     if args.heldout:
         path = ACCEPTANCE / "heldout" / f"{args.family}.yaml"
         spec = json.loads((path.parent / "witness.json").read_text(encoding="utf-8"))[args.family]
@@ -246,7 +253,6 @@ def main() -> None:
         assert all(np.allclose(o.fixed_position, fixed[o.name_override])
                    for o in scene.objects if o.name_override != "die"), "fixtures move between seeds"
         assert tuple(scene.table_size) == tuple(first.table_size), "table size changes between seeds"
-    head = {"family": args.family, "rule": RULE}
 
     def one(seed):
         pkg = packages[seed]
@@ -266,12 +272,9 @@ def main() -> None:
         ok = w["success"] and w["first_illegal"] is None
         return {**row, **w, "witness_ok": ok, "why": "" if ok else str(w["first_illegal"] or "task failed")}
 
-    log = args.out.with_suffix(".jsonl")
-    log.parent.mkdir(parents=True, exist_ok=True)
     prior = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()] if args.resume else []
     with log.open("a" if args.resume else "w", encoding="utf-8") as fh:
-        rows = run_batch(seeds, one, fh, prior=prior, timeout=INSTANCE_TIMEOUT_S,
-                         failed={**head, "settle_ok": None, "witness_ok": False})
+        rows = run_batch(seeds, one, fh, prior=prior, failed=failed, running=log.with_suffix(".running"))
     args.out.write_text(json.dumps(rows, indent=1), encoding="utf-8")
     print(f"{args.family}: {sum(r['witness_ok'] for r in rows)}/{len(rows)} witnessed")
 

@@ -2,7 +2,7 @@
 
 import importlib.util
 import json
-import threading
+import sys
 from pathlib import Path
 
 from robotsmith.execution.gate import Span
@@ -117,14 +117,35 @@ def test_a_resumed_batch_retries_only_the_seed_that_hung(tmp_path):
     assert [(r["seed"], r["attempt"]) for r in rows] == [(1, 1), (2, 2), (3, 1)]
 
 
-def test_an_attempt_past_its_timeout_is_written_as_an_error_before_the_process_ends(tmp_path):
-    hung = threading.Event()
+_WORKER = """
+import json, sys, time
+from pathlib import Path
+sys.path.insert(0, {batch!r})
+from batch import run_batch
 
-    def one(seed):
-        hung.wait(2)
-        return {"outcome": "certified", "certified": True}
+log = Path({log!r})
+resume = "--resume" in sys.argv
+prior = [json.loads(line) for line in log.read_text().splitlines()] if resume else []
 
-    with (tmp_path / "rows.jsonl").open("w", encoding="utf-8") as fh:
-        certify.run_batch([5], one, fh, timeout=0.05, on_hang=hung.set)
-    first = json.loads((tmp_path / "rows.jsonl").read_text(encoding="utf-8").splitlines()[0])
-    assert first["outcome"] == "error" and first["attempt"] == 1 and "no result" in first["why"]
+
+def one(seed):
+    if seed == 2:
+        time.sleep(600)
+    return {{"outcome": "certified", "certified": True}}
+
+
+with log.open("a" if resume else "w") as fh:
+    run_batch([1, 2, 3], one, fh, prior=prior, failed={{"certified": False}}, running=log.with_suffix(".running"))
+"""
+
+
+def test_a_hung_instance_is_killed_from_outside_and_resumed(tmp_path):
+    log, worker = tmp_path / "rows.jsonl", tmp_path / "worker.py"
+    worker.write_text(_WORKER.format(batch=str(Path(certify.__file__).parent), log=str(log)), encoding="utf-8")
+    code = certify.supervise([sys.executable, str(worker)], log, timeout=1.0, failed={"certified": False}, poll=0.1)
+    rows = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+    assert code == 0
+    assert [(r["seed"], r["attempt"], r["outcome"]) for r in rows] == [
+        (1, 1, "certified"), (2, 1, "error"), (2, 2, "error"), (3, 1, "certified")]
+    assert all(r["why"] == "killed after 1.0 s" and r["certified"] is False for r in rows if r["outcome"] == "error")
+    assert not log.with_suffix(".running").exists()

@@ -24,7 +24,7 @@ import yaml
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from batch import HUNG, INSTANCE_TIMEOUT_S, run_batch  # noqa: E402
+from batch import run_batch, supervise  # noqa: E402
 from robotsmith.execution.gate import REFUSALS, SUPPORT, Span, certified  # noqa: E402
 
 SETTLE_STEPS = 30
@@ -200,8 +200,13 @@ def main() -> None:
     ap.add_argument("--split", choices=["playground", "test"], required=True)
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--out", type=Path, required=True)
-    ap.add_argument("--resume", action="store_true", help=f"continue the rows in --out (after exit code {HUNG})")
+    ap.add_argument("--resume", action="store_true", help="continue the rows in --out")
+    ap.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
     args = ap.parse_args()
+    log = args.out / "instances.jsonl"
+    if not args.worker:
+        args.out.mkdir(parents=True, exist_ok=True)
+        sys.exit(supervise([sys.executable, __file__, *sys.argv[1:], "--worker"], log, failed={"certified": False}))
 
     from robotsmith.scenario_runtime import materialize_candidate
     from robotsmith.sim.recorder import record_episode
@@ -226,11 +231,11 @@ def main() -> None:
         mon.start()
         return {"split": args.split, **run_instance(env, packages[seed], args.family, mon, record_episode)}
 
-    log = args.out / "instances.jsonl"
     prior = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()] if args.resume else []
     with log.open("a" if args.resume else "w", encoding="utf-8") as fh:
-        rows = run_batch(seeds, one, fh, prior=prior, timeout=INSTANCE_TIMEOUT_S, failed={"certified": False},
-                         show=("seed", "attempt", "outcome", "first_violation", "seconds"))
+        rows = run_batch(seeds, one, fh, prior=prior, failed={"certified": False},
+                         show=("seed", "attempt", "outcome", "first_violation", "seconds"),
+                         running=log.with_suffix(".running"))
     outcomes = Counter(r["outcome"] for r in rows)
     summary = {"family": args.family, "split": args.split, "seeds": seeds,
                "certified": sum(r["certified"] for r in rows), "n": len(rows), "outcomes": dict(outcomes)}
