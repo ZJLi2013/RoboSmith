@@ -115,7 +115,8 @@ F2 只跑了 2 个实例：穿透接触让求解器变慢，批次在第 3 个�
 
 留出族检验链路在没调过参的约束上是否仍成立，所以它的约束与参数在解封前只给允许的读者看。
 
-- **位置**：族定义、teacher 与见证参数（`witness.json`）在 `scenarios/acceptance/heldout/`。公共 `witness.py` 只有
+- **位置**：族定义、teacher、见证参数（`witness.json`）与约束和选择理由（`README.md`，封存）在
+  `scenarios/acceptance/heldout/`，逐实例结果只放在实验记录的封存目录里。公共 `witness.py` 只有
   `--heldout` 机制，不含任何留出族名或参数；`certify.py` 只解析 `scenarios/acceptance/<family>.yaml`，解析不到留出族。
 - **冻结**：只有构造它的 task 写这些文件；test 批次在已提交的输入上运行，manifest 记下 commit 与各文件的 sha256，
   之后只读。批次失败或输入未提交时不写 manifest，修正后整批重跑。
