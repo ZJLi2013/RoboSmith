@@ -150,6 +150,8 @@ python scripts/acceptance/certify.py --family f1_wall_gap --split test --out out
   `instances.running`（seed、attempt、开始时刻）；一次尝试超过 600 s，`supervise` 杀掉整个进程组，在还没有该尝试的行时
   补一条 `error` 行（`why` 为 `killed after 600 s`），再以 `--resume` 重启，接着已写的行重试它并跑完其余 seed。
   每个 seed 至多两次尝试；一个 log 只能有一个 `supervise`。见证（`witness.py`）与 e3 的 GPU 入口用同一机制。
+  Windows 上 `supervise` 读边车文件时，工作进程对它的替换与删除会抛 `PermissionError`；`run_batch` 对这两步每 10 ms 重试、
+  至多 100 次（约 1 s），仍失败才抛出。Linux 上打开中的文件可以被替换与删除，不走到重试。
 - 每实例一行：布局、静止后位置、难度参数、各阶段物理步与违规步、首个违规（阶段、span、接触对、物理步号）、
   正式帧数、交接记录、任务判定。
 

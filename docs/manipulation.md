@@ -216,7 +216,9 @@ holding=None, label="move_to")` 已实现，技能还没接入。它是仓库内
   检查前扣一次查询、检查后与返回凭证前核对截止时间。返回的 `queries` 就是门实际检查的点数，重验同一点也计数。用尽或
   超时即 `Refused("search_exhausted", {"reason": "budget", "queries", "seconds"})`，不签发、零物理步；恰好用尽且按时签发
   完成算成功。起止点非法为 `invalid_start` / `invalid_goal`，带门的拒绝原因。组合共享 120 s 并按候选轮转（未实现）。
-  做法同 MoveIt：`allowed_planning_time` 是规划与路径简化的总预算，简化只拿搜索剩下的时间；本项目的签发就是对插值后
+  做法同 MoveIt：`allowed_planning_time` 是规划与路径简化的总预算，简化只拿搜索剩下的时间（MoveIt 2 OMPL 接口
+  [`model_based_planning_context.cpp`](https://github.com/moveit/moveit2/blob/main/moveit_planners/ompl/ompl_interface/src/model_based_planning_context.cpp)
+  以 `allowed_planning_time - ptime` 调 `simplifySolution`，插值不计时）；本项目的签发就是对插值后
   路径的逐点重验，凭证是 connect 的产物，所以也算在内。两者的截止检查都在查询之间：正在运行的单点查询打断不了，
   仿真挂住由 `batch.supervise` 在进程外强杀并记 `error`。
 - 起态装配：`SimEnv.hold(qpos, name, T)` 把机器人放到 qpos、物体放到手 · T，算一次真实写入，不步进。
