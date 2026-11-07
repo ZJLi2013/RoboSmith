@@ -172,7 +172,7 @@ transit 之后，20 cm 的墙在转基座时就挡住了 die。所以这一族�
 #### 逐片迁移的 dev 对照
 
 模板链路逐片替换时，每片在 playground seed 0–9 上与这一行比较（同族同 seed，只差该片的改动），test seed 留到实现冻结后。
-从 S4 起只比 F0 / F1 / F2：F4 在每一片上都是初始化后零步拒绝，不再测，负例零执行由 CPU 测试覆盖（human 2026-11-07）。
+从拆出 `move_linear` 那一片起只比 F0 / F1 / F2：F4 在每一片上都是初始化后零步拒绝，不再测，负例零执行由 CPU 测试覆盖（human 2026-11-07）。
 基线在 commit `b467daf` 上读取，含 e1 / e2 的门加固、链路代码未改，四族各 10 个实例各跑一次、无重试：
 
 | 族 | certified | 其余 | 失败在哪 |
@@ -183,9 +183,9 @@ transit 之后，20 cm 的墙在转基座时就挡住了 die。所以这一族�
 | F4 罩住 | 10/10 | — | 都在 pick 零步 `search_exhausted` |
 
 F2 的 episode 不是零物理步：pick 已经执行（试抓与正式回放），停在 place 时 place 自身零物理步。F0 / F1 在 seed 0–1 上
-与 c1 dev 的结果相同，门加固没有让已通过的实例变坏。下一片（place 的搬运段改由 `JointPlanner` 生成）以此判：
-F2 每个实例 certified 或与本表同位置停在 place 之前；过了搬运后在下放、松手或实际执行中失败，说明 F2 不只卡在搬运段。
-F0 / F1 的 20 个 seed 仍 certified，F4 仍 10/10。
+与 c1 dev 的结果相同，门加固没有让已通过的实例变坏。之后每片与上一片比较，各片结果在
+[manipulation](manipulation.md#下一步)对应的小节；最近一片是 F0 10/10、F1 10/10、F2 7/10，F2 seed 1、3、8 是松手段的已知接触
+（[place 的规划搬运](manipulation.md#place-的规划搬运)）。
 
 ### 下一版的认证口径
 
@@ -193,6 +193,9 @@ F0 / F1 的 20 个 seed 仍 certified，F4 仍 10/10。
 负例为支持的动作域内候选与预算搜完后零步拒绝 `search_exhausted`。`unsupported` 与环境错误不计成功。试抓、回放、保持与
 settle 都计真实物理步，恢复快照不清除计数；第一次试抓之后的失败记 `execution_failed`。上表是现有链路的读数，
 不当作新版的 certified。
+
+最终读数在新版实现与参数都提交、冻结之后读一次：F0 / F1 / F2 与留出族各 20 个 test seed（100–119），F1、F2 按难度参数报告。
+F4 不进最终读数，负例零执行由 CPU 测试覆盖；留出族里若有负例照常计入。
 
 ## 不在这一版
 

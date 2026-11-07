@@ -17,7 +17,7 @@ agent 写步骤表（pick X、place X on Y…），技能执行，每步判定�
 
 ## 迁移前的问题
 
-执行门接入（下一步的第 3 步）之前，候选、规划、执行之间**没有共同且强制的合法性契约**：
+执行门接入之前，候选、规划、执行之间**没有共同且强制的合法性契约**：
 
 - 没有统一的执行前检查：试抓只看能否抬起；自由段是不查碰撞的关节插值；接触段只查关节跳变；转基座、手指开合、修复工具、
   单资产验证都不经碰撞检查。
@@ -30,7 +30,7 @@ agent 写步骤表（pick X、place X on Y…），技能执行，每步判定�
 
 1. **候选**：由资产几何生成抓取 / 放置 / 把手候选。
 2. **验证**：在仿真场景里查 IK 能否到达、最终路径上有无不允许的接触（带被抓物）；接触段显式列出允许接触的对象。
-3. **连接**：place 的搬运段由 `JointPlanner` 经门规划，其余关键构型之间关节插值；整条稠密轨迹交给门逐点检查，
+3. **连接**：pick 的进场段与 place 的搬运段由 `JointPlanner` 经门规划，直线段由 `move_linear` 展开，其余关键构型之间关节插值；整条稠密轨迹交给门逐点检查，
    pick 不过就换下一个抓取候选，place 不过就零步拒绝。
 4. **失败显式**：任一步不过就结构化失败（阶段、候选、原因、证据）；试下一个候选是显式搜索，不是放行。
 5. **状态有唯一主人**：运行时持有实际的关节、物体与持物状态；试抓与正式执行共享同一道门。
@@ -46,6 +46,7 @@ agent 写步骤表（pick X、place X on Y…），技能执行，每步判定�
 | 候选及其顺序（抓取）、place 的搬运目标 | 技能层（`run_pick` / `run_place`） |
 | 航点模板与每段的持物 / 允许接触 | `MotionExecutor` |
 | 关键位姿到稠密关节路径与段边界 | `motion.chain.execute_motion_chain` |
+| 笛卡尔直线段的关节路径 | `motion.move_linear.expand` |
 | 抓取的物理是否成立（抬得起） | `SimEnv.trial_from_here`，只在过门之后调用 |
 | 执行 | `EpisodeRun`，只回放验证过的轨迹，不解 IK |
 
@@ -91,8 +92,8 @@ agent 写步骤表（pick X、place X on Y…），技能执行，每步判定�
   - 第一版不判机器人自接触。
   - 必须拒绝的样例：两个端点合法、但中途穿墙的轨迹。
 - **候选搜索**：pick 每个候选先过门，再试抓，抬起后在恢复的状态上对同一条轨迹重新过门；试遍全部候选时（`trial_all`，
-  修复工具用），最后一次试抓之后再按候选顺序对抬起者的原轨迹重新过门，第一个通过的被选中；place 按 0、5、10、15、20 cm 的搬运
-  高度取最低能过门的一条。没有候选在任何试抓之前过门时抛 `Refused("search_exhausted", evidence)`（零物理步，不证明不可解）；
+  修复工具用），最后一次试抓之后再按候选顺序对抬起者的原轨迹重新过门，第一个通过的被选中；place 只有一条由 `JointPlanner`
+  规划的搬运（见「place 的规划搬运」）。没有候选在任何试抓之前过门时抛 `Refused("search_exhausted", evidence)`（零物理步，不证明不可解）；
   已有候选过门并试抓过、却没有一个成立时抛 `ExecutionFailed(evidence, steps)`，`steps` 是试抓步进的物理步数。
   `Refused` 只接受 `search_exhausted`、`unsupported`、`infeasible` 三个标签，`infeasible` 留给覆盖动作域的可检查证明，
   现在没有任何路径产出它。
@@ -109,7 +110,7 @@ agent 写步骤表（pick X、place X on Y…），技能执行，每步判定�
 ## 已定 / 不做
 
 - rocRobo 与碰撞盲退回已删除，不保留为可选后端；删除后的运动层接口见[调用链](call-chain.md#运动层与执行门的接口)。
-  启动脚本的 Docker socket 挂载只为进 rocRobo sidecar 容器，随之删除。自由段改由关节空间 RRT-Connect（`JointPlanner`，已实现、技能未接入）生成，
+  启动脚本的 Docker socket 挂载只为进 rocRobo sidecar 容器，随之删除。自由段改由关节空间 RRT-Connect（`JointPlanner`，pick 的进场段与 place 的搬运段已接入）生成，
   状态与连边的合法性检查调用执行门同一份 `contacts_at` + `permitted`，不另建世界：「候选 × 关节插值」在 F2 上 0/20，
   失败全在写死的搬运路线（[读数](acceptance.md#被测链路的-certified-读数)）。rocRobo 的问题是它在自己的简化世界里规划，
   与仿真几何不一致（见「迁移前的问题」）。
@@ -133,15 +134,17 @@ agent 写步骤表（pick X、place X on Y…），技能执行，每步判定�
   持物进墙以被抓物–墙被拒、越过墙上方可过门，手 · T 摆出的被抓物与预期位置相差不到 1 mm；松手后手掌下到被抓物处以
   机器人–被抓物被拒、向上退回可过门；真实步进后旧凭证失效。
 - 入口有界检查：F0、F4 各一个 seed 与单资产抓取验证都只经门执行；F0 完成 pick / place，F4 的 pick 在门前全部被拒、零帧，
-  拒绝原因逐候选保留。这不是验收族的 certified 结果，certified 率见下一步。
+  拒绝原因逐候选保留。这不是验收族的 certified 结果，certified 率见[读数](acceptance.md#被测链路的-certified-读数)。
 - `check_point` 新增的关节限位、FK 残差、非邻接自碰撞与 attach 核对，以及 `SimEnv.joint_limits`（Genesis
   `get_dofs_limit`）、`joined_links`，在 CPU 受控样例上验证过（[e1 证据](../exps/r1/evidence/e1/README.md)）；在 Genesis 上
   只跑过 e3 的一个 F2 持物请求（两端带 FK 残差检查、对照路径的 attach 核对都通过）。IK 残差超过 5 mm 的抓取候选现在会以
-  `fk_residual` 或 `binding_mismatch` 被拒，它对验收族读数的影响要等下一次 GPU 批次读出。`tests/test_gate_gpu.py` 已改为显式传 `Holding`。
+  `fk_residual` 或 `binding_mismatch` 被拒；含这些检查的 dev 基线上，F0 / F1 在之前已测的 seed 上没有变坏
+  （[逐片迁移的 dev 对照](acceptance.md#逐片迁移的-dev-对照)）。`tests/test_gate_gpu.py` 已改为显式传 `Holding`。
 
 ## 下一版设计：规划给出的 meta action 组合（未实现）
 
-上面的执行门已实现；本节是替换 `MotionExecutor` 航点模板的设计，迁移完成前现有实现仍按上文。原因：模板式链路在
+上面的执行门已实现；本节是替换 `MotionExecutor` 航点模板的设计，按[下一步](#下一步)逐片落地，已落地的部分在各小节标明，
+其余仍按上文的现有实现。原因：模板式链路在
 F2 上 0/20，失败全在写死的搬运路线（[读数](acceptance.md#被测链路的-certified-读数)），给路线打补丁只适配一个场景。
 
 **一句话：** 技能是少量 meta action 的组合；组合搜索在零物理步的状态查询里为整个组合绑定候选、用 RRT-Connect 连自由段、
