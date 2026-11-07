@@ -66,7 +66,7 @@ def _open_drag_waypoints(
             pos=handle, quat=grasp_quat, finger_width=finger_open,
             # Straight-down Cartesian: descend onto the handle vertically
             # (no horizontal force, no joint-space curve); goal on the handle.
-            label="descend", cartesian=True,
+            label="descend", linear="keep",
         ),
         RuntimeMotionWaypoint(
             pos=handle, quat=grasp_quat, finger_width=finger_closed,
@@ -76,7 +76,7 @@ def _open_drag_waypoints(
         ),
         RuntimeMotionWaypoint(
             pos=target, quat=grasp_quat, finger_width=finger_closed,
-            label="drag", cartesian=True,
+            label="drag", linear="keep",
         ),
         RuntimeMotionWaypoint(
             pos=target + back * retreat_height, quat=grasp_quat,
@@ -84,7 +84,7 @@ def _open_drag_waypoints(
             # Straight-up Cartesian lift: keeps the gripper vertical so it
             # slides off the neck with no horizontal force on the drawer,
             # then dwell so the drawer settles before the fingers open.
-            cartesian=True,
+            linear="keep",
             hold_after_steps=params.contact_settle_steps,
         ),
         RuntimeMotionWaypoint(
@@ -130,11 +130,11 @@ def _close_drag_waypoints(
             # Straight-down Cartesian: descend onto the contact point
             # vertically (no horizontal force, no joint-space curve into
             # the cabinet); the goal sits on the handle.
-            label="descend", cartesian=True,
+            label="descend", linear="keep",
         ),
         RuntimeMotionWaypoint(
             pos=target, quat=grasp_quat, finger_width=finger_closed,
-            label="push", cartesian=True,
+            label="push", linear="keep",
             # Dwell in contact so the drawer's velocity decays before the
             # gripper backs off, else stored contact energy springs it open
             # again.
@@ -146,7 +146,7 @@ def _close_drag_waypoints(
             # Straight-up Cartesian disengage: keeps the gripper vertical
             # so backing off the handle applies no horizontal force on the
             # drawer (a planned retreat curves into the front panel).
-            cartesian=True,
+            linear="keep",
         ),
     ]
 
@@ -218,7 +218,7 @@ class MotionExecutor:
                     segment_type=segment_type,
                     steps=open_steps if i == 0 else None,
                     finger_only=is_finger[i] or i == 0,
-                    cartesian=i == fine_idx,
+                    linear="refuse" if i == fine_idx else None,
                     hold_after_steps=(
                         params.grasp_settle_steps if i == last_finger else 0
                     ),
@@ -302,7 +302,7 @@ class MotionExecutor:
                 quat=place_plan.grasp_quat,
                 finger_width=place_plan.finger_closed,
                 label="descend",
-                cartesian=True,
+                linear="keep",
                 steps=params.place_descend_steps,
                 holding=True,
                 allow="rest",
@@ -323,7 +323,7 @@ class MotionExecutor:
                 quat=place_plan.retreat_quat,
                 finger_width=place_plan.finger_open,
                 label="retreat",
-                cartesian=True,
+                linear="keep",
                 steps=params.retreat_steps,
                 allow="grip",
             ),
@@ -337,7 +337,6 @@ class MotionExecutor:
             motion_planner,
             start_qpos,
             params,
-            raise_on_cartesian_discontinuity=False,
         )
         self.last_motion_trace = execution_trace("place", result)
         return result
@@ -378,7 +377,9 @@ class MotionExecutor:
         (straight down onto the handle), the contact ``drag``/``push``, and the
         disengage ``lift``/``retreat`` (straight up). Keeping these vertical means
         the gripper applies no horizontal force on the drawer and a joint-space
-        move never curves the wrist into the drawer front.
+        move never curves the wrist into the drawer front. An IK branch flip on them is
+        kept (``linear="keep"``), not refused: the motion is position-controlled against
+        a held handle, so a reconfiguration is tracked instead of aborting the episode.
         """
         handle = np.asarray(handle_pos, dtype=np.float64)
         move = np.asarray(move_vec, dtype=np.float64)
@@ -404,7 +405,6 @@ class MotionExecutor:
             motion_planner,
             start_qpos,
             params,
-            raise_on_cartesian_discontinuity=False,
         )
         self.last_motion_trace = execution_trace(action, result)
         return result.trajectory

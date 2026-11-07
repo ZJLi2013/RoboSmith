@@ -19,16 +19,13 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass, field
-from typing import Callable, Sequence
+from typing import Callable, Literal, Sequence
 
 import numpy as np
 
 from robotsmith.sim.franka import Q_LOWER as _FRANKA_Q_LOWER
 from robotsmith.sim.franka import Q_UPPER as _FRANKA_Q_UPPER
-from robotsmith.motion.cartesian import (
-    DEFAULT_CARTESIAN_MAX_JOINT_STEP,
-    solve_cartesian_ik_path,
-)
+from robotsmith.motion import move_linear
 from robotsmith.motion.constants import N_ARM_JOINTS as _N_ARM_JOINTS
 from robotsmith.motion.params import MotionParams
 from robotsmith.motion.planner import MotionPlanner
@@ -116,17 +113,14 @@ def evaluate_motion_chain(
     if fine_idx > 0:
         start_wp = waypoints[fine_idx - 1]
         end_wp = waypoints[fine_idx]
-        path = solve_cartesian_ik_path(
-            start_wp.pos,
-            end_wp.pos,
-            end_wp.quat,
-            end_wp.finger_width,
+        path = move_linear.expand(
+            move_linear.MoveLinear(start_wp.pos, end_wp.pos, end_wp.quat, end_wp.finger_width, on_jump="keep"),
             qs[fine_idx],
             solve_ik,
             max_joint_step=max_final_approach_joint_step,
         )
         final_approach_step = path.max_joint_step
-        final_approach_ok = path.ok
+        final_approach_ok = path.continuous
 
     return MotionChainMetrics(
         ok=bool(ok and final_approach_ok),
@@ -150,7 +144,8 @@ class RuntimeMotionWaypoint:
     segment_type: str = "normal"
     steps: int | None = None
     finger_only: bool = False
-    cartesian: bool = False
+    # A ``move_linear`` segment and its policy on an IK branch flip; ``None`` is a joint-space move.
+    linear: Literal["refuse", "keep"] | None = None
     hold_after_steps: int = 0
     holding: bool = False
     allow: str | None = None
@@ -199,12 +194,11 @@ def _solve_segment(
     q_from: np.ndarray,
     *,
     motion_planner: MotionPlanner,
-    raise_on_cartesian_discontinuity: bool,
 ) -> tuple[np.ndarray, list[np.ndarray] | None, float]:
     """Solve one segment → (endpoint qpos, dense path | None, arm displacement).
 
-    Routing: finger-only locks the arm; cartesian walks a continuity-checked
-    Cartesian path (and reports its per-step continuity metric); otherwise plain
+    Routing: finger-only locks the arm; a linear segment is expanded by
+    ``move_linear`` (and reports its per-step continuity metric); otherwise plain
     per-pose IK, interpolated in joint space.
     """
     segment_path: list[np.ndarray] | None = None
@@ -212,20 +206,14 @@ def _solve_segment(
         q_to = q_from.copy()
         finger_q = motion_planner.solve_ik(wp.pos, wp.quat, wp.finger_width)
         q_to[_N_ARM_JOINTS:] = finger_q[_N_ARM_JOINTS:]
-    elif wp.cartesian:
+    elif wp.linear is not None:
         if i == 0:
             raise ValueError("cartesian segment requires a previous waypoint")
         prev_wp = waypoints[i - 1]
-        path = solve_cartesian_ik_path(
-            prev_wp.pos,
-            wp.pos,
-            wp.quat,
-            wp.finger_width,
+        path = move_linear.expand(
+            move_linear.MoveLinear(prev_wp.pos, wp.pos, wp.quat, wp.finger_width, on_jump=wp.linear, label=wp.label),
             q_from,
             motion_planner.solve_ik,
-            max_joint_step=DEFAULT_CARTESIAN_MAX_JOINT_STEP,
-            raise_on_discontinuity=raise_on_cartesian_discontinuity,
-            error_label=wp.label,
         )
         segment_path = path.path
         return segment_path[-1].copy(), segment_path, path.max_joint_step
@@ -331,15 +319,11 @@ def execute_motion_chain(
     params: MotionParams,
     *,
     tail_hold_steps: int = 0,
-    raise_on_cartesian_discontinuity: bool = True,
 ) -> MotionChainExecution:
     """Execute runtime waypoints with seed-continuous IK and diagnostics.
 
     Per-pose IK goes through ``motion_planner.solve_ik``; nothing here checks
-    collisions. ``raise_on_cartesian_discontinuity`` gates free-space Cartesian
-    segments (pick/place) where an IK branch flip would whip the arm. Contact
-    drags (open/close) set it False: the motion is position-controlled against a
-    held handle, so a reconfiguration is tracked instead of aborting the episode.
+    collisions.
     """
     q_targets = [np.asarray(start_qpos, dtype=np.float64).copy()]
     segment_paths: list[list[np.ndarray] | None] = []
@@ -353,7 +337,6 @@ def execute_motion_chain(
             waypoints,
             q_from,
             motion_planner=motion_planner,
-            raise_on_cartesian_discontinuity=raise_on_cartesian_discontinuity,
         )
         q_targets.append(q_to)
         segment_paths.append(segment_path)
@@ -364,7 +347,7 @@ def execute_motion_chain(
                 "type": wp.segment_type,
                 "steps": _segment_step_count(wp, q_from, q_to, segment_path, params),
                 "max_joint_step": max_joint_step,
-                "cartesian": wp.cartesian,
+                "cartesian": wp.linear is not None,
                 "finger_only": wp.finger_only,
                 "hold_after_steps": wp.hold_after_steps,
                 "holding": wp.holding,
