@@ -7,12 +7,15 @@ import pytest
 
 from robotsmith.motion.chain import _compute_steps, _same_pose
 from robotsmith.execution.executor import MotionExecutor
+from robotsmith.execution.gate import Holding
+from robotsmith.motion.plan_state import PlanState
 from robotsmith.motion.planner import GenesisBackend
 from robotsmith.motion.params import MotionParams
 from robotsmith.grasp.planner import GraspPlan, Waypoint
 
 DT = 1.0 / 30  # Genesis control dt
 IDENTITY = np.array([1, 0, 0, 0], dtype=np.float64)
+HELD = Holding("obj", np.eye(4))
 
 
 # -- _compute_steps --
@@ -86,7 +89,7 @@ class TestPickMotionChain:
     def test_segment_types(self):
         """Fine segment is the grasp approach (seg 1), not the retreat."""
         exe = MotionExecutor()
-        exe.pick(_pick_plan(), GenesisBackend(_trivial_ik), np.zeros(9), MotionParams())
+        exe.pick(_pick_plan(), GenesisBackend(_trivial_ik), np.zeros(9), MotionParams(), grasp=HELD)
         types = [s["type"] for s in exe.last_motion_trace["segments"]]
         assert types[1:4] == ["fine", "finger", "normal"]
 
@@ -100,7 +103,7 @@ class TestPickMotionChain:
 
         exe = MotionExecutor()
         traj = exe.pick(_pick_plan(), GenesisBackend(unstable_ik), np.zeros(9),
-                        MotionParams(finger_steps=10))
+                        MotionParams(finger_steps=10), grasp=HELD)
         arm = _segment_frames(traj, 2)[:, :7]
         np.testing.assert_allclose(arm, np.tile([0.5, 0.0, 0.10, 0, 0, 0, 0], (len(arm), 1)),
                                    atol=1e-6)
@@ -132,7 +135,7 @@ class TestPlaceMotionChain:
             retreat_steps=6,
         )
         exe = MotionExecutor()
-        traj = exe.place(plan, GenesisBackend(unstable_open_ik), np.zeros(9), params)
+        traj = exe.place(plan, GenesisBackend(unstable_open_ik), PlanState(np.zeros(9), HELD), params)
 
         segs = exe.last_motion_trace["segments"]
         labels = [s["label"] for s in segs]

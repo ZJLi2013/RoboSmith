@@ -15,6 +15,7 @@ from robotsmith.execution.executor import MotionExecutor
 from robotsmith.motion.params import MotionParams
 from robotsmith.motion.planner import GenesisBackend
 from robotsmith.execution.gate import ExecutionFailed, Refused
+from robotsmith.grasp.transforms import pose_matrix
 from robotsmith.motion.joint_planner import JointPlanner
 from robotsmith.skills import Skill, run_skills
 from robotsmith.skills.registry import SKILL_DEFS, SkillDef
@@ -393,7 +394,7 @@ class TestRegistryDispatch:
     def test_place_carries_the_held_object_along_the_planned_connection(self, gate, monkeypatch):
         starts = []
         monkeypatch.setattr(_FakeExecutor, "place",
-                            lambda self, plan, mp, start, *a, **k: starts.append(np.array(start)) or
+                            lambda self, plan, mp, start, *a, **k: starts.append(np.array(start.q)) or
                             _chain([np.full(9, 2.0)], holding=True))
         motions, state = self._pick_place(gate, _FakeExecutor())
         q0, q_pre = np.full(9, 1.0), np.array([0.0] * 7 + [1.0, 1.0])
@@ -430,6 +431,24 @@ class TestRegistryDispatch:
         assert state["skill_traces"][0]["selected_candidate_index"] == 1 and len(motions) == 2
         assert [z for z, _ in calls] == pytest.approx([0.12, 0.15, 0.15])
         assert [set(posed or ()) for _, posed in calls] == [{"die"}, {"die"}, set()]
+
+    def test_each_candidate_attaches_its_own_grasp_and_place_starts_from_the_measured_hand(self, gate, monkeypatch):
+        grasps, starts = [], []
+        monkeypatch.setattr(_FakeExecutor, "pick",
+                            lambda self, *a, grasp, **k: grasps.append(grasp) or _chain([np.full(9, 1.0)]))
+        monkeypatch.setattr(_FakeExecutor, "place", lambda self, plan, mp, start, *a, **k:
+                            starts.append(start) or _chain([np.full(9, 2.0)], holding=True))
+        plans = self._plans(0.2, 0.3)
+        plans[1].grasp_pos = np.array([0.5, 0.0, 0.15])
+        lifted = iter([False, True])
+        motions, _ = self._pick_then_place(gate, plans, trial=lambda traj, target:
+                                           {"lifted": next(lifted), "lift_m": 0.1, "seconds": 0.5})
+        assert len(motions) == 2 and len(grasps) == 2 and len(starts) == 3
+        for plan, grasp in zip(plans, grasps):
+            np.testing.assert_allclose(pose_matrix(plan.grasp_pos, plan.grasp_quat) @ grasp.t_hand_object,
+                                       pose_matrix(*gate.env.object_pose("die")))
+        # ClearEnv's hand and object both sit at the origin, so a measured binding is the identity.
+        assert all(s.holding.target == "die" and np.allclose(s.holding.t_hand_object, np.eye(4)) for s in starts)
 
     def test_a_placeable_pick_is_unchanged_by_the_place_check(self, gate):
         alone, _, _ = self._pick_only(gate, self._plans(0.2), self._ik)

@@ -4,10 +4,12 @@ import numpy as np
 import pytest
 
 from robotsmith.execution.executor import MotionExecutor
+from robotsmith.execution.gate import Holding
 from robotsmith.grasp.planner import GraspPlan, Waypoint
 from robotsmith.motion import move_linear
 from robotsmith.motion.move_linear import MoveLinear, expand
 from robotsmith.motion.params import MotionParams
+from robotsmith.motion.plan_state import PlanState
 from robotsmith.motion.planner import GenesisBackend
 
 QUAT = np.array([0.0, 1.0, 0.0, 0.0])
@@ -90,10 +92,10 @@ def test_pick_place_and_drag_expand_their_lines_through_move_linear(monkeypatch)
             Waypoint(pos=np.array([0.5, 0.0, 0.3]), quat=QUAT, finger_width=0.0),
         ],
     )
-    exe.pick(plan, planner, _ik(plan.waypoints[0].pos, QUAT, 0.04), params)
+    exe.pick(plan, planner, _ik(plan.waypoints[0].pos, QUAT, 0.04), params, grasp=Holding("die", np.eye(4)))
     assert seen == [("wp1", "refuse")]
     seen.clear()
-    exe.place(plan, planner, np.zeros(9), params)
+    exe.place(plan, planner, PlanState(np.zeros(9), Holding("die", np.eye(4))), params)
     assert seen == [("descend", "keep"), ("retreat", "keep")]
     seen.clear()
     exe.drag_handle(np.array([0.5, 0.0, 0.15]), QUAT, np.array([-0.1, 0.0, 0.0]), planner, np.zeros(9), params)

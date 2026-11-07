@@ -12,8 +12,8 @@ import numpy as np
 
 from robotsmith.execution.gate import Holding, MotionRejected, Refused, Span, VerifiedMotion, poses_of, spans_of
 from robotsmith.grasp.planner import GraspPlan
-from robotsmith.grasp.transforms import pose_matrix
 from robotsmith.motion.joint_planner import JointPlanner
+from robotsmith.motion.plan_state import PlanState, binding
 from robotsmith.skills.base import SkillContext
 from robotsmith.skills.frames import (
     _float_or_none,
@@ -97,10 +97,7 @@ def run_place(ctx: SkillContext) -> VerifiedMotion:
     place_plan, requested_place_z, resolved_place_z = _resolve_place_plan(ctx)
     q0 = np.asarray(ctx.qpos, dtype=np.float64)
     env = ctx.gate.env
-    holding = None
-    if ctx.held:
-        holding = Holding(ctx.held, np.linalg.inv(pose_matrix(*env.hand_pose(q0)))
-                          @ pose_matrix(*env.object_pose(ctx.held)))
+    holding = binding(ctx.held, env.hand_pose(q0), env.object_pose(ctx.held)) if ctx.held else None
     transport, motion, why = None, None, None
     transit, start = [], q0
     if ctx.phase in ("all", "transport"):
@@ -112,9 +109,11 @@ def run_place(ctx: SkillContext) -> VerifiedMotion:
             if ctx.phase == "transport":
                 segments, tail = [], []
             else:
-                result = ctx.executor.place(place_plan, ctx.motion_planner, start, ctx.params, phase="descend")
+                result = ctx.executor.place(place_plan, ctx.motion_planner, PlanState(start, holding), ctx.params,
+                                            phase="descend")
                 segments, tail = result.segments, result.trajectory
-            spans = [Span("transport", 0, len(transit), holding=True)] + spans_of(segments, len(transit))
+            spans = ([Span("transport", 0, len(transit), holding=holding is not None)]
+                     + spans_of(segments, len(transit)))
             motion = ctx.gate.verify(transit + tail, spans, target=ctx.held, q_start=q0,
                                      rest={ctx.skill.target.split(".")[0]}, holding=holding,
                                      poses=poses_of(segments, len(transit)))

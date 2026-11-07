@@ -25,9 +25,11 @@ import numpy as np
 
 from robotsmith.sim.franka import Q_LOWER as _FRANKA_Q_LOWER
 from robotsmith.sim.franka import Q_UPPER as _FRANKA_Q_UPPER
+from robotsmith.execution.gate import Holding
 from robotsmith.motion import gripper, move_linear
 from robotsmith.motion.constants import N_ARM_JOINTS as _N_ARM_JOINTS
 from robotsmith.motion.params import MotionParams
+from robotsmith.motion.plan_state import PlanState, attach, detach
 from robotsmith.motion.planner import MotionPlanner
 
 logger = logging.getLogger(__name__)
@@ -145,16 +147,19 @@ class RuntimeMotionWaypoint:
     # A ``move_linear`` segment and its policy on an IK branch flip; ``None`` is a joint-space move.
     linear: Literal["refuse", "keep"] | None = None
     hold_after_steps: int = 0
-    holding: bool = False
     allow: str | None = None
+    # Applied to the plan state once this segment and its hold end.
+    attach: Holding | None = None
+    detach: bool = False
 
 
 @dataclass
 class MotionChainExecution:
-    """Generated trajectory plus runtime diagnostics."""
+    """Generated trajectory plus runtime diagnostics; ``state`` is where the chain leaves the arm and the hand."""
 
     trajectory: list[np.ndarray]
     q_waypoints: list[np.ndarray]
+    state: PlanState
     segments: list[dict] = field(default_factory=list)
 
 
@@ -311,7 +316,7 @@ def _assemble_trajectory(
 def execute_motion_chain(
     waypoints: list[RuntimeMotionWaypoint],
     motion_planner: MotionPlanner,
-    start_qpos: np.ndarray,
+    start: PlanState,
     params: MotionParams,
     *,
     tail_hold_steps: int = 0,
@@ -319,14 +324,16 @@ def execute_motion_chain(
     """Execute runtime waypoints with seed-continuous IK and diagnostics.
 
     Per-pose IK goes through ``motion_planner.solve_ik``; nothing here checks
-    collisions.
+    collisions. Each segment starts from the plan state's ``q`` and advances it to its end configuration; a
+    segment is ``holding`` when the plan state holds something while it runs.
     """
-    q_targets = [np.asarray(start_qpos, dtype=np.float64).copy()]
+    state = PlanState(np.asarray(start.q, dtype=np.float64).copy(), start.holding)
+    q_targets = [state.q]
     segment_paths: list[list[np.ndarray] | None] = []
     segments: list[dict] = []
 
     for i, wp in enumerate(waypoints):
-        q_from = q_targets[-1]
+        q_from = state.q
         q_to, segment_path, max_joint_step = _solve_segment(
             i,
             wp,
@@ -346,10 +353,15 @@ def execute_motion_chain(
                 "cartesian": wp.linear is not None,
                 "finger_only": wp.finger_only,
                 "hold_after_steps": wp.hold_after_steps,
-                "holding": wp.holding,
+                "holding": state.holding is not None,
                 "allow": wp.allow,
             }
         )
+        state = PlanState(q_to, state.holding)
+        if wp.attach is not None:
+            state = attach(state, wp.attach)
+        if wp.detach:
+            state = detach(state)
 
     _log_segments(waypoints, segments, params, tail_hold_steps)
     return MotionChainExecution(
@@ -357,6 +369,7 @@ def execute_motion_chain(
             waypoints, q_targets, segment_paths, segments, tail_hold_steps
         ),
         q_waypoints=q_targets,
+        state=state,
         segments=segments,
     )
 
