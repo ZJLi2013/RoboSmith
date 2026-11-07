@@ -1,0 +1,7 @@
+{
+ "f5_clutter": {
+  "witness": {"yaw": 45.0, "carry": 0.20},
+  "control": {"yaw": 135.0, "carry": 0.20},
+  "gap": {"of": "wall_a", "yaw_deg": 45.0}
+ }
+}

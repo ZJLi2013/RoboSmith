@@ -38,7 +38,7 @@ def materialize_candidate(
     seed: int | None = None,
     agent_plan: bool = False,
 ) -> ScenarioRuntimePackage:
-    """Reconstruct runtime objects; a path is loaded with ``seed``. With ``agent_plan`` the teacher file is
+    """Reconstruct runtime objects; a path is loaded with ``seed``. With ``agent_plan`` the plan file is
     ignored and every place target gets a frame, since an agent writes the steps at run time."""
 
     candidate = (

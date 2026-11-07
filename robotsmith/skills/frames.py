@@ -2,9 +2,8 @@
 
 The single seam that turns a self-describing spatial reference (``world`` /
 ``articulated`` / ``articulated_opening``) into a live world point, plus the
-open/close handle-drag resolution and the collision-world link exemptions that
-ride on the same asset geometry. Primitives consume world points and link lists
-from here and never re-derive anchoring themselves.
+open/close handle-drag resolution. Primitives consume world points from here and
+never re-derive anchoring themselves.
 """
 
 from __future__ import annotations
@@ -218,39 +217,3 @@ def _resolve_handle_drag(ctx: SkillContext, *, opening: bool):
     move_vec = open_dir_world * (drag.end - slide_now)
     return handle_world, move_vec, joint.child
 
-
-def _handle_links(ctx: SkillContext) -> list[str]:
-    """URDF link names of the touchable handle(s) for the skill's target asset.
-
-    With the handle on its own fixed-jointed link, open/close only needs to exempt
-    this knob link from the collision world — the drawer body stays an obstacle.
-    Returns ``[]`` when the asset has no handle annotation or no per-handle link.
-    """
-    asset = ctx.scene_state.get("assets", {}).get(ctx.skill.target)
-    handles = list(getattr(getattr(asset, "metadata", None), "handles", []) or [])
-    links = [h.get("link") for h in handles if h.get("link")]
-    return list(dict.fromkeys(links))
-
-
-def _manipulated_exempt_links(ctx: SkillContext) -> list[str]:
-    """Moving link(s) of the articulated asset this skill manipulates/targets, to
-    drop from the planner's collision world (phase-aware exemption).
-
-    The contacted/destination part — drawer front, handle neck, tray — must be
-    reachable, so it is the *goal*, not a hard obstacle; the fixed carcass (``base``)
-    stays an obstacle. ``skill.target`` is either the asset itself (open/close drag)
-    or a target_position anchored on one (place into an open tray). Returns ``[]``
-    for non-articulated targets (e.g. tabletop place), leaving the world unchanged.
-    """
-    scene_state = ctx.scene_state
-    assets = scene_state.get("assets", {})
-    target = ctx.skill.target
-    asset = assets.get(target)
-    if asset is None:
-        frame = scene_state.get("target_frames", {}).get(target)
-        parent = getattr(frame, "parent", None)
-        asset = assets.get(parent) if parent else None
-    if asset is None or not getattr(asset, "is_articulated", False):
-        return []
-    link = asset.primary_moving_link
-    return [link] if link else []

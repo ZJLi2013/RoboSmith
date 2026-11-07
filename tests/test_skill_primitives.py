@@ -14,7 +14,10 @@ from robotsmith.assets.schema import UrdfJoint
 from robotsmith.execution.executor import MotionExecutor
 from robotsmith.motion.params import MotionParams
 from robotsmith.motion.planner import GenesisBackend
+from robotsmith.execution.gate import ExecutionFailed, Refused
+from robotsmith.motion.joint_planner import JointPlanner
 from robotsmith.skills import Skill, run_skills
+from robotsmith.skills.registry import SKILL_DEFS, SkillDef
 from robotsmith.assets.geometry import rotate_vec_wxyz
 from robotsmith.skills.frames import (
     _resolve_handle_drag,
@@ -119,8 +122,11 @@ class TestResolveFrame:
 class _FakePlan:
     def __init__(self):
         self.grasp_pos = np.array([0.5, 0.0, 0.12])
-        self.pre_grasp_pos = None
+        self.grasp_quat = np.array([0.0, 1.0, 0.0, 0.0])
+        self.pre_grasp_pos = np.array([0.5, 0.0, 0.2])
+        self.pre_grasp_quat = self.grasp_quat
         self.retreat_pos = None
+        self.waypoints = [SimpleNamespace(pos=self.pre_grasp_pos, quat=self.grasp_quat, finger_width=0.04)]
         self.metadata = {}
 
 
@@ -132,6 +138,15 @@ class _FakePlanner:
         return _FakePlan()
 
 
+def _chain(traj, holding=False, allow=None):
+    return SimpleNamespace(trajectory=traj, segments=[
+        {"label": "seg", "span": [0, len(traj)], "holding": holding, "allow": allow}])
+
+
+def _frames(motions):
+    return [q for m in motions for q in m.trajectory]
+
+
 class _FakeExecutor:
     def __init__(self):
         self.calls = []
@@ -139,11 +154,11 @@ class _FakeExecutor:
 
     def pick(self, *a, **k):
         self.calls.append("pick")
-        return [np.full(9, 1.0)]
+        return _chain([np.full(9, 1.0)])
 
     def place(self, *a, **k):
         self.calls.append("place")
-        return [np.full(9, 2.0)]
+        return _chain([np.full(9, 2.0)], holding=True)
 
     def drag_handle(self, *a, **k):
         self.calls.append(("drag", k.get("action")))
@@ -161,7 +176,7 @@ def _scene_state():
 
 
 class TestRegistryDispatch:
-    def test_dispatch_pick_place_open_close(self):
+    def test_dispatch_pick_place_open_close(self, gate):
         ex = _FakeExecutor()
         skills = [
             Skill("pick", "die"),
@@ -169,16 +184,19 @@ class TestRegistryDispatch:
             Skill("open", "drawer"),
             Skill("close", "drawer"),
         ]
-        traj = run_skills(skills, _FakePlanner(), ex, lambda *a, **k: np.zeros(9),
-                          _scene_state(), MotionParams())
-        assert ex.calls == ["pick", "place", ("drag", "open"), ("drag", "close")]
+        motions = run_skills(skills, _FakePlanner(), ex, lambda *a, **k: np.zeros(9),
+                             _scene_state(), MotionParams(), gate=gate)
+        traj = _frames(motions)
+        # The first place is pick's check that the place is reachable from where the pick ends.
+        assert ex.calls == ["pick", "place", "place", ("drag", "open"), ("drag", "close")]
+        assert [m.gated for m in motions] == [True, True, False, False]
         # Each fake segment is tagged by a distinct constant qpos (pick=1, place=2,
-        # drag=3). place may prepend a base-aim transit, so assert the markers and
-        # their order rather than an exact length.
+        # drag=3). pick and place prepend their planned approach and transport, so assert
+        # the markers and their order rather than an exact length.
         markers = [t[-1] for t in traj if np.allclose(t, t[-1])]
-        assert markers == [1.0, 2.0, 3.0, 3.0]
+        assert markers == [0.0, 1.0, 2.0, 3.0, 3.0]
 
-    def test_pick_with_every_candidate_filtered_out_records_counts_and_holds(self):
+    def test_pick_with_every_candidate_filtered_out_records_counts_and_is_refused(self, gate):
         class EmptyPlanner(_FakePlanner):
             last_filter_counts = {"raw": 8, "z_reject": 8, "accepted": 0}
 
@@ -186,13 +204,14 @@ class TestRegistryDispatch:
                 return []
 
         ex, state = _FakeExecutor(), _scene_state()
-        traj = run_skills([Skill("pick", "die")], EmptyPlanner(), ex, lambda *a, **k: np.zeros(9),
-                          state, MotionParams())
-        assert ex.calls == [] and len(traj) > 0
+        with pytest.raises(Refused):
+            run_skills([Skill("pick", "die")], EmptyPlanner(), ex, lambda *a, **k: np.zeros(9),
+                       state, MotionParams(), gate=gate)
+        assert ex.calls == []
         trace = state["skill_traces"][0]
         assert trace["no_candidates"] and trace["filter_counts"]["z_reject"] == 8
 
-    def _trial_run(self, lifted, try_all=False):
+    def _trial_run(self, gate, lifted, try_all=False):
         class ThreePlans(_FakePlanner):
             def plan(self, *a, **k):
                 plans = [_FakePlan() for _ in range(3)]
@@ -204,39 +223,247 @@ class TestRegistryDispatch:
 
         def trial(traj, target):
             calls.append(target)
+            gate.env.writes += 1
             return {"lifted": lifted[len(calls) - 1], "lift_m": 0.1, "seconds": 0.5}
 
         ex, state = _FakeExecutor(), _scene_state()
         state["grasp_trial"], state["grasp_trial_all"] = trial, try_all
-        traj = run_skills([Skill("pick", "die")], ThreePlans(), ex, lambda *a, **k: np.zeros(9), state, MotionParams())
-        return traj, state["skill_traces"][0], calls
+        try:
+            motions = run_skills([Skill("pick", "die")], ThreePlans(), ex, lambda *a, **k: np.zeros(9), state,
+                                 MotionParams(), gate=gate)
+        except (Refused, ExecutionFailed):
+            motions = None
+        return motions, state["skill_traces"][0], calls
 
-    def test_trial_keeps_the_first_candidate_that_lifts(self):
-        traj, trace, calls = self._trial_run([False, True, True])
+    def test_trial_keeps_the_first_candidate_that_lifts(self, gate):
+        motions, trace, calls = self._trial_run(gate, [False, True, True])
         assert calls == ["die", "die"] and trace["selected_candidate_index"] == 1
         assert [t["lifted"] for t in trace["trials"]] == [False, True] and trace["trial_seconds"] == 1.0
-        assert np.allclose(traj[-1], 1.0)
+        assert np.allclose(motions[0].trajectory[-1], 1.0)
 
-    def test_trial_counts_a_candidate_whose_motion_fails_as_not_lifted(self, monkeypatch):
+    def test_trial_runs_between_two_gate_passes(self, gate):
+        motions, _, _ = self._trial_run(gate, [True])
+        assert motions[0].fingerprint == gate.env.state_fingerprint() == "1"
+        gate.check_current(motions[0])
+
+    def test_trial_counts_a_candidate_whose_motion_fails_as_not_lifted(self, gate, monkeypatch):
         def broken(*a, **k):
             raise RuntimeError("wp1 IK discontinuity")
 
         monkeypatch.setattr(_FakeExecutor, "pick", broken)
-        _, trace, calls = self._trial_run([True, True, True])
-        assert calls == [] and trace["no_trial_success"]
+        motions, trace, calls = self._trial_run(gate, [True, True, True])
+        assert motions is None and calls == [] and trace["no_trial_success"]
         assert [t["motion_error"] for t in trace["trials"]] == ["wp1 IK discontinuity"] * 3
 
-    def test_trial_all_tries_every_candidate_and_no_success_holds(self):
-        _, trace, calls = self._trial_run([False, True, True], try_all=True)
-        assert len(calls) == 3 and trace["selected_candidate_index"] == 1
-        traj, trace, _ = self._trial_run([False, False, False])
-        assert trace["no_trial_success"] and trace["selected_candidate_index"] is None
-        assert not np.allclose(traj[-1], 1.0)
+    def test_a_candidate_the_gate_rejects_is_not_tried(self, gate, monkeypatch):
+        seen = []
 
-    def test_unknown_skill_raises(self):
+        def contacts_at(q, held=None, placed=None):
+            seen.append(float(q[0]))
+            return [(("robot", "hand"), ("wall", "base"))] if len(seen) == 1 else []
+
+        monkeypatch.setattr(gate.env, "contacts_at", contacts_at, raising=False)
+        motions, trace, calls = self._trial_run(gate, [True, True, True])
+        assert calls == ["die"] and trace["selected_candidate_index"] == 1
+        assert trace["trials"][0]["gate"] == {"segment": "seg", "index": 0, "reason": "collision",
+                                              "pair": [["robot", "hand"], ["wall", "base"]]}
+
+    def test_trial_all_tries_every_candidate_and_none_lifting_fails_the_step(self, gate):
+        _, trace, calls = self._trial_run(gate, [False, True, True], try_all=True)
+        assert len(calls) == 3 and trace["selected_candidate_index"] == 1
+        motions, trace, _ = self._trial_run(gate, [False, False, False])
+        assert motions is None and trace["no_trial_success"] and trace["selected_candidate_index"] is None
+
+    def test_trial_all_verifies_the_chosen_motion_after_the_last_trial(self, gate):
+        motions, trace, calls = self._trial_run(gate, [True, True, True], try_all=True)
+        assert len(calls) == 3 and trace["selected_candidate_index"] == 0
+        assert motions[0].fingerprint == gate.env.state_fingerprint() == "3"
+        gate.check_current(motions[0])
+
+    def test_trial_all_skips_a_lifter_the_final_check_rejects(self, gate, monkeypatch):
+        rejected = []
+
+        def contacts_at(q, held=None, placed=None):
+            if gate.env.writes == 3 and not rejected:
+                rejected.append(float(q[0]))
+                return [(("robot", "hand"), ("wall", "base"))]
+            return []
+
+        monkeypatch.setattr(gate.env, "contacts_at", contacts_at, raising=False)
+        motions, trace, _ = self._trial_run(gate, [True, True, False], try_all=True)
+        assert trace["selected_candidate_index"] == 1 and rejected
+        assert trace["trials"][0]["reverify"]["pair"] == [["robot", "hand"], ["wall", "base"]]
+        gate.check_current(motions[0])
+
+    def _pick_place(self, gate, ex):
+        state = {**_scene_state(), "positions": {"die": np.array([0.5, 0.0, 0.0]), "mat": np.array([0.4, -0.2, 0.0])}}
+        return run_skills([Skill("pick", "die"), Skill("place", "mat")], _FakePlanner(), ex,
+                          lambda *a, **k: np.zeros(9), state, MotionParams(), gate=gate), state
+
+    def _pick_only(self, gate, plans, ik, trial=None):
+        class Plans(_FakePlanner):
+            def plan(self, *a, **k):
+                return plans
+
+        ex, state = _FakeExecutor(), _scene_state()
+        starts = []
+        pick = ex.pick
+        ex.pick = lambda plan, mp, start, *a, **k: starts.append(np.array(start)) or pick()
+        state["grasp_trial"] = trial
+        try:
+            motions = run_skills([Skill("pick", "die")], Plans(), ex, ik, state, MotionParams(), gate=gate)
+        except (Refused, ExecutionFailed):
+            motions = None
+        return motions, state["skill_traces"][0], starts
+
+    def _pick_then_place(self, gate, plans, trial=None, frames=None):
+        class Plans(_FakePlanner):
+            def plan(self, *a, **k):
+                return plans
+
+        state = {**_scene_state(), "positions": {"die": np.array([0.5, 0.0, 0.0]), "mat": np.array([0.4, -0.2, 0.0])},
+                 "grasp_trial": trial, "target_frames": frames or {}}
+        try:
+            motions = run_skills([Skill("pick", "die"), Skill("place", "mat")], Plans(), _FakeExecutor(), self._ik,
+                                 state, MotionParams(), gate=gate)
+        except (Refused, ExecutionFailed):
+            motions = None
+        return motions, state
+
+    @staticmethod
+    def _fake_place(gate, monkeypatch, refuse_below=None):
+        """Replace the place primitive; return the (held_place_z, posed objects) of each call."""
+        calls = []
+
+        def place(ctx):
+            calls.append((ctx.held_place_z, gate.env.poses[-1][1] if gate.env.poses else None))
+            if refuse_below is not None and ctx.held_place_z < refuse_below:
+                raise Refused("search_exhausted", {"reason": "no transport to the standoff"})
+            return ctx.gate.ungated([np.asarray(ctx.qpos)])
+
+        monkeypatch.setitem(SKILL_DEFS, "place", SkillDef(place, SKILL_DEFS["place"].post, SKILL_DEFS["place"].settle_s))
+        return calls
+
+    @staticmethod
+    def _plans(*xs):
+        plans = [_FakePlan() for _ in xs]
+        for i, (p, x) in enumerate(zip(plans, xs)):
+            p.metadata = {"candidate_index": i}
+            p.waypoints = [SimpleNamespace(pos=np.array([x, 0.0, 0.2]), quat=p.grasp_quat, finger_width=0.04)]
+        return plans
+
+    @staticmethod
+    def _ik(pos, quat, finger, init_qpos=None):
+        return np.r_[np.full(7, pos[0]), 0.0, 0.0]
+
+    def test_pick_reaches_the_first_waypoint_along_the_planned_connection(self, gate):
+        motions, trace, starts = self._pick_only(gate, self._plans(0.2), self._ik)
+        q_pre = np.r_[np.full(7, 0.2), 0.0, 0.0]
+        line = JointPlanner(gate.env, gate).connect(np.zeros(9), q_pre, target="die", label="approach").motion.trajectory
+        pick = motions[0]
+        assert len(line) > 1 and np.allclose(pick.trajectory[:len(line)], line) and np.allclose(starts[0], q_pre)
+        assert pick.spans[0].label == "approach" and pick.spans[0].end == len(line)
+        assert trace["trials"][0]["approach"]["ok"]
+
+    def test_a_pick_candidate_whose_connection_is_refused_is_not_tried(self, gate, monkeypatch):
+        monkeypatch.setattr(gate.env, "contacts_at",
+                            lambda q, held=None, placed=None:
+                            [(("robot", "hand"), ("wall", "base"))] if np.allclose(q[:7], 0.2) else [],
+                            raising=False)
+        tried = []
+        _, trace, _ = self._pick_only(gate, self._plans(0.2, 0.3), self._ik,
+                                      trial=lambda traj, target: tried.append(target) or
+                                      {"lifted": True, "lift_m": 0.1, "seconds": 0.5})
+        first, second = trace["trials"]
+        assert not first["approach"]["ok"] and first["approach"]["reason"] == "invalid_goal" and "steps" not in first
+        assert second["approach"]["ok"] and tried == ["die"] and trace["selected_candidate_index"] == 1
+
+    def test_a_pick_candidate_the_gate_rejects_spends_no_connection(self, gate, monkeypatch):
+        monkeypatch.setattr(gate.env, "contacts_at",
+                            lambda q, held=None, placed=None:
+                            [(("robot", "hand"), ("wall", "base"))] if np.allclose(q, 1.0) else [],
+                            raising=False)
+        connects = []
+        connect = JointPlanner.connect
+        monkeypatch.setattr(JointPlanner, "connect", lambda self, *a, **k: connects.append(a) or connect(self, *a, **k))
+        motions, trace, _ = self._pick_only(gate, self._plans(0.2, 0.3), self._ik)
+        assert motions is None and connects == []
+        assert [t["gate"]["segment"] for t in trace["trials"]] == ["seg", "seg"]
+
+    def test_place_carries_the_held_object_along_the_planned_connection(self, gate, monkeypatch):
+        starts = []
+        monkeypatch.setattr(_FakeExecutor, "place",
+                            lambda self, plan, mp, start, *a, **k: starts.append(np.array(start)) or
+                            _chain([np.full(9, 2.0)], holding=True))
+        motions, state = self._pick_place(gate, _FakeExecutor())
+        q0, q_pre = np.full(9, 1.0), np.array([0.0] * 7 + [1.0, 1.0])
+        line = JointPlanner(gate.env, gate).connect(q0, q_pre, target="die", label="transport").motion.trajectory
+        place = motions[1]
+        assert np.allclose(place.trajectory[:len(line)], line) and np.allclose(starts[0], q_pre)
+        assert place.spans[0].label == "transport" and place.spans[0].holding
+        assert state["skill_traces"][1]["transport"]["ok"] and state["skill_traces"][1]["transport"]["direct"]
+
+    def test_a_pick_whose_every_place_is_refused_is_refused_with_the_place_records(self, gate, monkeypatch):
+        monkeypatch.setattr(gate.env, "contacts_at",
+                            lambda q, held=None, placed=None:
+                            [(("die", "base"), ("barrier", "base"))] if held and np.allclose(q[:7], 0.0) else [],
+                            raising=False)
+        ex = _FakeExecutor()
+        with pytest.raises(Refused) as exc:
+            self._pick_place(gate, ex)
+        assert exc.value.label == "search_exhausted" and ex.calls == ["pick"] and gate.env.writes == 0
+        (trial,) = exc.value.evidence["trials"]
+        place = trial["place"]
+        assert not place["ok"] and place["label"] == "search_exhausted" and "steps" not in trial
+        assert not place["transport"]["ok"] and place["transport"]["queries"] >= 1 and place["transport"]["reason"]
+
+    def test_a_pick_candidate_whose_place_is_refused_is_not_tried(self, gate, monkeypatch):
+        calls = self._fake_place(gate, monkeypatch, refuse_below=0.13)
+        plans = self._plans(0.2, 0.3)
+        plans[1].grasp_pos = np.array([0.5, 0.0, 0.15])
+        tried = []
+        motions, state = self._pick_then_place(gate, plans, trial=lambda traj, target: tried.append(target) or
+                                               {"lifted": True, "lift_m": 0.1, "seconds": 0.5})
+        first, second = state["skill_traces"][0]["trials"]
+        assert first["place"] == {"ok": False, "label": "search_exhausted", "reason": "no transport to the standoff"}
+        assert "steps" not in first and second["place"] == {"ok": True} and tried == ["die"]
+        assert state["skill_traces"][0]["selected_candidate_index"] == 1 and len(motions) == 2
+        assert [z for z, _ in calls] == pytest.approx([0.12, 0.15, 0.15])
+        assert [set(posed or ()) for _, posed in calls] == [{"die"}, {"die"}, set()]
+
+    def test_a_placeable_pick_is_unchanged_by_the_place_check(self, gate):
+        alone, _, _ = self._pick_only(gate, self._plans(0.2), self._ik)
+        motions, state = self._pick_then_place(gate, self._plans(0.2))
+        assert np.array_equal(np.array(motions[0].trajectory), np.array(alone[0].trajectory))
+        assert motions[0].spans == alone[0].spans
+        assert [t["skill"] for t in state["skill_traces"]] == ["pick", "place"]
+        assert state["skill_traces"][0]["trials"][0]["place"] == {"ok": True}
+        gate.check_current(motions[0])
+
+    def test_no_place_check_before_a_place_on_a_dynamic_anchor(self, gate, monkeypatch):
+        calls = self._fake_place(gate, monkeypatch)
+        motions, state = self._pick_then_place(gate, self._plans(0.2),
+                                               frames={"mat": SimpleNamespace(kind="articulated_opening")})
+        assert len(motions) == 2 and "place" not in state["skill_traces"][0]["trials"][0]
+        assert [posed for _, posed in calls] == [None]
+
+    def test_place_lets_the_held_object_rest_on_the_target_entity_of_a_surface(self, gate, monkeypatch):
+        monkeypatch.setattr(_FakeExecutor, "place",
+                            lambda self, *a, **k: _chain([np.full(9, 0.3)], holding=True, allow="rest"))
+        monkeypatch.setattr(gate.env, "contacts_at",
+                            lambda q, held=None, placed=None:
+                            [(("die", "base"), ("mat", "base"))] if np.allclose(q, 0.3) else [],
+                            raising=False)
+        motions = run_skills([Skill("pick", "die"), Skill("place", "mat.top")], _FakePlanner(), _FakeExecutor(),
+                             lambda *a, **k: np.zeros(9), {**_scene_state(), "positions": {
+                                 "die": np.array([0.5, 0.0, 0.0]), "mat.top": np.array([0.4, -0.2, 0.0])}},
+                             MotionParams(), gate=gate)
+        assert len(motions) == 2
+
+    def test_unknown_skill_raises(self, gate):
         with pytest.raises(ValueError):
             run_skills([Skill("teleport", "die")], _FakePlanner(), _FakeExecutor(),
-                       lambda *a, **k: np.zeros(9), _scene_state(), MotionParams())
+                       lambda *a, **k: np.zeros(9), _scene_state(), MotionParams(), gate=gate)
 
 
 class TestDragHandleMotion:

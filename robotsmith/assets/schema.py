@@ -71,9 +71,8 @@ def parse_urdf_joints(urdf_path: Path) -> list[UrdfJoint]:
 class UrdfCollisionBox:
     """One axis-aligned collision box parsed from a URDF link, in the link frame.
 
-    Spheres/cylinders are approximated by their bounding box so a box-only
-    collision world (rocRobo ``world`` supports box + halfspace) can consume
-    them conservatively. ``size`` is the full box size (not half-extent).
+    Spheres/cylinders are approximated by their bounding box, conservatively.
+    ``size`` is the full box size (not half-extent).
     """
 
     link: str

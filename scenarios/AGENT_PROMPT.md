@@ -62,12 +62,12 @@ Combine with `all_of: [...]`, `any_of: [...]`, `not: {...}`.
 The success tree is hidden from the executor; write it so that states which do
 not complete the task are false.
 
-## Teacher plan (optional)
+## Plan file (optional)
 
-Scripted rollouts read `scenarios/teacher/<same name>.yaml`:
+`--planner file` runs the steps in `scenarios/plans/<same name>.yaml`:
 
 ```yaml
-teacher: apple_into_drawer
+name: apple_into_drawer
 steps:
   - open: drawer
   - pick: apple

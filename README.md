@@ -71,8 +71,8 @@ What the MVP needs, in order:
   simulation; published by hash to Hugging Face.
 - **Scenarios:** YAML with objects, relations, a success tree hidden from the executor, and playground / test seeds.
 - **Manipulation:** pick by geometric candidates tried in simulation, with an agent repair loop when all fail; place
-  on surfaces, into shelves and drawers; prismatic open / close; free segments planned by
-  [rocRobo](https://github.com/ZJLi2013/rocRobo).
+  on surfaces, into shelves and drawers; prismatic open / close; free segments interpolate in joint space without
+  a collision check.
 - **Verification:** each step and the task are judged by the same predicates on the simulator state, re-judgeable
   offline.
 

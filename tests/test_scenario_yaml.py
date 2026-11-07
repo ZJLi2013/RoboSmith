@@ -1,6 +1,7 @@
 """YAML scenarios load, and their success trees give the approved truth values
 (the task-semantics tables of the scenario contract)."""
 
+import random
 import shutil
 from pathlib import Path
 
@@ -10,6 +11,7 @@ import pytest
 
 from robotsmith.assets import derive, store
 from robotsmith.assets.library import AssetLibrary
+from robotsmith.scenario import relations
 from robotsmith.scenario.load import SCHEMA, _read, load_scenario
 from robotsmith.scenario_runtime import materialize_candidate
 from robotsmith.tasks import evaluate_success
@@ -70,7 +72,7 @@ def _success(pkg, moved: dict, joints: dict | None = None) -> bool:
 
 
 @pytest.mark.parametrize("name", sorted(p.stem for p in SCENARIOS.glob("*.yaml")))
-def test_scenario_loads_with_teacher(name):
+def test_scenario_loads_with_its_plan(name):
     pkg = _package(name)
     assert pkg.legacy_task.skills
     assert all(o.fixed_position is not None for o in pkg.legacy_scene.objects)
@@ -131,3 +133,29 @@ def test_scenario_refuses_a_draft_asset(tmp_path):
                     "task: {instruction: x, success: {lifted: {object: die, height: 0.1}}}\n")
     with pytest.raises(store.AssetNotAdmitted, match="die_01: no llm_review on the current build"):
         load_scenario(path, seed=0, library=AssetLibrary(tmp_path / "assets"))
+
+
+def _offset_scene(yaw: float) -> list[dict]:
+    return [{"id": "shelf", "asset": "two_layer_supporter", "on": "support", "anchor_xy": [0.5, 0.1], "yaw_deg": yaw},
+            {"id": "die", "asset": "die_01", "on": "support",
+             "offset_from": {"of": "shelf", "x": [0.0, 0.02], "y": [0.05, 0.06]}}]
+
+
+@pytest.mark.parametrize("yaw", [0.0, 90.0])
+def test_offset_from_samples_in_the_fixture_frame(yaw):
+    library = AssetLibrary(ASSETS)
+    c, s = np.cos(np.radians(yaw)), np.sin(np.radians(yaw))
+    for seed in range(5):
+        placed = relations.solve(_offset_scene(yaw), library, random.Random(seed)).placements
+        d = np.subtract(placed["die"].position[:2], placed["shelf"].position[:2])
+        local = (c * d[0] + s * d[1], -s * d[0] + c * d[1])
+        assert -1e-9 <= local[0] <= 0.02 + 1e-9 and 0.05 - 1e-9 <= local[1] <= 0.06 + 1e-9
+    again = relations.solve(_offset_scene(yaw), library, random.Random(4)).placements
+    assert again["die"] == placed["die"]
+
+
+def test_offset_from_needs_a_placed_fixture():
+    objects = _offset_scene(0.0) + [{"id": "die2", "asset": "die_01", "on": "support",
+                                     "offset_from": {"of": "die", "x": [0, 0], "y": [0, 0]}}]
+    with pytest.raises(relations.SolveError, match="placed fixture"):
+        relations.solve(objects, AssetLibrary(ASSETS), random.Random(0))

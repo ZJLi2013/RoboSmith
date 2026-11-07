@@ -128,7 +128,7 @@ def record_episode(
 
         gripper_cmd = float(target_qpos[7])
         env.franka.control_dofs_position(target_qpos, env.motors_dof)
-        env.scene.step()
+        env.step()
 
         finger_next = to_numpy(
             env.franka.get_dofs_position(env.finger_dof)

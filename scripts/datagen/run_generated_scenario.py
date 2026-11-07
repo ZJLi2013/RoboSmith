@@ -50,7 +50,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--n-episodes", type=int, default=1)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--settle-steps", type=int, default=30)
-    parser.add_argument("--planner", choices=("teacher", "agent"), default="teacher")
+    parser.add_argument("--planner", choices=("file", "agent"), default="file")
     parser.add_argument("--role", choices=("certifier", "baseline"), default="certifier",
                         help="with --planner agent: certifier sees the success tree, baseline does not")
     return parser.parse_args()
@@ -126,14 +126,18 @@ def run_scenario_smoke(
                 env_state_names=env_state_names,
             )
         episode_frame_counts[ep] = result.frame_count
-        success, judge_state = evaluate_scenario_task(
-            env,
-            package.legacy_task,
-            initial_positions=result.initial_positions,
-            reference_positions=target_positions,
-            hold=result.final_qpos,
-            window=result.final_window,
-        )
+        if result.stopped is not None:
+            # Judging would settle, i.e. step physics the gate never saw; a stopped episode fails as it stands.
+            success, judge_state = False, {"stopped": _json_safe(result.stopped)}
+        else:
+            success, judge_state = evaluate_scenario_task(
+                env,
+                package.legacy_task,
+                initial_positions=result.initial_positions,
+                reference_positions=target_positions,
+                hold=result.final_qpos,
+                window=result.final_window,
+            )
         final_positions = collect_object_positions(env)
         episodes.append({
             "episode_index": ep,
@@ -148,10 +152,12 @@ def run_scenario_smoke(
             ),
             "handoffs": _json_safe(result.handoffs),
             "failed_step": None if success else _json_safe(handoff.first_failure(result.handoffs)),
-            "failed_leaves": [] if success else failed_leaves(package.legacy_task.success, judge_state),
+            "failed_leaves": ([] if success or result.stopped is not None
+                              else failed_leaves(package.legacy_task.success, judge_state)),
             **({"planner": planner_record.to_dict()} if planner_record is not None else {}),
         })
-        dataset.save_episode()
+        if result.frame_count:
+            dataset.save_episode()
 
     if hasattr(dataset, "consolidate"):
         dataset.consolidate(run_compute_stats=True)
@@ -160,7 +166,7 @@ def run_scenario_smoke(
     dataset_root = Path(dataset.root)
     videos = copy_episode_videos(
         dataset_root,
-        [ep["episode_index"] for ep in episodes],
+        [ep["episode_index"] for ep in episodes if ep["frame_count"]],
         config.output_dir / "videos",
         package.legacy_task.name,
         None,

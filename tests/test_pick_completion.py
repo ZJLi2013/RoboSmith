@@ -89,8 +89,14 @@ class _Env:
         self.placed_map, self.object_heights, self.asset_map, self.object_quats = {}, {}, {}, {}
         self.table_surface_z, self.articulated_joint_dofs, self.planner = 0.775, {}, object()
 
+    def step(self):
+        self.scene.step()
+
     def reset(self, obj_xyz_map, *, settle_steps):
         pass
+
+    def state_fingerprint(self):
+        return "s"
 
     def get_joint_positions(self):
         return {}
@@ -108,7 +114,8 @@ def test_finger_contacts_name_each_finger_once_and_drop_invalid_or_foreign_links
 
 def _picks(monkeypatch, env, n, lift_per_pick, success, bindings=None):
     """Each pick records 2 frames, closes both fingers on the die and raises it by ``lift_per_pick``."""
-    monkeypatch.setattr(runner, "plan_segment", lambda skill, *a, **kw: ([np.zeros(9)] * 2, None, None))
+    monkeypatch.setattr(runner, "plan_segment",
+                        lambda skill, *a, **kw: (kw["gate"].ungated([np.zeros(9)] * 2), None, None))
 
     def record(env, dataset, seg, task_spec, **kw):
         env.scene.t += len(seg)

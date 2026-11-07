@@ -12,7 +12,7 @@ from robotsmith.scenario.specs import SceneSpec, TaskSpec
 
 @dataclass(frozen=True)
 class ScenarioCandidate:
-    """Scene, task and optional teacher intents solved for one seed."""
+    """Scene, task and optional plan-file intents solved for one seed."""
 
     source_path: Path
     scene: SceneSpec

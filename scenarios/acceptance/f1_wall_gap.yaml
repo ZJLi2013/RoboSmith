@@ -1,0 +1,14 @@
+scenario: acc_f1_wall_gap
+robot: franka
+scene:
+  support: table_simple
+  objects:
+    - {id: wall, asset: wall_01, on: support, anchor_xy: [0.55, 0.12], yaw_deg: 0}
+    # Wall half-thickness 10 mm + die half-width 25 mm: a 5-40 mm gap between die and wall.
+    - {id: die, asset: die_01, on: support, offset_from: {of: wall, x: [-0.075, -0.04], y: [-0.12, 0.12]}}
+    - {id: mat, asset: mat_01, on: support, anchor_xy: [0.42, -0.22], yaw_deg: 0}
+task:
+  instruction: Put the die on the mat.
+  success:
+    on: {object: die, surface: mat.top}
+split: {playground: [0, 9], test: [100, 119]}

@@ -30,7 +30,7 @@ def _release_frame(seg) -> int:
 
 def check(skill, phase: str, seg, samples: list[dict], *, held: str | None,
           held_start=None, target=None, joints_before=None, joints_after=None,
-          trace: dict | None = None, rocrobo: bool = False) -> dict:
+          trace: dict | None = None) -> dict:
     trace = trace or {}
     entry: dict = {"skill": skill.name, "phase": phase, "target": skill.target, "object": held}
     q = np.asarray([s["q"] for s in samples], dtype=float) if samples else np.zeros((0, 7))
@@ -64,7 +64,6 @@ def check(skill, phase: str, seg, samples: list[dict], *, held: str | None,
         release_frame=release if release < len(dist) else None,
         first_loss_frame=first_loss,
         max_dist_before_release_m=round(float(carry.max()), 4) if carry.size else None,
-        rocrobo=rocrobo,
         cartesian=[s.get("cartesian") for s in trace.get("motion_trace", {}).get("segments", [])],
     )
     if first_loss is not None:

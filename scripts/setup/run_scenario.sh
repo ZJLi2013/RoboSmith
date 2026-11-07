@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -eu
 
-# Parametrized rocRobo feature1 e2e launcher (RoboSmith + rocRobo sidecar).
+# Parametrized e2e launcher: runs one scenario in the RoboSmith image.
 # This script is the canonical launcher that fills in a scenario payload.
 #
 # Only the IMAGE tag differs per GPU arch. Defaults target MI300 / gfx942; for MI350 (gfx950) swap the image:
@@ -9,7 +9,6 @@ set -eu
 #
 # `--smoke` is the only implemented rollout path in run_generated_scenario.py
 # (it still runs the full episode + video + LeRobot dataset; the name is legacy).
-# Requires the rocrobo_dev serve sidecar to be running.
 
 NAME="${NAME:-f1_m1}"
 SCENARIO="${SCENARIO:-scenarios/pick_place_onto_supporter.yaml}"
@@ -18,12 +17,6 @@ SEED="${SEED:-0}"
 EPISODES="${EPISODES:-1}"
 REPO="${REPO:-$(cd "$(dirname "$0")/../.." && pwd)}"
 HF_CACHE="${HF_CACHE:-$HOME/.cache/huggingface}"
-# rocRobo sidecar paths inside the rocrobo_dev container. Canonical layout mounts
-# the host rocRobo repo at /rocrobo; overridable only if a node renames that
-# mount. (The legacy RocRobSim /rocrobsim layout is retired.)
-ROCROBO_WORKDIR="${ROCROBO_WORKDIR:-/rocrobo}"
-ROCROBO_PYTHONPATH="${ROCROBO_PYTHONPATH:-${ROCROBO_WORKDIR}/rocRobo/core}"
-ROCROBO_ASSETS="${ROCROBO_ASSETS:-${ROCROBO_WORKDIR}/pyroki/examples/assets}"
 
 docker rm -f "$NAME" >/dev/null 2>&1 || true
 
@@ -32,14 +25,8 @@ docker run -d --name "$NAME" \
   --security-opt seccomp=unconfined --ipc=host --shm-size=24g \
   -e HIP_VISIBLE_DEVICES=0 \
   -e PYTHONPATH=/workspace/robotsmith \
-  -e ROCROBO_BACKEND=1 \
-  -e ROCROBO_WORKDIR="$ROCROBO_WORKDIR" \
-  -e ROCROBO_PYTHONPATH="$ROCROBO_PYTHONPATH" \
-  -e ROCROBO_ASSETS="$ROCROBO_ASSETS" \
   -v "$REPO":/workspace/robotsmith \
   -v "$HF_CACHE":/root/.cache/huggingface \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v /usr/bin/docker:/usr/bin/docker:ro \
   "$IMAGE" \
   bash -lc "cd /workspace/robotsmith && python -m robotsmith.assets.fetch && python scripts/datagen/run_generated_scenario.py --scenario $SCENARIO --output-dir output/$NAME --n-episodes $EPISODES --seed $SEED --smoke"
 

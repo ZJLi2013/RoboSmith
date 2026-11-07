@@ -85,25 +85,11 @@ RUN python -m pip install "lerobot==0.4.4" \
     && python -m pip install --force-reinstall \
       "scikit-image>=0.22" "numpy==2.1.2" "setuptools<81"
 
-# GraspGen (learned grasp) layer for gfx942.
-#
-# GraspGen/PointTransformerV3 ROCm compatibility (mirrors docker/Dockerfile
-# §spconv and docs/quick-start.md §3):
-# - Use spconv_rocm (NOT upstream spconv-cu120), built from source against this
-#   image's ROCm 6.4.3 / PyTorch 2.6 toolchain.
-# - Use the repo torch_scatter shim (pure-PyTorch segment_csr), NOT PyG ROCm
-#   wheels which are ABI-fragile across ROCm images.
-# - GraspGen checkpoints must be converted to the spconv_rocm 3D weight layout
-#   via scripts/setup/_convert_spconv_ckpt.py (produces *_rocm.pth) and the
-#   config must point at the *_rocm.pth files.
-# - DO NOT build/install GraspGen's pointnet2_ops here. The Franka Panda model
-#   uses the PTV3/spconv_rocm backbone and never executes a pointnet2 op;
-#   robotsmith/grasp/graspgen_wrapper.py::_patch_pointnet2_import_for_rocm()
-#   stubs `pointnet2_ops` in sys.modules before importing grasp_server, so its
-#   import-time `from pointnet2_ops import _ext` is satisfied without the CUDA
-#   JIT. Compiling that _ext on ROCm is unnecessary and will fail — adding such
-#   a step is a recurring mis-fix; verified end-to-end (load + inference) on
-#   gfx942 without it.
+# Former GraspGen (learned grasp) dependencies. GraspGen has been removed from
+# the code and nothing in the repository imports these packages; the layer only
+# keeps the published gfx942-rocm6.4.3-genesis0.4.5 image reproducible. Drop it,
+# with scripts/setup/_install_scatter_shim.py, at the next image rebuild: that
+# rebuild has to re-check the Genesis 0.4.5 numpy/scikit-image pins anyway.
 # numpy/scikit-image/setuptools are re-pinned afterwards because the
 # diffusers/transformers/huggingface-hub deps pull a newer numpy that would
 # otherwise reintroduce the Genesis 0.4.5 skimage ABI break.

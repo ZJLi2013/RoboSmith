@@ -19,6 +19,7 @@ import numpy as np
 
 from robotsmith.grasp.planner import GraspPlan
 from robotsmith.motion.chain import (
+    MotionChainExecution,
     RuntimeMotionWaypoint,
     classify_segments,
     execute_motion_chain,
@@ -64,8 +65,8 @@ def _open_drag_waypoints(
         RuntimeMotionWaypoint(
             pos=handle, quat=grasp_quat, finger_width=finger_open,
             # Straight-down Cartesian: descend onto the handle vertically
-            # (no horizontal force, no plan_motion curve); goal on the handle.
-            label="descend", cartesian=True,
+            # (no horizontal force, no joint-space curve); goal on the handle.
+            label="descend", linear="keep",
         ),
         RuntimeMotionWaypoint(
             pos=handle, quat=grasp_quat, finger_width=finger_closed,
@@ -75,7 +76,7 @@ def _open_drag_waypoints(
         ),
         RuntimeMotionWaypoint(
             pos=target, quat=grasp_quat, finger_width=finger_closed,
-            label="drag", cartesian=True,
+            label="drag", linear="keep",
         ),
         RuntimeMotionWaypoint(
             pos=target + back * retreat_height, quat=grasp_quat,
@@ -83,7 +84,7 @@ def _open_drag_waypoints(
             # Straight-up Cartesian lift: keeps the gripper vertical so it
             # slides off the neck with no horizontal force on the drawer,
             # then dwell so the drawer settles before the fingers open.
-            cartesian=True,
+            linear="keep",
             hold_after_steps=params.contact_settle_steps,
         ),
         RuntimeMotionWaypoint(
@@ -127,13 +128,13 @@ def _close_drag_waypoints(
         RuntimeMotionWaypoint(
             pos=contact, quat=grasp_quat, finger_width=finger_closed,
             # Straight-down Cartesian: descend onto the contact point
-            # vertically (no horizontal force, no plan_motion curve into
+            # vertically (no horizontal force, no joint-space curve into
             # the cabinet); the goal sits on the handle.
-            label="descend", cartesian=True,
+            label="descend", linear="keep",
         ),
         RuntimeMotionWaypoint(
             pos=target, quat=grasp_quat, finger_width=finger_closed,
-            label="push", cartesian=True,
+            label="push", linear="keep",
             # Dwell in contact so the drawer's velocity decays before the
             # gripper backs off, else stored contact energy springs it open
             # again.
@@ -145,7 +146,7 @@ def _close_drag_waypoints(
             # Straight-up Cartesian disengage: keeps the gripper vertical
             # so backing off the handle applies no horizontal force on the
             # drawer (a planned retreat curves into the front panel).
-            cartesian=True,
+            linear="keep",
         ),
     ]
 
@@ -155,12 +156,6 @@ class MotionExecutor:
 
     def __init__(self) -> None:
         self.last_motion_trace: dict | None = None
-        # Attached-collision-object for the currently grasped payload (spheres +
-        # T_ee_obj), or None when the hand is empty. Set at pick, cleared at
-        # release; ``place`` forwards it so the carried object is collision-checked
-        # along the transport plan. Lives on the executor (persists across skills)
-        # to avoid threading a third carry-over through plan_segment/run_skills.
-        self.held_attach: dict | None = None
 
     def pick(
         self,
@@ -168,20 +163,13 @@ class MotionExecutor:
         motion_planner: MotionPlanner,
         home_qpos: np.ndarray,
         params: MotionParams,
-        *,
-        world: list[dict] | None = None,
-    ) -> list[np.ndarray]:
-        """home → waypoints → hold (velocity-adaptive step counts).
-
-        With a ``world`` (collision-aware backend), the free arm segments
-        (home→pre-grasp, lift/retreat) route through collision-free ``plan_motion``
-        so the approach does not sweep static obstacles; the final approach segment
-        stays Cartesian (contact move, world-blind), same split as ``place`` /
-        ``drag_handle``. ``world=None`` (collision-blind) is byte-identical to before.
-        """
+    ) -> MotionChainExecution:
+        """waypoints → hold (velocity-adaptive step counts); the final approach segment is Cartesian.
+        ``home_qpos`` is the arm already at the first waypoint, so that segment only opens the fingers, in zero
+        steps when they already are."""
         if not plan.waypoints:
             raise ValueError("GraspPlan.pick requires a non-empty waypoint sequence")
-        return self._pick_waypoints(plan, motion_planner, home_qpos, params, world=world)
+        return self._pick_waypoints(plan, motion_planner, home_qpos, params)
 
     def _pick_waypoints(
         self,
@@ -189,9 +177,7 @@ class MotionExecutor:
         motion_planner: MotionPlanner,
         home_qpos: np.ndarray,
         params: MotionParams,
-        *,
-        world: list[dict] | None = None,
-    ) -> list[np.ndarray]:
+    ) -> MotionChainExecution:
         """Execute an ordered waypoint sequence with velocity-adaptive timing.
 
         Segment classification (determines velocity):
@@ -203,12 +189,17 @@ class MotionExecutor:
                        Uses ``fine_joint_vel``.
           **normal** — all other arm-movement segments (approach, retreat).
                        Uses ``max_joint_vel``.
+
+        Finger segments may touch the target (``allow="grip"``); after the last one the target is
+        held, and the first segment after it may still touch the support it leaves (``allow="rest"``).
         """
         wps = plan.waypoints
         assert wps, "waypoints must be non-empty"
 
         is_finger, fine_idx = classify_segments(wps)
         last_finger = max((i for i, f in enumerate(is_finger) if f), default=-1)
+        opened = np.asarray(motion_planner.solve_ik(wps[0].pos, wps[0].quat, wps[0].finger_width), dtype=np.float64)
+        open_steps = 0 if np.allclose(opened[7:], np.asarray(home_qpos, dtype=np.float64)[7:]) else None
 
         runtime_wps: list[RuntimeMotionWaypoint] = []
         for i in range(len(wps)):
@@ -225,11 +216,15 @@ class MotionExecutor:
                     finger_width=wps[i].finger_width,
                     label=f"wp{i}",
                     segment_type=segment_type,
-                    finger_only=is_finger[i],
-                    cartesian=i == fine_idx,
+                    steps=open_steps if i == 0 else None,
+                    finger_only=is_finger[i] or i == 0,
+                    linear="refuse" if i == fine_idx else None,
                     hold_after_steps=(
                         params.grasp_settle_steps if i == last_finger else 0
                     ),
+                    holding=0 <= last_finger < i,
+                    allow=("grip" if is_finger[i]
+                           else "rest" if last_finger >= 0 and i == last_finger + 1 else None),
                 )
             )
 
@@ -238,7 +233,6 @@ class MotionExecutor:
             motion_planner,
             home_qpos,
             params,
-            world=world,
             tail_hold_steps=params.lift_hold_steps,
         )
         self.last_motion_trace = execution_trace("pick", result)
@@ -249,7 +243,7 @@ class MotionExecutor:
                 last_finger,
                 params.grasp_settle_steps * params.dt,
             )
-        return result.trajectory
+        return result
 
     def place(
         self,
@@ -258,20 +252,16 @@ class MotionExecutor:
         start_qpos: np.ndarray,
         params: MotionParams,
         *,
-        world: list[dict] | None = None,
         phase: str = "all",
-        insert_strategy: str = "cartesian",
-    ) -> list[np.ndarray]:
+    ) -> MotionChainExecution:
         """transport → pre_place → place (open fingers) → retreat.
 
         Assumes the robot is holding an object (fingers closed) at start_qpos.
         Finger widths come from place_plan: finger_closed while transporting,
         finger_open on release.
 
-        Same free/contact split as ``drag_handle``: only the inbound free-space
-        ``transport`` segment (to the standoff = one clearance back along the
-        approach axis from the drop point) routes through collision-free
-        ``plan_motion`` when a ``world`` is set. ``descend`` (insert standoff→drop)
+        ``transport`` (to the standoff = one clearance back along the approach axis
+        from the drop point) is a joint-space move. ``descend`` (insert standoff→drop)
         and ``retreat`` (drop→standoff) are Cartesian straight lines **along the
         approach axis** — the geometry is baked into ``pre_grasp_pos`` /
         ``grasp_pos`` / ``retreat_pos`` by ``plan_place``. For a top-down place
@@ -293,29 +283,29 @@ class MotionExecutor:
           would slant the Cartesian line into the drawer wall.
         - ``"all"`` (default): the full transport → descend → release → retreat in
           one open-loop pass (legacy behavior; static anchors, tests).
+
+        The ``place`` skill plans the free move to the standoff itself and calls this with
+        ``"descend"`` from there. The object is held until the release; descend and release may rest it on the target, and the
+        retreat may touch it with the fingers.
         """
-        transport_wp = RuntimeMotionWaypoint(
+        transport_wps = [RuntimeMotionWaypoint(
             pos=place_plan.pre_grasp_pos,
             quat=place_plan.pre_grasp_quat,
             finger_width=place_plan.finger_closed,
             label="transport",
             steps=params.transport_steps,
-        )
-        # Insert/extract motion mode. "cartesian" (default, drawer/tabletop): a
-        # straight line — predictable, no planner detour near the slot. "planned":
-        # route descend/retreat through plan_motion (cartesian=False + world) so a
-        # rigid-fixture side-insert weaves under the upper shelf without the
-        # near-singular wrist flip a forced straight line produces. release stays
-        # finger-only.
-        insert_cartesian = insert_strategy != "planned"
+            holding=True,
+        )]
         descend_wps = [
             RuntimeMotionWaypoint(
                 pos=place_plan.grasp_pos,
                 quat=place_plan.grasp_quat,
                 finger_width=place_plan.finger_closed,
                 label="descend",
-                cartesian=insert_cartesian,
+                linear="keep",
                 steps=params.place_descend_steps,
+                holding=True,
+                allow="rest",
             ),
             RuntimeMotionWaypoint(
                 pos=place_plan.grasp_pos,
@@ -325,35 +315,31 @@ class MotionExecutor:
                 segment_type="finger",
                 steps=params.release_steps,
                 finger_only=True,
+                holding=True,
+                allow="rest",
             ),
             RuntimeMotionWaypoint(
                 pos=place_plan.retreat_pos,
                 quat=place_plan.retreat_quat,
                 finger_width=place_plan.finger_open,
                 label="retreat",
-                cartesian=insert_cartesian,
+                linear="keep",
                 steps=params.retreat_steps,
+                allow="grip",
             ),
         ]
         if phase == "transport":
-            runtime_wps = [transport_wp]
+            runtime_wps = transport_wps
         else:  # "descend" or "all": (corrective) transport then vertical descend
-            runtime_wps = [transport_wp, *descend_wps]
+            runtime_wps = [*transport_wps, *descend_wps]
         result = execute_motion_chain(
             runtime_wps,
             motion_planner,
             start_qpos,
             params,
-            raise_on_cartesian_discontinuity=False,
-            world=world,
-            # Carry the grasped payload (ACO) so any plan_motion segment before
-            # release keeps the held object clear of the fixture, not just the arm:
-            # the free-space transport always, plus descend when insert_strategy is
-            # "planned". release and everything after it run finger/post-release.
-            attach=self.held_attach,
         )
         self.last_motion_trace = execution_trace("place", result)
-        return result.trajectory
+        return result
 
     def drag_handle(
         self,
@@ -366,14 +352,11 @@ class MotionExecutor:
         *,
         finger_open: float = 0.04,
         finger_closed: float = 0.0,
-        # Top-down approach height above the knob. 0.28 lifts the approach point
-        # clear of the cabinet collision keep-out shell (world margin 0.05); 0.10
-        # fell inside it, so plan_motion missed and fell back to a straight line
-        # that punched the drawer front. descend (Cartesian) still does the contact.
+        # Top-down approach height above the knob; at 0.10 the straight-line
+        # approach punched the drawer front. descend (Cartesian) does the contact.
         approach_height: float = 0.28,
         retreat_height: float = 0.10,
         action: str = "open",
-        world: list[dict] | None = None,
     ) -> list[np.ndarray]:
         """Move an articulated handle along ``move_vec`` (open/close a drawer).
 
@@ -390,16 +373,13 @@ class MotionExecutor:
         push (cartesian through to ``target``) -> retreat. Pushing a caged ball
         slips, so closing relies on rigid contact, not a grasp.
 
-        With ``motion_planner`` + ``world``, only the inbound free arm segment
-        ``approach`` (to a point straight above the handle, in free space) routes
-        through collision-free ``plan_motion`` so the arm does not sweep the
-        cabinet on the way in. Every contact-adjacent segment is a Cartesian
-        straight line: ``descend`` (straight down onto the handle), the contact
-        ``drag``/``push``, and the disengage ``lift``/``retreat`` (straight up).
-        Keeping these vertical means the gripper applies no horizontal force on
-        the drawer and a joint-space plan never curves the wrist into the drawer
-        front. Because no planned segment targets the handle, ``world`` needs no
-        contacted-link exemption.
+        Every contact-adjacent segment is a Cartesian straight line: ``descend``
+        (straight down onto the handle), the contact ``drag``/``push``, and the
+        disengage ``lift``/``retreat`` (straight up). Keeping these vertical means
+        the gripper applies no horizontal force on the drawer and a joint-space
+        move never curves the wrist into the drawer front. An IK branch flip on them is
+        kept (``linear="keep"``), not refused: the motion is position-controlled against
+        a held handle, so a reconfiguration is tracked instead of aborting the episode.
         """
         handle = np.asarray(handle_pos, dtype=np.float64)
         move = np.asarray(move_vec, dtype=np.float64)
@@ -425,8 +405,6 @@ class MotionExecutor:
             motion_planner,
             start_qpos,
             params,
-            raise_on_cartesian_discontinuity=False,
-            world=world,
         )
         self.last_motion_trace = execution_trace(action, result)
         return result.trajectory

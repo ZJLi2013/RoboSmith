@@ -1,8 +1,8 @@
 # RoboSmith Scenarios
 
 `scenarios/` stores reviewed scenario definitions: one YAML file per scenario
-(scene + task), and an optional teacher plan in `teacher/<same name>.yaml` for
-scripted rollouts. The format and the agent prompt are in
+(scene + task), and an optional plan file in `plans/<same name>.yaml` that
+`--planner file` runs. The format and the agent prompt are in
 [`AGENT_PROMPT.md`](AGENT_PROMPT.md); reference it explicitly when asking an
 agent to write a scenario.
 

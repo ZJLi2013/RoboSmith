@@ -1,0 +1,3 @@
+name: office48_phone
+steps:
+  - pick: phone

@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "wall_02",
+  "revision": 1,
+  "kind": "fixture",
+  "category": "wall",
+  "source": {
+    "type": "builtin_primitive",
+    "license": "Apache-2.0",
+    "rebuildable": false,
+    "files": []
+  },
+  "build": {
+    "files": [
+      "model.urdf"
+    ],
+    "hash": "41e94be4136a8650cee9ab0535b4d815cdfcda9a275a96cf9c5703e6d1d91428"
+  },
+  "annotations": {
+    "description": {
+      "value": "Barrier wall 40 cm long (local y), 2 cm thick (local x), 20 cm tall.",
+      "by": "agent:acceptance"
+    },
+    "friction": {
+      "value": 0.6,
+      "by": "agent:acceptance"
+    }
+  }
+}

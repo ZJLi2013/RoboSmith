@@ -66,7 +66,7 @@ def settle_window(env, hold, *, settle_s: float = 0.5, samples: int = 10, step=N
     for i in range(1, total + 1):
         if step is None:
             env.franka.control_dofs_position(hold, env.motors_dof)
-            env.scene.step()
+            env.step()
         else:
             step(hold)
         if i in marks:

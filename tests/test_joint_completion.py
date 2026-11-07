@@ -101,6 +101,7 @@ class _Env:
     def __init__(self, q, rebound=None):
         self.q, self.rebound = q, rebound
         self.scene = SimpleNamespace(dt=1.0 / 30.0, t=0, step=self._step)
+        self.step = self._step
         self.franka = SimpleNamespace(control_dofs_position=lambda q, dofs: None, links=(),
                                       get_contacts=lambda: {"link_a": np.zeros(0), "link_b": np.zeros(0)})
         self.entity_map = {"die": _Ent([0.6, 0.0, 0.835]), "drawer": _Ent([0.6, 0.0, 0.775])}
@@ -115,6 +116,9 @@ class _Env:
     def reset(self, obj_xyz_map, *, settle_steps):
         pass
 
+    def state_fingerprint(self):
+        return "s"
+
     def get_joint_positions(self):
         return {} if self.q is None else {"drawer": {"slide": self.q}}
 
@@ -128,7 +132,8 @@ INSIDE = SuccessNode.leaf("object_in_box", {"object": "die", "parent": "drawer",
 
 
 def _close(monkeypatch, env, success, on_record=None):
-    monkeypatch.setattr(runner, "plan_segment", lambda skill, *a, **kw: ([np.zeros(9)] * 2, None, None))
+    monkeypatch.setattr(runner, "plan_segment",
+                        lambda skill, *a, **kw: (kw["gate"].ungated([np.zeros(9)] * 2), None, None))
     recorded = []
 
     def record(env, dataset, seg, task_spec, **kw):

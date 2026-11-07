@@ -11,12 +11,12 @@ where the re-read changes nothing.
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass
 from typing import Callable
 
 import numpy as np
 
+from robotsmith.execution.gate import ExecutionFailed, ExecutionGate, Refused
 from robotsmith.grasp.geometric import GeometricGraspPlanner
 from robotsmith.scenario_runtime import handoff
 from robotsmith.sim.franka import HOME_QPOS, to_numpy_f32
@@ -26,22 +26,6 @@ from robotsmith.tasks import evaluate_success
 from robotsmith.tasks.task_spec import TaskSpec
 
 logger = logging.getLogger(__name__)
-
-
-def _maybe_motion_planner(env):
-    """Construct the rocRobo collision-free backend when enabled (else None).
-
-    Gated by ``ROCROBO_BACKEND``. The backend degrades to Genesis IK when the
-    warm serve is unreachable.
-    """
-    if not os.environ.get("ROCROBO_BACKEND"):
-        return None
-    from robotsmith.motion.rocrobo_backend import RocRoboBackend
-
-    logger.info("[rocrobo] collision-free backend enabled (ROCROBO_BACKEND)")
-    # Franka base is mounted on the table at world z=table_surface_z; rocRobo plans
-    # with its base at z=0, so the backend rebases all poses/world geometry.
-    return RocRoboBackend(env.solve_ik, base_z=float(getattr(env, "table_surface_z", 0.0)))
 
 
 @dataclass
@@ -56,6 +40,9 @@ class ScenarioEpisodeResult:
     # The settle the last step recorded and judged, still the world's current state; None when the
     # episode ended on a step that did not settle.
     final_window: dict | None = None
+    # The handoff of the step the episode stopped at with no motion to record: refused before any physics
+    # step, or failed after its trials stepped physics.
+    stopped: dict | None = None
 
 
 def run_scenario_episode(
@@ -107,12 +94,15 @@ def reset_scene(env, settle_steps: int) -> None:
 
 class EpisodeRun:
     """The live state of one episode after reset: ``run_steps`` executes skills from wherever the arm and the held
-    object are, so a caller can stop at a failed step and continue with new steps in the same world."""
+    object are, so a caller can stop at a failed step and continue with new steps in the same world.
+
+    Only motions the execution gate verified against the current scene are executed."""
 
     def __init__(self, env, task_spec: TaskSpec, *, executor, motion_params, dataset, record_fn: Callable,
                  target_frames: dict, camera_names, env_state_names):
         self.env, self.task_spec, self.executor, self.motion_params = env, task_spec, executor, motion_params
         self.dataset, self.record_fn, self.target_frames = dataset, record_fn, target_frames
+        self.gate = ExecutionGate(env)
         self.camera_names, self.env_state_names = camera_names, env_state_names
         self.initial_positions = collect_object_positions(env)
         self.skill_traces: list[dict] = []
@@ -123,8 +113,9 @@ class EpisodeRun:
         self.held_place_z: float | None = None
         self.held: str | None = None
         self.frame_count = 0
+        self.pick_start = 0
         self.window = None
-        self.motion_planner = _maybe_motion_planner(env)
+        self.stopped = None
 
     def _record_step(self, q):
         self.record_fn(self.env, self.dataset, [q], self.task_spec, camera_names=self.camera_names,
@@ -132,9 +123,12 @@ class EpisodeRun:
 
     def run_steps(self, skills: list, bindings: list[dict], *, stop_on_fail: bool = False) -> dict | None:
         """Execute ``skills`` with their ``bindings``; with ``stop_on_fail`` return the handoff of the first step
-        judged false (the remaining steps are not run), else ``None``."""
+        judged false (the remaining steps are not run), else ``None``. A refused or failed step records no frames
+        and always ends the run; its handoff (``cause`` = the label, ``evidence``, physics ``steps``) is returned.
+        A place refused while holding what a pick picked is ``execution_failed`` with the refusal's label under
+        ``evidence["refused"]`` and the frames recorded since that pick began."""
         env = self.env
-        planner_kw = {"motion_planner": self.motion_planner} if self.motion_planner is not None else {}
+        self.stopped = None
         for k, (skill, binding) in enumerate(zip(skills, list(bindings) + [None] * (len(skills) - len(bindings)))):
             i = len(self.skills)
             self.skills.append(skill)
@@ -146,16 +140,32 @@ class EpisodeRun:
             # into transport/descend so descend re-reads the recoiled drawer.
             phases = skill_phases(skill, self.target_frames.get(skill.target))
             step_start = None
+            if skill.name == "pick":
+                self.pick_start = self.frame_count
             for phase in phases:
                 scene_state = _live_scene_state(env, self.target_frames, self.skill_traces)
                 if step_start is None:
                     step_start = {n: np.asarray(p).tolist() for n, p in collect_object_positions(env).items()}
                 obj = skill.target if skill.name == "pick" else self.held
-                seg, self.held_category, self.held_place_z = plan_segment(
-                    skill, i, planned, env.planner, self.executor, env.solve_ik,
-                    scene_state, self.motion_params, self.qpos, self.held_category, self.held_place_z,
-                    phase=phase, **planner_kw,
-                )
+                try:
+                    motion, self.held_category, self.held_place_z = plan_segment(
+                        skill, i, planned, env.planner, self.executor, env.solve_ik,
+                        scene_state, self.motion_params, self.qpos, self.held_category, self.held_place_z,
+                        phase=phase, gate=self.gate, held=self.held,
+                    )
+                except (Refused, ExecutionFailed) as exc:
+                    entry = {"skill": skill.name, "phase": phase, "target": skill.target, "object": obj,
+                             "done": False, "cause": exc.label, "evidence": exc.evidence,
+                             "steps": getattr(exc, "steps", 0)}
+                    if isinstance(exc, Refused) and skill.name == "place" and self.held is not None:
+                        # The pick that holds the object has stepped physics: the pick + place is committed.
+                        entry.update(cause=ExecutionFailed.label, evidence={"refused": exc.label, **exc.evidence},
+                                     steps=self.frame_count - self.pick_start)
+                    self.handoffs.append(entry)
+                    self.stopped = entry
+                    return entry
+                self.gate.check_current(motion)
+                seg = motion.trajectory
                 samples = self.record_fn(
                     env,
                     self.dataset,
@@ -172,7 +182,6 @@ class EpisodeRun:
                     joints_before=scene_state["joint_positions"],
                     joints_after=env.get_joint_positions() if hasattr(env, "get_joint_positions") else {},
                     trace=self.skill_traces[-1] if self.skill_traces else None,
-                    rocrobo=self.motion_planner is not None,
                 )
                 self.handoffs.append(entry)
                 if skill.name == "pick":
@@ -203,6 +212,7 @@ class EpisodeRun:
             handoffs=self.handoffs,
             final_qpos=self.qpos,
             final_window=self.window,
+            stopped=self.stopped,
         )
 
 

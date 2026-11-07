@@ -9,6 +9,8 @@ collision boxes, place targets, prismatic joints) plus the robot's workspace:
   (imported scenes); needs ``anchor_xy`` and does not size the table.
 - ``anchor_xy``: explicit planar position (fixtures).
 - ``near: robot``: sampled in the Franka workspace annulus.
+- ``offset_from: {of, x, y}``: sampled uniformly in a box of the placed fixture ``of``'s
+  frame; no footprint check, so an object can sit inside a fixture.
 - ``clear_of``: xy footprints do not overlap; ``<id>.swept`` adds the volume the
   object's prismatic parts sweep over their joint range.
 - ``facing: robot``: the asset's front (prismatic axis, else the reverse of a
@@ -26,7 +28,6 @@ import numpy as np
 from robotsmith.assets import derive
 from robotsmith.assets.library import AssetLibrary
 from robotsmith.assets.schema import Asset, parse_urdf_collision_boxes
-from robotsmith.motion.rocrobo_world import rigid_moving_links
 from robotsmith.scenes.config import DEFAULT_WORKSPACE_XY, SceneConfig, table_center_xy
 from robotsmith.sim.franka import REACH_HALF_ANGLE_DEG, REACH_M
 
@@ -98,8 +99,8 @@ def solve(objects: list[dict], library: AssetLibrary, rng: random.Random) -> Sol
         p = placed[oid]
         return _footprint(assets[oid], bounds[oid], p.position, p.yaw_deg, swept)
 
-    # Anchored and surface-mounted objects first, then sampled ones.
-    order = sorted(objects, key=lambda o: "near" in o)
+    # Anchored and surface-mounted objects first, then ones offset from them, then sampled ones.
+    order = sorted(objects, key=lambda o: ("offset_from" in o) + 2 * ("near" in o))
     for obj in order:
         oid, asset = obj["id"], assets[obj["id"]]
         lo_z = float(bounds[oid][0][2])
@@ -126,8 +127,16 @@ def solve(objects: list[dict], library: AssetLibrary, rng: random.Random) -> Sol
             xy = np.asarray(obj["anchor_xy"], dtype=np.float64)
             placed[oid] = Placement((xy[0], xy[1], z), _yaw(obj, asset, xy))
             continue
+        if "offset_from" in obj:
+            spec = obj["offset_from"]
+            ref = spec["of"]
+            if ref not in placed or not assets[ref].is_fixture:
+                raise SolveError(f"'{oid}': offset_from must name a placed fixture, not '{ref}'")
+            xy = _to_world(placed[ref], (rng.uniform(*spec["x"]), rng.uniform(*spec["y"]), 0.0))[:2]
+            placed[oid] = Placement((xy[0], xy[1], z), _yaw(obj, asset, xy))
+            continue
         if obj.get("near") != ROBOT:
-            raise SolveError(f"'{oid}' on support needs anchor_xy or near: robot")
+            raise SolveError(f"'{oid}' on support needs anchor_xy, offset_from or near: robot")
         others = [o["id"] for o in objects if o["id"] in placed and split_ref(o["on"])[0] == SUPPORT]
         swept = {split_ref(r)[0] for r in obj.get("clear_of", []) if r.endswith(".swept")}
         blockers = [footprint(other, swept=other in swept) for other in others]
@@ -187,6 +196,26 @@ def _to_world(p: Placement, local) -> np.ndarray:
 
 def _corners_xy(lo, hi) -> np.ndarray:
     return np.array([[lo[0], lo[1]], [lo[0], hi[1]], [hi[0], lo[1]], [hi[0], hi[1]]])
+
+
+def rigid_moving_links(asset: Asset, moving_link: str | None) -> set[str]:
+    """``moving_link`` plus every link rigidly attached to it via fixed joints.
+
+    The drawer slide moves its joint child *and* anything bolted to that child
+    (e.g. a separated ``handle`` link), so they share the same slide displacement.
+    """
+    if moving_link is None:
+        return set()
+    moving: set[str] = {moving_link}
+    joints = list(getattr(asset, "joints", []) or [])
+    changed = True
+    while changed:
+        changed = False
+        for j in joints:
+            if j.type == "fixed" and j.parent in moving and j.child not in moving:
+                moving.add(j.child)
+                changed = True
+    return moving
 
 
 def _footprint(asset: Asset, bounds, position, yaw_deg: float, swept: bool):

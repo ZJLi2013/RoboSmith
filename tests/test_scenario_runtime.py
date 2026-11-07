@@ -1,10 +1,13 @@
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
+from robotsmith.execution.gate import Refused
 from robotsmith.scenario.specs import FrameRef
 from robotsmith.scenario_runtime.runner import run_scenario_episode
 from robotsmith.tasks.task_spec import SuccessNode, TaskSpec as LegacyTaskSpec
-from robotsmith.grasp.planner import GraspPlan
+from robotsmith.grasp.planner import GraspPlan, Waypoint
 from robotsmith.motion.params import MotionParams
 from robotsmith.skills import Skill, run_skills
 
@@ -47,6 +50,9 @@ def test_run_scenario_episode_reanchors_to_live_resolved_positions(monkeypatch):
             }
             self.did_reset = True
 
+        def state_fingerprint(self):
+            return "s"
+
         def get_joint_positions(self):
             return {}
 
@@ -57,12 +63,12 @@ def test_run_scenario_episode_reanchors_to_live_resolved_positions(monkeypatch):
 
     def fake_plan_segment(
         skill, index, skills, planner, executor, solve_ik, scene_state, params,
-        qpos, held_category=None, held_place_z=None, phase="all", **_,
+        qpos, held_category=None, held_place_z=None, phase="all", *, gate, **_,
     ):
         seen["positions"] = scene_state["positions"]
         assert "joint_positions" in scene_state
         scene_state["skill_traces"].append({"skill": skill.name, "target": skill.target})
-        return [np.zeros(9, dtype=np.float32)], held_category, held_place_z
+        return gate.ungated([np.zeros(9, dtype=np.float32)]), held_category, held_place_z
 
     recorded: list[int] = []
 
@@ -116,6 +122,7 @@ def _fake_plan(x, y, z):
         finger_open=0.04,
         finger_closed=0.01,
         metadata={"source": "fake"},
+        waypoints=[Waypoint(pos=np.array([x, y, z + 0.1]), quat=q, finger_width=0.04)],
     )
 
 
@@ -134,11 +141,13 @@ class _FakeExecutor:
     last_motion_trace = None
 
     def pick(self, plan, motion_planner, qpos, params, **kwargs):
-        return [np.ones(9)]
+        return SimpleNamespace(trajectory=[np.ones(9)], segments=[
+            {"label": "lift", "span": [0, 1], "holding": False, "allow": None}])
 
     def place(self, plan, motion_planner, qpos, params, *, phase="all", **kwargs):
         self.last_motion_trace = {"action": "place", "segments": []}
-        return [np.full(9, 2.0)]
+        return SimpleNamespace(trajectory=[np.full(9, 2.0)], segments=[
+            {"label": "descend", "span": [0, 1], "holding": True, "allow": "rest"}])
 
 
 # Drop point = goal marker z 0.809 + place_z. Unset place_z falls back to the
@@ -147,7 +156,7 @@ class _FakeExecutor:
     ({"place_z": 0.82}, 1.629, 0.82, "requested"),
     ({}, 0.929, 0.12, "selected_grasp"),
 ])
-def test_place_z_resolution(place_params, drop_z, resolved, source):
+def test_place_z_resolution(place_params, drop_z, resolved, source, gate):
     planner = _FakePlanner()
     scene_state = {
         "home_qpos": np.zeros(9),
@@ -166,6 +175,7 @@ def test_place_z_resolution(place_params, drop_z, resolved, source):
         solve_ik=lambda *args, **kwargs: np.zeros(9),
         scene_state=scene_state,
         params=MotionParams(),
+        gate=gate,
     )
 
     assert planner.place_point_world[2] == pytest.approx(drop_z)
@@ -173,3 +183,38 @@ def test_place_z_resolution(place_params, drop_z, resolved, source):
     assert place_trace["requested_place_z"] == place_params.get("place_z")
     assert place_trace["resolved_place_z"] == pytest.approx(resolved)
     assert place_trace["place_z_source"] == source
+
+
+class _StubEnv:
+    placed_map, entity_map, object_heights, asset_map, object_quats = {}, {}, {}, {}, {}
+    table_surface_z, articulated_joint_dofs, planner = 0.80, {}, object()
+
+    def reset(self, obj_xyz_map, *, settle_steps):
+        pass
+
+    def state_fingerprint(self):
+        return "s"
+
+    def solve_ik(self, *args, **kwargs):
+        raise AssertionError("not used by stubbed plan_segment")
+
+
+@pytest.mark.parametrize("refused_at, cause, steps", [("pick", "search_exhausted", 0), ("place", "execution_failed", 3)])
+def test_a_place_refused_after_the_pick_stepped_is_an_execution_failure(monkeypatch, refused_at, cause, steps):
+    evidence = {"reason": "no transport to the standoff", "transport": {"ok": False, "queries": 4}}
+
+    def plan(skill, *args, gate, **kwargs):
+        if skill.name == refused_at:
+            raise Refused("search_exhausted", evidence)
+        return gate.ungated([np.zeros(9)] * 3), None, None
+
+    monkeypatch.setattr("robotsmith.scenario_runtime.runner.plan_segment", plan)
+    task = LegacyTaskSpec(name="t", scene="t", instruction="",
+                          success=SuccessNode.leaf("object_above", {"object": "die", "reference": "table"}),
+                          skills=[Skill("pick", "die"), Skill("place", "goal")])
+    result = run_scenario_episode(_StubEnv(), task, executor=object(), motion_params=object(), dataset=object(),
+                                  record_fn=lambda *args, **kwargs: None,
+                                  target_frames={"goal": FrameRef(kind="world", xyz=(0.6, 0.0, 0.809))})
+    stopped = result.stopped
+    assert stopped["skill"] == refused_at and stopped["cause"] == cause and stopped["steps"] == steps
+    assert stopped["evidence"] == (evidence if refused_at == "pick" else {"refused": "search_exhausted", **evidence})

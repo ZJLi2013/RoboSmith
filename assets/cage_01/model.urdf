@@ -1,0 +1,16 @@
+<robot name="cage_01">
+  <material name="paint"><color rgba="0.7 0.3 0.3 1" /></material>
+  <link name="base">
+    <inertial><origin xyz="0 0 0" rpy="0 0 0" /><mass value="2" /><inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01" /></inertial>
+    <visual name="side_px"><origin xyz="0.055 0 0.06" rpy="0 0 0" /><geometry><box size="0.01 0.12 0.12" /></geometry><material name="paint" /></visual>
+    <collision name="side_px"><origin xyz="0.055 0 0.06" rpy="0 0 0" /><geometry><box size="0.01 0.12 0.12" /></geometry></collision>
+    <visual name="side_nx"><origin xyz="-0.055 0 0.06" rpy="0 0 0" /><geometry><box size="0.01 0.12 0.12" /></geometry><material name="paint" /></visual>
+    <collision name="side_nx"><origin xyz="-0.055 0 0.06" rpy="0 0 0" /><geometry><box size="0.01 0.12 0.12" /></geometry></collision>
+    <visual name="side_py"><origin xyz="0 0.055 0.06" rpy="0 0 0" /><geometry><box size="0.1 0.01 0.12" /></geometry><material name="paint" /></visual>
+    <collision name="side_py"><origin xyz="0 0.055 0.06" rpy="0 0 0" /><geometry><box size="0.1 0.01 0.12" /></geometry></collision>
+    <visual name="side_ny"><origin xyz="0 -0.055 0.06" rpy="0 0 0" /><geometry><box size="0.1 0.01 0.12" /></geometry><material name="paint" /></visual>
+    <collision name="side_ny"><origin xyz="0 -0.055 0.06" rpy="0 0 0" /><geometry><box size="0.1 0.01 0.12" /></geometry></collision>
+    <visual name="roof"><origin xyz="0 0 0.115" rpy="0 0 0" /><geometry><box size="0.1 0.1 0.01" /></geometry><material name="paint" /></visual>
+    <collision name="roof"><origin xyz="0 0 0.115" rpy="0 0 0" /><geometry><box size="0.1 0.1 0.01" /></geometry></collision>
+  </link>
+</robot>

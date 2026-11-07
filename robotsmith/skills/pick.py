@@ -1,44 +1,24 @@
 """``pick`` primitive: select an executable grasp and lift the object.
 
-Candidates are tried in simulation (``scene_state["grasp_trial"]``) and the first that lifts the target is
-executed; without a trial callback the planner's first candidate is used. Motion goes to ``MotionExecutor``;
-the grasped payload is frozen as an attached collision object (ACO) so downstream transport/place plan around it.
+The approach to each candidate's first waypoint is a ``JointPlanner`` connection; the descend, grasp and lift are
+the executor's segment from there. Each candidate's whole trajectory goes through the execution gate first, and a
+following single-phase place is planned from where it ends; one that passes both is tried in
+simulation (``scene_state["grasp_trial"]``) and, if it lifts the target, verified again on the restored
+scene and executed. Without a trial callback the first candidate that passes the gate is used.
 """
 
 from __future__ import annotations
 
-import logging
-
 import numpy as np
 
+from robotsmith.execution.gate import (ExecutionFailed, Holding, MotionRejected, Refused, Span, VerifiedMotion,
+                                       poses_of, spans_of)
 from robotsmith.grasp.planner import GraspPlan
 from robotsmith.grasp.transforms import pose_matrix
+from robotsmith.motion.joint_planner import JointPlanner
 from robotsmith.motion.params import MotionParams
-from robotsmith.motion.rocrobo_world import (
-    PANDA_FINGER_LINKS,
-    build_obstacle_world,
-    build_payload_spheres,
-)
 from robotsmith.skills.base import Skill, SkillContext
-from robotsmith.skills.registry import bound_leaf, register
-
-logger = logging.getLogger(__name__)
-
-
-def _pick_trace_entry(skill: Skill, category: str, plan) -> dict:
-    """Flatten the selected grasp plan into a pick ``skill_trace`` record."""
-    def _vec(v):
-        return [float(x) for x in v] if v is not None else None
-
-    return {
-        "skill": skill.name,
-        "target": skill.target,
-        "category": category,
-        "selected_candidate_index": plan.metadata.get("candidate_index"),
-        "selected_grasp_pos": _vec(plan.grasp_pos),
-        "selected_pre_grasp_pos": _vec(plan.pre_grasp_pos),
-        "selected_retreat_pos": _vec(plan.retreat_pos),
-    }
+from robotsmith.skills.registry import bound_leaf, plan_segment, register, skill_phases
 
 
 def _candidates(ctx: SkillContext) -> tuple[list[GraspPlan], dict]:
@@ -57,18 +37,6 @@ def _candidates(ctx: SkillContext) -> tuple[list[GraspPlan], dict]:
         object_height=obj_h,
     )
     return plans, dict(getattr(ctx.planner, "last_filter_counts", {}) or {})
-
-
-def _select_pick_plan(ctx: SkillContext) -> GraspPlan | None:
-    """The planner's first candidate, for callers that run without a grasp trial."""
-    skill = ctx.skill
-    plans, filter_counts = _candidates(ctx)
-    if not plans:
-        ctx.trace({"skill": skill.name, "target": skill.target, "category": ctx.category,
-                   "filter_counts": filter_counts, "no_candidates": True})
-        return None
-    ctx.trace(_pick_trace_entry(skill, ctx.category, plans[0]) | {"filter_counts": filter_counts})
-    return plans[0]
 
 
 def _pick_motion_params(ctx: SkillContext) -> MotionParams:
@@ -96,134 +64,141 @@ def _pick_motion_params(ctx: SkillContext) -> MotionParams:
     )
 
 
-def _pick_seed_transit(
-    ctx: SkillContext, plan: GraspPlan
-) -> tuple[np.ndarray, list[np.ndarray]]:
-    """Reset to home + pre-aim the base joint at the grasp azimuth, with transit.
-
-    Two failure modes this guards against:
-      1. After an articulated drag (open/close) the arm is left in an extended
-         pose; descending IK to a tabletop grasp gets stuck there.
-      2. From the y=0 neutral home, Genesis IK under-rotates the base joint and
-         lands short of off-axis (large |y|) targets, closing beside the object.
-    The transit is a no-op when the arm already starts at this seed.
-    """
-    params = ctx.params
+def _ik_init(ctx: SkillContext, plan: GraspPlan) -> np.ndarray:
+    """IK start for the candidate's first waypoint: home with the base joint aimed at the grasp azimuth, or the
+    candidate's ``ik_seed``. From an extended pose (after a drag) IK gets stuck, and from the y=0 home Genesis IK
+    under-rotates the base and lands short of off-axis targets."""
     home_qpos = ctx.scene_state.get("home_qpos")
-    q0 = np.asarray(ctx.qpos, dtype=np.float64)
-    seed = (
-        np.asarray(home_qpos, dtype=np.float64).copy()
-        if home_qpos is not None
-        else q0.copy()
-    )
-    seed[0] = float(np.arctan2(float(plan.grasp_pos[1]), float(plan.grasp_pos[0])))
-    transit: list[np.ndarray] = []
-    if not np.allclose(q0[:7], seed[:7], atol=1e-3):
-        steps = max(params.approach_steps, params.min_steps)
-        transit = [q0 + (seed - q0) * (i + 1) / steps for i in range(steps)]
-    return seed, transit
+    init = np.asarray(home_qpos if home_qpos is not None else ctx.qpos, dtype=np.float64).copy()
+    init[0] = float(np.arctan2(float(plan.grasp_pos[1]), float(plan.grasp_pos[0])))
+    if plan.metadata.get("ik_seed"):
+        init[:7] = plan.metadata["ik_seed"]
+    return init
 
 
-def _capture_payload_aco(ctx: SkillContext, plan: GraspPlan) -> None:
-    """Freeze the grasped payload as an ACO (spheres + T_ee_obj) on the executor.
+def _select(ctx: SkillContext, trial) -> tuple[GraspPlan, VerifiedMotion]:
+    """Gate, then trial, the candidates in planner order from the same start state; keep the first that passes
+    both, verified again after the last trial. When the next skill is a single-phase place, a candidate whose place
+    is refused from where its pick ends is not tried. When none passes, raises ``Refused("search_exhausted")`` if no
+    trial ran, else ``ExecutionFailed`` with the trials' physics steps.
 
-    T_ee_obj is frozen at the grasp instant (inv(T_world_ee) @ T_world_obj) — a
-    live object pose at place time would drift with physical slip. Spheres are in
-    the object frame; serve rides them on the EE via T_ee_obj. Stored on the
-    executor (persists across skills); cleared on release in ``place``.
-    """
-    skill = ctx.skill
-    asset = ctx.scene_state.get("assets", {}).get(skill.target)
-    payload_spheres = build_payload_spheres(asset)
-    if not payload_spheres:
-        ctx.executor.held_attach = None
-        return
-    quats = ctx.scene_state.get("object_quats", {})
-    obj_quat = np.asarray(quats.get(skill.target, (1.0, 0.0, 0.0, 0.0)), dtype=np.float64)
-    T_world_ee = pose_matrix(
-        np.asarray(plan.grasp_pos, dtype=np.float64),
-        np.asarray(plan.grasp_quat, dtype=np.float64),
-    )
-    T_world_obj = pose_matrix(np.asarray(ctx.obj_pos, dtype=np.float64), obj_quat)
-    T_ee_obj = np.linalg.inv(T_world_ee) @ T_world_obj
-    ctx.executor.held_attach = {
-        "ee_link": "hand",
-        "T_ee_obj": [[float(v) for v in row] for row in T_ee_obj],
-        "spheres": payload_spheres,
-        "exempt_self_links": list(PANDA_FINGER_LINKS),
-    }
-
-
-def _select_by_trial(ctx: SkillContext, trial) -> tuple[GraspPlan, list[np.ndarray]] | None:
-    """Try candidates in planner order from the same start state; keep the first that lifts the target.
-
-    ``trial(trajectory, target)`` replays the trajectory in simulation and returns
+    ``trial(trajectory, target)`` replays the trajectory in simulation, restores the scene and returns
     ``{"lifted", "lift_m", "seconds"}``. With ``scene_state["grasp_trial_all"]`` every candidate is
     tried, for probes that need the executable fraction.
     """
     plans, filter_counts = _candidates(ctx)
     try_all = bool(ctx.scene_state.get("grasp_trial_all"))
-    trials, chosen = [], None
+    target = ctx.skill.target
+    place = _static_place(ctx)
+    trials, passing = [], []
     for plan in plans:
-        try:
-            traj = _pick_motion(ctx, plan)
-            result = trial(traj, ctx.skill.target)
-        except RuntimeError as exc:
-            traj, result = None, {"lifted": False, "lift_m": None, "seconds": 0.0, "motion_error": str(exc)}
         md = plan.metadata
-        trials.append({"candidate_index": md.get("candidate_index"), "kind": md.get("kind"),
-                       "closing_width": md.get("closing_width"), **result})
-        if result["lifted"] and chosen is None:
-            chosen = (plan, traj)
-            if not try_all:
-                break
+        record = {"candidate_index": md.get("candidate_index"), "kind": md.get("kind"),
+                  "closing_width": md.get("closing_width"), "lifted": False, "lift_m": None, "seconds": 0.0}
+        try:
+            request, record["approach"] = _pick_request(ctx, plan)
+            motion = ctx.gate.verify(**request)
+            placeable = place is None or _place_check(ctx, plan, request, place, record)
+            if placeable and trial is not None:
+                record.update(trial(motion.trajectory, target), steps=len(motion.trajectory))
+                if record["lifted"]:
+                    motion = ctx.gate.verify(**request)
+        except MotionRejected as exc:
+            record["gate"] = exc.to_dict()
+        except Refused as exc:
+            record["approach"] = {"ok": False, **exc.evidence}
+        except RuntimeError as exc:
+            record["motion_error"] = str(exc)
+        else:
+            record["gate"] = "passed"
+            if placeable and (trial is None or record["lifted"]):
+                passing.append((plan, request, motion, record))
+        trials.append(record)
+        if passing and not try_all:
+            break
+    chosen = None
+    for plan, request, motion, record in passing:
+        if try_all:
+            # Every later trial stepped physics and voided this motion's voucher.
+            try:
+                motion = ctx.gate.verify(**request)
+            except MotionRejected as exc:
+                record["reverify"] = exc.to_dict()
+                continue
+        chosen = (plan, motion)
+        break
     ctx.trace({
-        "skill": ctx.skill.name, "target": ctx.skill.target, "category": ctx.category,
+        "skill": ctx.skill.name, "target": target, "category": ctx.category,
         "filter_counts": filter_counts, "no_candidates": not plans, "no_trial_success": chosen is None,
         "selected_candidate_index": chosen[0].metadata.get("candidate_index") if chosen else None,
         "trials": trials, "trial_seconds": round(sum(t["seconds"] for t in trials), 3),
     })
+    if chosen is None:
+        evidence = {"reason": "no pick candidate passed the gate and its trial", "candidates": len(plans),
+                    "filter_counts": filter_counts, "trials": trials}
+        steps = sum(t.get("steps", 0) for t in trials)
+        if steps:
+            raise ExecutionFailed(evidence, steps)
+        raise Refused("search_exhausted", evidence)
     return chosen
 
 
-def _pick_motion(ctx: SkillContext, plan: GraspPlan) -> list[np.ndarray]:
-    """Base-aim transit plus the executor's pick segment for ``plan``."""
-    seed, transit = _pick_seed_transit(ctx, plan)
-    # Collision-aware backend: build the obstacle world from every scene fixture so
-    # the free pick segments (home→pre-grasp, lift/retreat) route through
-    # plan_motion instead of punching a straight IK line through a shelf/cabinet.
-    # The grasp target is role `object`, not a fixture, so it is never in the world
-    # (no exemption needed). Collision-blind runs pass world=None (unchanged).
-    world = (
-        build_obstacle_world(
-            ctx.scene_state,
-            ground_z=float(ctx.scene_state.get("table_surface_z", 0.0)),
-        )
-        if ctx.motion_planner.collision_aware
-        else None
-    )
-    seg = ctx.executor.pick(
-        plan, ctx.motion_planner, seed, _pick_motion_params(ctx), world=world
-    )
-    return transit + seg
+def _pick_request(ctx: SkillContext, plan: GraspPlan) -> tuple[dict, dict]:
+    """``gate.verify`` keywords for ``plan``, and the approach's record: a ``JointPlanner`` approach from the
+    current joints to the candidate's first waypoint, the executor's pick segment from there, their spans and
+    waypoint poses, and the target held at the candidate's grasp pose. The pick segment passes the gate on its own
+    before the approach is searched, so a candidate the gate rejects costs no search."""
+    q0 = np.asarray(ctx.qpos, dtype=np.float64)
+    first = plan.waypoints[0]
+    q_pre = np.asarray(ctx.motion_planner.solve_ik(first.pos, first.quat, first.finger_width,
+                                                   init_qpos=_ik_init(ctx, plan)), dtype=np.float64)
+    q_pre[7:] = q0[7:]
+    result = ctx.executor.pick(plan, ctx.motion_planner, q_pre, _pick_motion_params(ctx))
+    target = ctx.skill.target
+    t_hand_object = (np.linalg.inv(pose_matrix(plan.grasp_pos, plan.grasp_quat))
+                     @ pose_matrix(*ctx.gate.env.object_pose(target)))
+    holding = Holding(target, t_hand_object)
+    ctx.gate.verify(result.trajectory, spans_of(result.segments), target=target, q_start=q_pre, holding=holding,
+                    poses=poses_of(result.segments))
+    c = JointPlanner(ctx.gate.env, ctx.gate).connect(q0, q_pre, target=target, label="approach")
+    approach = list(c.motion.trajectory)
+    n = len(approach)
+    return ({"trajectory": approach + result.trajectory,
+             "spans": [Span("approach", 0, n)] + spans_of(result.segments, n),
+             "poses": poses_of(result.segments, n), "target": target, "q_start": ctx.qpos, "holding": holding},
+            {"ok": True, "queries": c.queries, "seconds": c.seconds, "nodes": c.nodes, "direct": c.direct})
 
 
-@register("pick", post=bound_leaf)
-def run_pick(ctx: SkillContext) -> list[np.ndarray]:
-    trial = ctx.scene_state.get("grasp_trial")
-    if trial is not None:
-        chosen = _select_by_trial(ctx, trial)
-        plan, traj = chosen if chosen else (None, None)
-    else:
-        plan = _select_pick_plan(ctx)
-        traj = _pick_motion(ctx, plan) if plan is not None else None
-    if plan is None:
-        logger.debug("[skills] no executable grasp candidate; skip pick execution")
-        return [
-            ctx.qpos.copy()
-            for _ in range(max(ctx.params.min_steps, ctx.params.finger_steps))
-        ]
-    ctx.held_category = ctx.category
+def _static_place(ctx: SkillContext) -> Skill | None:
+    """The next skill when it is a place onto a static anchor, planned in one phase; else ``None``."""
+    if ctx.index + 1 >= len(ctx.skills):
+        return None
+    nxt = ctx.skills[ctx.index + 1]
+    frame = ctx.scene_state.get("target_frames", {}).get(nxt.target)
+    return nxt if nxt.name == "place" and skill_phases(nxt, frame) == ["all"] else None
+
+
+def _place_check(ctx: SkillContext, plan: GraspPlan, request: dict, place: Skill, record: dict) -> bool:
+    """Plan ``place`` with the arm at the end of this candidate's pick and the target at its grasp in the hand, and
+    record the outcome as ``record["place"]``. The scene is unchanged on return, the planned motion is discarded and
+    its trace does not reach the run's ``skill_traces``."""
+    env = ctx.gate.env
+    q_end = np.asarray(request["trajectory"][-1], dtype=np.float64)
+    target = ctx.skill.target
+    held_at = pose_matrix(*env.hand_pose(q_end)) @ request["holding"].t_hand_object
+    with env.posed(q_end, {target: held_at}):
+        try:
+            plan_segment(place, ctx.index + 1, ctx.skills, ctx.planner, ctx.executor, None,
+                         {**ctx.scene_state, "skill_traces": []}, ctx.params, q_end, ctx.category,
+                         _held_place_z(ctx, plan), ctx.motion_planner, gate=ctx.gate, held=target)
+        except Refused as exc:
+            record["place"] = {"ok": False, "label": exc.label, **exc.evidence}
+            return False
+    record["place"] = {"ok": True}
+    return True
+
+
+def _held_place_z(ctx: SkillContext, plan: GraspPlan) -> float:
     # Grasp-relative offset: EE-flange height above the picked object's *support
     # surface* (object bottom = center − half-height), NOT above the table. A
     # later place re-adds this to the destination marker's world z so the object
@@ -231,6 +206,12 @@ def run_pick(ctx: SkillContext) -> list[np.ndarray]:
     # For a tabletop pick this equals the old (grasp_z − table_z).
     obj_h = float(ctx.scene_state.get("object_heights", {}).get(ctx.skill.target, 0.0) or 0.0)
     support_z = float(ctx.obj_pos[2]) - obj_h / 2.0
-    ctx.held_place_z = max(float(plan.grasp_pos[2]) - support_z, 0.0)
-    _capture_payload_aco(ctx, plan)
-    return traj
+    return max(float(plan.grasp_pos[2]) - support_z, 0.0)
+
+
+@register("pick", post=bound_leaf)
+def run_pick(ctx: SkillContext) -> VerifiedMotion:
+    plan, motion = _select(ctx, ctx.scene_state.get("grasp_trial"))
+    ctx.held_category = ctx.category
+    ctx.held_place_z = _held_place_z(ctx, plan)
+    return motion

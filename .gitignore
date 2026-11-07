@@ -12,3 +12,8 @@ assets/*/*
 !assets/*/model.py
 !assets/*/generation.json
 !assets/*/reference.png
+# The acceptance fixtures are not in the package yet; their URDFs stay in git until they are published.
+!assets/mat_01/model.urdf
+!assets/wall_01/model.urdf
+!assets/wall_02/model.urdf
+!assets/cage_01/model.urdf

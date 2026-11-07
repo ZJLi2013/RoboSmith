@@ -1,0 +1,12 @@
+scenario: acc_f0_open
+robot: franka
+scene:
+  support: table_simple
+  objects:
+    - {id: mat, asset: mat_01, on: support, anchor_xy: [0.45, -0.22], yaw_deg: 0}
+    - {id: die, asset: die_01, on: support, near: robot}
+task:
+  instruction: Put the die on the mat.
+  success:
+    on: {object: die, surface: mat.top}
+split: {playground: [0, 9], test: [100, 119]}

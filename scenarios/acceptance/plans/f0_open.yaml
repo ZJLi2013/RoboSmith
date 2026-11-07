@@ -1,0 +1,19 @@
+name: acc_f0_open
+steps:
+  - pick: die
+  - place: {target: mat.top}
+# The same six-action composition for every family: the scene decides the candidates, not the plan.
+actions:
+  - sample: {kind: grasp, object: die, as: g}
+  - gripper: {width: open}
+  - move_to: g.pre
+  - move_linear: g.grasp
+  - gripper: {width: close, target: die}
+  - attach: g
+  - move_linear: {direction: [0, 0, 1], dist: 0.10}
+  - sample: {kind: place, object: die, surface: mat.top, grasp: g, as: p}
+  - move_to: p.pre
+  - move_linear: p.place
+  - detach: p
+  - gripper: {width: open, target: die}
+  - move_linear: p.retreat

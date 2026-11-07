@@ -7,7 +7,7 @@ import pytest
 
 from robotsmith.motion.chain import _compute_steps, _same_pose
 from robotsmith.execution.executor import MotionExecutor
-from robotsmith.motion.planner import GenesisBackend, PlanResult
+from robotsmith.motion.planner import GenesisBackend
 from robotsmith.motion.params import MotionParams
 from robotsmith.grasp.planner import GraspPlan, Waypoint
 
@@ -77,10 +77,9 @@ def _pick_plan():
     )
 
 
-def _segment_frames(exe, traj, idx):
-    segs = exe.last_motion_trace["segments"]
-    bounds = np.cumsum([0] + [s["steps"] + s["hold_after_steps"] for s in segs])
-    return np.asarray(traj)[bounds[idx]:bounds[idx + 1]]
+def _segment_frames(result, idx):
+    start, end = result.segments[idx]["span"]
+    return np.asarray(result.trajectory)[start:end]
 
 
 class TestPickMotionChain:
@@ -102,7 +101,7 @@ class TestPickMotionChain:
         exe = MotionExecutor()
         traj = exe.pick(_pick_plan(), GenesisBackend(unstable_ik), np.zeros(9),
                         MotionParams(finger_steps=10))
-        arm = _segment_frames(exe, traj, 2)[:, :7]
+        arm = _segment_frames(traj, 2)[:, :7]
         np.testing.assert_allclose(arm, np.tile([0.5, 0.0, 0.10, 0, 0, 0, 0], (len(arm), 1)),
                                    atol=1e-6)
 
@@ -142,43 +141,9 @@ class TestPlaceMotionChain:
         assert segs[release_idx]["finger_only"] is True
 
         # If release re-solved IK while the fingers open, joint 3 would whip to 1.5.
-        release_arm = _segment_frames(exe, traj, release_idx)[:, :7]
+        release_arm = _segment_frames(traj, release_idx)[:, :7]
         assert np.allclose(release_arm, release_arm[0])
         assert release_arm[0][3] == pytest.approx(0.0)
-
-
-class _RecordingPlanner:
-    """Collision-aware backend stub that records the targets sent to plan_motion."""
-
-    def __init__(self):
-        self.collision_aware = True
-        self.plan_motion_targets: list[list[float]] = []
-
-    def solve_ik(self, pos, quat, finger_width, init_qpos=None, **_kw):
-        return _trivial_ik(pos, quat, finger_width)
-
-    def plan_motion(self, q_start, waypoints, *, world=None, control_dt=None, attach=None):
-        wp = waypoints[-1]
-        self.plan_motion_targets.append([float(v) for v in wp.pos])
-        return PlanResult(success=True, trajectory=[self.solve_ik(wp.pos, wp.quat, wp.finger_width)])
-
-
-class TestPickCollisionWorld:
-    """pick(world=...) routes free segments through plan_motion; the final
-    approach stays Cartesian (world-blind)."""
-
-    def test_free_segments_use_plan_motion_fine_stays_cartesian(self):
-        planner = _RecordingPlanner()
-        traj = MotionExecutor().pick(_pick_plan(), planner, np.zeros(9), MotionParams(),
-                                     world=[{"type": "halfspace"}])
-        assert len(traj) > 0
-        # Only pre-approach (wp0) and retreat (wp3) are free arm segments.
-        assert planner.plan_motion_targets == [[0.5, 0.0, 0.22], [0.5, 0.0, 0.30]]
-
-    def test_no_world_never_calls_plan_motion(self):
-        planner = _RecordingPlanner()
-        MotionExecutor().pick(_pick_plan(), planner, np.zeros(9), MotionParams(), world=None)
-        assert planner.plan_motion_targets == []
 
 
 def test_same_pose_ignores_finger_width():

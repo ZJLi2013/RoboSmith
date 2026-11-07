@@ -1,4 +1,4 @@
-"""Teacher steps bind to the completion condition they can be judged by; contradictions fail at load."""
+"""Plan steps bind to the completion condition they can be judged by; contradictions fail at load."""
 
 from pathlib import Path
 

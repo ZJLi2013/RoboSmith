@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+from robotsmith.execution.gate import Refused
 from robotsmith.scenario_runtime import runner
 from robotsmith.scenario_runtime.runner import evaluate_scenario_task, run_scenario_episode
 from robotsmith.sim.world_state import settle_window
@@ -67,8 +68,14 @@ class _Env:
         self.placed_map, self.object_heights, self.asset_map, self.object_quats = {}, {}, {}, {}
         self.table_surface_z, self.articulated_joint_dofs, self.planner = 0.775, {}, object()
 
+    def step(self):
+        self.scene.step()
+
     def reset(self, obj_xyz_map, *, settle_steps):
         pass
+
+    def state_fingerprint(self):
+        return "s"
 
     def get_joint_positions(self):
         return {}
@@ -79,7 +86,8 @@ class _Env:
 
 def _run(monkeypatch, steps, bindings, *, robot=False, phases=None):
     """Drive an episode whose every phase records 2 frames; return env, task, result and recorded lengths."""
-    monkeypatch.setattr(runner, "plan_segment", lambda skill, *a, **kw: ([np.zeros(9)] * 2, None, None))
+    monkeypatch.setattr(runner, "plan_segment",
+                        lambda skill, *a, **kw: (kw["gate"].ungated([np.zeros(9)] * 2), None, None))
     if phases is not None:
         monkeypatch.setattr(runner, "skill_phases", lambda skill, frame: phases.get(skill.name, ["all"]))
     recorded = []
@@ -164,6 +172,49 @@ def test_close_after_place_rejudges_the_task_on_a_new_settle(monkeypatch):
                                        window=result.final_window)
     assert env.scene.t == t + 15 and ok is True
     assert state["window"]["steps"] == [t + m for m in MARKS]
+
+
+def _commanding_run(monkeypatch, refused_at=None):
+    """Each step plans two distinct verified points; the record commands each point and steps, as the
+    recorder does. Return the env, result, verified points and every commanded target."""
+    verified, commanded = [], []
+
+    def plan(skill, *a, **kw):
+        if skill.name == refused_at:
+            raise Refused("search_exhausted", {"reason": "no carry height passed the gate"})
+        q = [np.full(9, len(verified) + 1.0), np.full(9, len(verified) + 2.0)]
+        verified.extend(q)
+        return kw["gate"].ungated(q), None, None
+
+    monkeypatch.setattr(runner, "plan_segment", plan)
+
+    def record(env, dataset, seg, task_spec, **kw):
+        for q in seg:
+            commanded.append(np.asarray(q))
+            env.scene.step()
+        return []
+
+    env = _Env()
+    task = TaskSpec(name="t", scene="t", instruction="", success=SuccessNode.leaf("object_in_box", ON),
+                    skills=[Skill(n, t) for n, t in PICK_PLACE_CLOSE], step_bindings=[UNCHECKED, BOUND, UNCHECKED])
+    result = run_scenario_episode(env, task, executor=object(), motion_params=object(), dataset=object(),
+                                  record_fn=record)
+    return env, result, verified, commanded
+
+
+def test_every_commanded_target_is_a_verified_point(monkeypatch):
+    env, result, verified, commanded = _commanding_run(monkeypatch)
+    assert len(verified) == 6 and len(commanded) == env.scene.t == 6 + 15
+    assert all(any(np.array_equal(c, v) for v in verified) for c in commanded)
+    assert result.stopped is None
+
+
+def test_a_refused_step_steps_no_physics_after_it(monkeypatch):
+    env, result, verified, commanded = _commanding_run(monkeypatch, refused_at="place")
+    assert env.scene.t == len(commanded) == len(verified) == 2
+    assert result.stopped["cause"] == "execution_failed" and result.stopped["skill"] == "place"
+    assert result.stopped["evidence"]["refused"] == "search_exhausted" and result.stopped["steps"] == 2
+    assert result.final_window is None and result.handoffs[-1] is result.stopped
 
 
 def test_failed_leaves_name_what_works_against_the_verdict():

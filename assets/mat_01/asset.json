@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "id": "mat_01",
+  "revision": 1,
+  "kind": "fixture",
+  "category": "mat",
+  "source": {
+    "type": "builtin_primitive",
+    "license": "Apache-2.0",
+    "rebuildable": false,
+    "files": []
+  },
+  "build": {
+    "files": [
+      "model.urdf"
+    ],
+    "hash": "4192a724a139bff1310127a079c91b69e453151605fa7f502900d3a2a70424d1"
+  },
+  "annotations": {
+    "description": {
+      "value": "Flat 16 x 16 cm placing mat, 1 cm thick; place target `top`.",
+      "by": "agent:acceptance"
+    },
+    "friction": {
+      "value": 0.6,
+      "by": "agent:acceptance"
+    },
+    "place_targets": {
+      "value": [
+        {
+          "name": "top"
+        }
+      ],
+      "by": "agent:acceptance"
+    }
+  }
+}

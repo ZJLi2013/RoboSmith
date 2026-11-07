@@ -2,8 +2,8 @@
 
 ``Waypoint`` is a single end-effector target (pose + finger width). It is the
 shared kinematic primitive used both by ``grasp`` planners (hand-authored
-pre-defined waypoint sequences) and by the ``motion`` planner backends
-(``plan_motion`` inputs). It lives in this leaf — not in ``grasp.planner`` — so
+pre-defined waypoint sequences) and by the ``motion`` layer. It lives in this
+leaf — not in ``grasp.planner`` — so
 the general motion layer owns the primitive and ``grasp`` depends on ``motion``
 (not the reverse).
 """

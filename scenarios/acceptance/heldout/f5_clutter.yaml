@@ -1,0 +1,17 @@
+scenario: acc_f5_clutter
+robot: franka
+scene:
+  support: table_simple
+  objects:
+    # Held-out family: low walls at off-axis yaws. One stands 5-40 mm behind the die (yawed with it, so a grasp
+    # must close along the wall at 45 deg); the other crosses the way to the mat.
+    - {id: wall_a, asset: wall_01, on: support, anchor_xy: [0.58, 0.20], yaw_deg: 45}
+    - {id: wall_b, asset: wall_01, on: support, anchor_xy: [0.48, -0.04], yaw_deg: 90}
+    - {id: die, asset: die_01, on: support, yaw_deg: 45,
+       offset_from: {of: wall_a, x: [-0.075, -0.04], y: [-0.10, 0.10]}}
+    - {id: mat, asset: mat_01, on: support, anchor_xy: [0.42, -0.22], yaw_deg: 0}
+task:
+  instruction: Put the die on the mat.
+  success:
+    on: {object: die, surface: mat.top}
+split: {playground: [0, 9], test: [100, 119]}
