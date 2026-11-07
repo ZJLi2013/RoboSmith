@@ -7,6 +7,17 @@
 签发的、状态指纹没变，只回放签发过的原轨迹。门的接口与接触契约见
 [manipulation](manipulation.md#执行门的接口与契约)。
 
+## 四层
+
+| 层 | 回答什么 | 组件（模块） |
+|---|---|---|
+| 编排层 | 做哪几步、失败后怎么办 | `scenarios/plans/`、`scenario_runtime/planner.py`、`scenario_runtime/runner.py` 的 `EpisodeRun` |
+| 技能层 | 一步（pick / place / open / close）怎么变成一条过门的关节轨迹 | `skills/` |
+| 底层：抓取与运动 | 抓哪里、航点是什么、每段怎么解出关节、哪个点合法 | `grasp/`、`execution/`、`motion/` |
+| 仿真与判定 | 执行、录帧、判这一步和整个任务成没成 | `sim/`、`scenario_runtime/handoff.py`、`tasks/`；判定函数住在 `runner.py` |
+
+每个框写 `模块.函数`，框按所属模块放进层里；同一层内的子框是可以单独替换的组件。
+
 ## episode：从入口到判定
 
 ```mermaid
@@ -47,6 +58,10 @@ flowchart TD
     REC --> HO --> JC -->|下一段 / 下一步| RUN
     RUN -->|全部步骤结束| TASK
     INF -->|入口不做任务判定的 settle，直接判失败| CLI
+
+    style ORCH fill:#e3f1e0,stroke:#2e7d32
+    style SKILL fill:#e8eef9,stroke:#3b5b9a
+    style SIM fill:#f2f2f2,stroke:#666
 ```
 
 技能内部见下一张图。file 与 agent 两条路径共用 `EpisodeRun`，只是步骤表的来源不同。plan 文件里的 `actions`
@@ -73,11 +88,17 @@ flowchart TD
         V3{"ExecutionGate.verify<br/>rest = 放置目标的 entity；Holding 取自实测手与物体位姿"}
     end
 
-    EXE["execution/executor.MotionExecutor<br/>pick / place / drag_handle：航点模板 → RuntimeMotionWaypoint（holding / allow）"]
-    CH["motion/chain.execute_motion_chain → _solve_segment 逐段路由<br/>_assemble_trajectory 给每段写 span / holding / allow / pose / reach"]
-    F["只动手指：手臂锁定"]
-    C["直线段（最终接近、下放、拖拽、退回）<br/>motion/move_linear.expand，逐步 IK；pick 遇跳变拒绝，place 与拖拽保留"]
-    G["自由段：GenesisBackend.solve_ik + _interpolate，关节线性插值"]
+    subgraph LOW["底层：执行与运动"]
+        subgraph EX["执行 execution/"]
+            EXE["executor.MotionExecutor<br/>pick / place / drag_handle：航点模板 → RuntimeMotionWaypoint（holding / allow / linear）"]
+        end
+        subgraph MO["运动 motion/"]
+            CH["chain.execute_motion_chain → _solve_segment 逐段路由<br/>_assemble_trajectory 给每段写 span / holding / allow / pose / reach"]
+            F["只动手指：手臂锁定"]
+            C["直线段（最终接近、下放、拖拽、退回）<br/>move_linear.expand，逐步 IK；pick 遇跳变拒绝，place 与拖拽保留"]
+            G["其余段：GenesisBackend.solve_ik + _interpolate，关节线性插值"]
+        end
+    end
 
     GEO --> PM --> V1
     V1 -- 拒绝，记 gate --> PM
@@ -93,6 +114,10 @@ flowchart TD
     V3 -- 拒绝 --> RF
     V3 -- 通过 --> OKL["签发 VerifiedMotion"]
     PM & PX --> EXE --> CH --> F & C & G
+
+    style PK fill:#e8eef9,stroke:#3b5b9a
+    style PL fill:#e8eef9,stroke:#3b5b9a
+    style LOW fill:#fff4e0,stroke:#b9770e
 ```
 
 门检查的是会被执行的每一个点：pick 的规划进场段、手指段、段后保持与尾部保持都在 `spans` 里，`spans` 必须铺满整条轨迹。
