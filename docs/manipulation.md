@@ -286,6 +286,11 @@ F2 7/10、F4 10/10 零步拒绝。公开输入里没有 place 不可达的组合
 跳变策略写在航点的 `linear` 上：pick 的最终接近 `refuse`，抛出与原先同文的 `RuntimeError`；place 与拖拽 `keep`，路径照样送门。
 d1 设计里的「跳变即拒」会改变 place 的送门轨迹与预检结果，属于行为改动，没有放进这一片。
 
+删除与替换：`motion/cartesian.py`（`solve_cartesian_ik_path`）整体移入 `move_linear.expand` 后删除；
+`RuntimeMotionWaypoint.cartesian: bool` 换成 `linear`；`execute_motion_chain` 的全局开关 `raise_on_cartesian_discontinuity`
+删除，策略改由每个航点声明。trace 段字典仍写 `"cartesian"` 键（值为 `linear is not None`），`handoff` 等读方不变。
+`motion.chain.evaluate_motion_chain` 保留，末段诊断改调 `expand(on_jump="keep")` 并读 `continuous`；它在仓库内目前没有调用方。
+
 同一组 CPU 输入在修改前后的送门轨迹、段字典与错误文本完全相同。F0 / F1 / F2 playground seed 0–9 逐实例与 S3 相同：
 F0 10/10、F1 10/10、F2 7/10（[e11 证据](../exps/r1/evidence/e11/README.md)）。
 
