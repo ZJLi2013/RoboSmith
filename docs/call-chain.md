@@ -76,7 +76,7 @@ flowchart TD
     EXE["execution/executor.MotionExecutor<br/>pick / place / drag_handle：航点模板 → RuntimeMotionWaypoint（holding / allow）"]
     CH["motion/chain.execute_motion_chain → _solve_segment 逐段路由<br/>_assemble_trajectory 给每段写 span / holding / allow / pose / reach"]
     F["只动手指：手臂锁定"]
-    C["笛卡尔段（最终接近、下放、拖拽、退回）<br/>motion/cartesian.solve_cartesian_ik_path，逐步 IK"]
+    C["直线段（最终接近、下放、拖拽、退回）<br/>motion/move_linear.expand，逐步 IK；pick 遇跳变拒绝，place 与拖拽保留"]
     G["自由段：GenesisBackend.solve_ik + _interpolate，关节线性插值"]
 
     GEO --> PM --> V1
@@ -136,10 +136,14 @@ pick 的手指闭合段允许手指碰目标（`grip`），其后一段持物且
   `pick` 用它规划到首航点的进场段。
 - `motion/planner.MotionPlanner` 只有 `solve_ik(pos, quat, finger_pos, *, init_qpos)`；唯一实现 `GenesisBackend` 包装
   `SimEnv.solve_ik`。
-- `motion/chain.execute_motion_chain(waypoints, motion_planner, start_qpos, params, *, tail_hold_steps,
-  raise_on_cartesian_discontinuity)` 做「航点 → IK（笛卡尔段逐步 IK）→ 关节插值」，返回 `MotionChainExecution`，
-  每段带 `span`、`holding`、`allow`、航点位姿 `pose` 与到达下标 `reach`；`spans_of` 把它们转成门的 `Span`，`poses_of`
-  转成 `verify` 的 `poses`。
+- `motion/move_linear.expand(MoveLinear(start_pos, end_pos, quat, finger_width, on_jump, label), q_start, solve_ik)`
+  把一段笛卡尔直线展开成关节路径：`start_pos` 是上一航点的名义位置，`q_start` 是逐点 IK 的初值，每 1 cm 一点、至多 24 点；
+  单步关节变化超过 0.8 rad 时，`on_jump="refuse"` 抛 `RuntimeError("<label> IK discontinuity: ...")`，`"keep"` 返回路径并标
+  `continuous=False`。零物理步、无状态，不签发凭证。
+- `motion/chain.execute_motion_chain(waypoints, motion_planner, start_qpos, params, *, tail_hold_steps)` 做「航点 → IK
+  （`linear` 段交给 `move_linear.expand`）→ 关节插值」，返回 `MotionChainExecution`，每段带 `span`、`holding`、`allow`、
+  航点位姿 `pose` 与到达下标 `reach`；`spans_of` 把它们转成门的 `Span`，`poses_of` 转成 `verify` 的 `poses`。
+  跳变策略写在航点的 `linear` 上：pick 的最终接近 `refuse`，place 的下放、退回与拖拽各段 `keep`。
 - `MotionExecutor.pick(plan, motion_planner, home_qpos, params)`、`place(..., *, phase)`、`drag_handle(..., action)`；
   `place` 的 `descend` 从当前构型先走一段到 standoff 的关节插值（规划搬运之后几乎不动），再下放、松手、退回。
 - `scenario/relations.rigid_moving_links`：关节子 link 加上与它固定连接的 link，给 `clear_of` 的扫掠占地用。

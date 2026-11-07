@@ -154,7 +154,7 @@ MoveRelative / ModifyPlanningScene。
 |---|---|---|---|
 | `sample` | 几何采样 + IK（`GraspPlanner.plan / plan_place`），零运动 | 产出带多个 IK 解的抓取 / 放置候选绑定 | `no_candidate`、`ik_failed` |
 | `move_to` | 关节空间 RRT-Connect | 持物状态不变，到目标构型 | `invalid_start`、`invalid_goal`、`search_exhausted` |
-| `move_linear` | 笛卡尔直线逐点 IK，跳变即拒 | 持物状态不变，末端沿直线到达 | `ik_failed`、`discontinuity` |
+| `move_linear` | 笛卡尔直线逐点 IK（`motion/move_linear.expand`，已实现）；跳变时拒绝或保留由调用方定 | 持物状态不变，末端沿直线到达 | `ik_failed`、`discontinuity` |
 | `gripper` | 手指位置目标，`allow=grip` | 张开到全宽；合爪到手指被物体挡住，宽度在候选 `closing_width` 容差内 | `grasp_unconfirmed` |
 | `attach` | 状态事件，零运动 | 持物 = 刚体（`T_hand_object` 取自抓取绑定） | `binding_mismatch` |
 | `detach` | 状态事件，零运动 | 持物为空，物体固定在放置位姿 | `unsupported_release` |
@@ -277,6 +277,18 @@ place 仍从实测状态重新规划与过门，这时它被拒，`EpisodeRun` �
 F2 7/10、F4 10/10 零步拒绝。公开输入里没有 place 不可达的组合，所以零步拒绝的那一支只由 CPU 测试覆盖。单实例耗时比 S2 长约
 15–20%（F0 平均 151 s）。
 
+### move_linear 单独展开
+
+笛卡尔直线段（pick 的最终接近，place 的下放与退回，拖拽的各段）都由 `move_linear.expand(MoveLinear(...), q_start, solve_ik)`
+展开。`MoveLinear` 带上一航点的名义起点、终点、姿态、手指宽度与跳变策略，`q_start` 是逐点 IK 的初值。返回的 `LinearSegment`
+里有每个插值点的关节解，末点即预测末构型。帧数、span、许可与保持段仍由 `motion.chain` 统一拼接。
+
+跳变策略写在航点的 `linear` 上：pick 的最终接近 `refuse`，抛出与原先同文的 `RuntimeError`；place 与拖拽 `keep`，路径照样送门。
+d1 设计里的「跳变即拒」会改变 place 的送门轨迹与预检结果，属于行为改动，没有放进这一片。
+
+同一组 CPU 输入在修改前后的送门轨迹、段字典与错误文本完全相同。F0 / F1 / F2 playground seed 0–9 逐实例与 S3 相同：
+F0 10/10、F1 10/10、F2 7/10（[e11 证据](../exps/r1/evidence/e11/README.md)）。
+
 ## 下一步
 
 模板式链路的四步迁移已完成（rocRobo 删除、`SimEnv` 快照接口、执行门、[调用链](call-chain.md)重写），读数见
@@ -288,7 +300,7 @@ F2 7/10、F4 10/10 零步拒绝。公开输入里没有 place 不可达的组合
    1. place 的搬运段由 `JointPlanner` 生成，删转基座与搬运高度（已实现，结果见「place 的规划搬运」）；
    2. pick 的进场段由 `JointPlanner` 生成，删 `_pick_seed_transit`（已实现，结果见「pick 的规划进场」）；
    3. 同一目标的 pick + place 在第一个物理步前整组过门（已实现，结果见「pick 先确认 place 可达」）；
-   4. `move_linear`、`gripper`、`attach`、`detach` 从 `MotionExecutor` 模板拆出，一次一个；
+   4. `move_linear`、`gripper`、`attach`、`detach` 从 `MotionExecutor` 模板拆出，一次一个（`move_linear` 已拆出，见「move_linear 单独展开」）；
    5. `EpisodeRun`、单资产验证与 `certify` 走同一服务，删 `run_skills`、`plan_segment`；
 4. plan 文件的 `actions` 与 LLM 可直接提交 meta action 列表，走同一搜索与门。
 
