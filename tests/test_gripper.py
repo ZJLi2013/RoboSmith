@@ -3,11 +3,13 @@
 import numpy as np
 
 from robotsmith.execution.executor import MotionExecutor
+from robotsmith.execution.gate import Holding
 from robotsmith.grasp.planner import GraspPlan, Waypoint
 from robotsmith.motion import gripper
 from robotsmith.motion.chain import evaluate_motion_chain
 from robotsmith.motion.gripper import Gripper, expand
 from robotsmith.motion.params import MotionParams
+from robotsmith.motion.plan_state import PlanState
 from robotsmith.motion.planner import GenesisBackend
 
 QUAT = np.array([0.0, 1.0, 0.0, 0.0])
@@ -66,10 +68,10 @@ def test_pick_place_drag_and_scoring_open_and_close_through_gripper(monkeypatch)
             Waypoint(pos=np.array([0.5, 0.0, 0.3]), quat=QUAT, finger_width=0.0),
         ],
     )
-    exe.pick(plan, planner, _ik(plan.waypoints[0].pos, QUAT, 0.0), params)
+    exe.pick(plan, planner, _ik(plan.waypoints[0].pos, QUAT, 0.0), params, grasp=Holding("die", np.eye(4)))
     assert seen == [0.04, 0.04, 0.0]
     seen.clear()
-    exe.place(plan, planner, np.zeros(9), params)
+    exe.place(plan, planner, PlanState(np.zeros(9), Holding("die", np.eye(4))), params)
     assert seen == [0.04]
     seen.clear()
     exe.drag_handle(np.array([0.5, 0.0, 0.15]), QUAT, np.array([-0.1, 0.0, 0.0]), planner, np.zeros(9), params)

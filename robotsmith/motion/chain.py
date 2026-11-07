@@ -25,9 +25,11 @@ import numpy as np
 
 from robotsmith.sim.franka import Q_LOWER as _FRANKA_Q_LOWER
 from robotsmith.sim.franka import Q_UPPER as _FRANKA_Q_UPPER
+from robotsmith.execution.gate import Holding
 from robotsmith.motion import gripper, move_linear
 from robotsmith.motion.constants import N_ARM_JOINTS as _N_ARM_JOINTS
 from robotsmith.motion.params import MotionParams
+from robotsmith.motion.plan_state import PlanState, attach, detach
 from robotsmith.motion.planner import MotionPlanner
 
 logger = logging.getLogger(__name__)
@@ -145,8 +147,10 @@ class RuntimeMotionWaypoint:
     # A ``move_linear`` segment and its policy on an IK branch flip; ``None`` is a joint-space move.
     linear: Literal["refuse", "keep"] | None = None
     hold_after_steps: int = 0
-    holding: bool = False
     allow: str | None = None
+    # Applied to the plan state once this segment and its hold end.
+    attach: Holding | None = None
+    detach: bool = False
 
 
 @dataclass
@@ -311,7 +315,7 @@ def _assemble_trajectory(
 def execute_motion_chain(
     waypoints: list[RuntimeMotionWaypoint],
     motion_planner: MotionPlanner,
-    start_qpos: np.ndarray,
+    start: PlanState,
     params: MotionParams,
     *,
     tail_hold_steps: int = 0,
@@ -319,11 +323,12 @@ def execute_motion_chain(
     """Execute runtime waypoints with seed-continuous IK and diagnostics.
 
     Per-pose IK goes through ``motion_planner.solve_ik``; nothing here checks
-    collisions.
+    collisions. A segment is ``holding`` when the plan state holds something while it runs.
     """
-    q_targets = [np.asarray(start_qpos, dtype=np.float64).copy()]
+    q_targets = [np.asarray(start.q, dtype=np.float64).copy()]
     segment_paths: list[list[np.ndarray] | None] = []
     segments: list[dict] = []
+    state = start
 
     for i, wp in enumerate(waypoints):
         q_from = q_targets[-1]
@@ -346,10 +351,14 @@ def execute_motion_chain(
                 "cartesian": wp.linear is not None,
                 "finger_only": wp.finger_only,
                 "hold_after_steps": wp.hold_after_steps,
-                "holding": wp.holding,
+                "holding": state.holding is not None,
                 "allow": wp.allow,
             }
         )
+        if wp.attach is not None:
+            state = attach(state, wp.attach)
+        if wp.detach:
+            state = detach(state)
 
     _log_segments(waypoints, segments, params, tail_hold_steps)
     return MotionChainExecution(

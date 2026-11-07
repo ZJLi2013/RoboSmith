@@ -17,6 +17,7 @@ import logging
 
 import numpy as np
 
+from robotsmith.execution.gate import Holding
 from robotsmith.grasp.planner import GraspPlan
 from robotsmith.motion import gripper
 from robotsmith.motion.chain import (
@@ -27,6 +28,7 @@ from robotsmith.motion.chain import (
     execution_trace,
 )
 from robotsmith.motion.params import MotionParams
+from robotsmith.motion.plan_state import PlanState
 from robotsmith.motion.planner import MotionPlanner
 
 logger = logging.getLogger(__name__)
@@ -164,13 +166,15 @@ class MotionExecutor:
         motion_planner: MotionPlanner,
         home_qpos: np.ndarray,
         params: MotionParams,
+        *,
+        grasp: Holding,
     ) -> MotionChainExecution:
         """waypoints → hold (velocity-adaptive step counts); the final approach segment is Cartesian.
         ``home_qpos`` is the arm already at the first waypoint, so that segment only opens the fingers, in zero
-        steps when they already are."""
+        steps when they already are. ``grasp`` is attached once the last finger segment and its settle end."""
         if not plan.waypoints:
             raise ValueError("GraspPlan.pick requires a non-empty waypoint sequence")
-        return self._pick_waypoints(plan, motion_planner, home_qpos, params)
+        return self._pick_waypoints(plan, motion_planner, home_qpos, params, grasp)
 
     def _pick_waypoints(
         self,
@@ -178,6 +182,7 @@ class MotionExecutor:
         motion_planner: MotionPlanner,
         home_qpos: np.ndarray,
         params: MotionParams,
+        grasp: Holding,
     ) -> MotionChainExecution:
         """Execute an ordered waypoint sequence with velocity-adaptive timing.
 
@@ -224,16 +229,16 @@ class MotionExecutor:
                     hold_after_steps=(
                         params.grasp_settle_steps if i == last_finger else 0
                     ),
-                    holding=0 <= last_finger < i,
                     allow=("grip" if is_finger[i]
                            else "rest" if last_finger >= 0 and i == last_finger + 1 else None),
+                    attach=grasp if i == last_finger else None,
                 )
             )
 
         result = execute_motion_chain(
             runtime_wps,
             motion_planner,
-            home_qpos,
+            PlanState(home_qpos),
             params,
             tail_hold_steps=params.lift_hold_steps,
         )
@@ -251,14 +256,14 @@ class MotionExecutor:
         self,
         place_plan: GraspPlan,
         motion_planner: MotionPlanner,
-        start_qpos: np.ndarray,
+        start: PlanState,
         params: MotionParams,
         *,
         phase: str = "all",
     ) -> MotionChainExecution:
         """transport → pre_place → place (open fingers) → retreat.
 
-        Assumes the robot is holding an object (fingers closed) at start_qpos.
+        ``start`` holds the object (fingers closed); it is detached once the release ends.
         Finger widths come from place_plan: finger_closed while transporting,
         finger_open on release.
 
@@ -296,7 +301,6 @@ class MotionExecutor:
             finger_width=place_plan.finger_closed,
             label="transport",
             steps=params.transport_steps,
-            holding=True,
         )]
         descend_wps = [
             RuntimeMotionWaypoint(
@@ -306,7 +310,6 @@ class MotionExecutor:
                 label="descend",
                 linear="keep",
                 steps=params.place_descend_steps,
-                holding=True,
                 allow="rest",
             ),
             RuntimeMotionWaypoint(
@@ -317,8 +320,8 @@ class MotionExecutor:
                 segment_type="finger",
                 steps=params.release_steps,
                 finger_only=True,
-                holding=True,
                 allow="rest",
+                detach=True,
             ),
             RuntimeMotionWaypoint(
                 pos=place_plan.retreat_pos,
@@ -337,7 +340,7 @@ class MotionExecutor:
         result = execute_motion_chain(
             runtime_wps,
             motion_planner,
-            start_qpos,
+            start,
             params,
         )
         self.last_motion_trace = execution_trace("place", result)
@@ -405,7 +408,7 @@ class MotionExecutor:
         result = execute_motion_chain(
             runtime_wps,
             motion_planner,
-            start_qpos,
+            PlanState(start_qpos),
             params,
         )
         self.last_motion_trace = execution_trace(action, result)

@@ -126,10 +126,13 @@ def _at_first_waypoint(plan, finger):
     return _ik(plan.waypoints[0].pos, plan.waypoints[0].quat, finger)
 
 
+GRASP = Holding("die", np.eye(4))
+
+
 def _pick_motion():
     params = MotionParams()
     plan = _pick_plan()
-    result = MotionExecutor().pick(plan, GenesisBackend(_ik), _at_first_waypoint(plan, 0.0), params)
+    result = MotionExecutor().pick(plan, GenesisBackend(_ik), _at_first_waypoint(plan, 0.0), params, grasp=GRASP)
     transit = _points(0.1, 0.2)
     return transit + result.trajectory, [Span("transit", 0, 2)] + spans_of(result.segments, 2), params
 
@@ -145,7 +148,7 @@ def test_pick_spans_tile_the_whole_trajectory_with_holds_and_rules():
 def test_pick_poses_are_the_waypoints_at_the_points_that_reach_them():
     params = MotionParams()
     plan = _pick_plan()
-    result = MotionExecutor().pick(plan, GenesisBackend(_ik), _at_first_waypoint(plan, 0.0), params)
+    result = MotionExecutor().pick(plan, GenesisBackend(_ik), _at_first_waypoint(plan, 0.0), params, grasp=GRASP)
     poses = poses_of(result.segments, 2)
     assert len(poses) == len(plan.waypoints)
     traj = _points(0.1, 0.2) + result.trajectory
@@ -161,11 +164,11 @@ def test_pick_poses_are_the_waypoints_at_the_points_that_reach_them():
 def test_pick_holds_the_arm_at_its_start_through_the_first_waypoint():
     plan, params = _pick_plan(), MotionParams()
     start = _at_first_waypoint(plan, 0.0)
-    result = MotionExecutor().pick(plan, GenesisBackend(_ik), start, params)
+    result = MotionExecutor().pick(plan, GenesisBackend(_ik), start, params, grasp=GRASP)
     first = spans_of(result.segments)[0]
     assert first.end == params.finger_steps
     assert all(np.allclose(q[:7], start[:7]) for q in result.trajectory[:first.end])
-    opened = MotionExecutor().pick(plan, GenesisBackend(_ik), _at_first_waypoint(plan, 0.04), params)
+    opened = MotionExecutor().pick(plan, GenesisBackend(_ik), _at_first_waypoint(plan, 0.04), params, grasp=GRASP)
     assert spans_of(opened.segments)[0].end == 0
 
 
