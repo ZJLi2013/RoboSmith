@@ -47,6 +47,7 @@ agent 写步骤表（pick X、place X on Y…），技能执行，每步判定�
 | 航点模板与每段的持物 / 允许接触 | `MotionExecutor` |
 | 关键位姿到稠密关节路径与段边界 | `motion.chain.execute_motion_chain` |
 | 笛卡尔直线段的关节路径 | `motion.move_linear.expand` |
+| 开合指段的目标构型 | `motion.gripper.expand` |
 | 抓取的物理是否成立（抬得起） | `SimEnv.trial_from_here`，只在过门之后调用 |
 | 执行 | `EpisodeRun`，只回放验证过的轨迹，不解 IK |
 
@@ -158,7 +159,7 @@ MoveRelative / ModifyPlanningScene。
 | `sample` | 几何采样 + IK（`GraspPlanner.plan / plan_place`），零运动 | 产出带多个 IK 解的抓取 / 放置候选绑定 | `no_candidate`、`ik_failed` |
 | `move_to` | 关节空间 RRT-Connect | 持物状态不变，到目标构型 | `invalid_start`、`invalid_goal`、`search_exhausted` |
 | `move_linear` | 笛卡尔直线逐点 IK（`motion/move_linear.expand`，已实现）；跳变时拒绝或保留由调用方定 | 持物状态不变，末端沿直线到达 | `ik_failed`、`discontinuity` |
-| `gripper` | 手指位置目标，`allow=grip` | 张开到全宽；合爪到手指被物体挡住，宽度在候选 `closing_width` 容差内 | `grasp_unconfirmed` |
+| `gripper` | 手指位置目标，`allow=grip`（`motion/gripper.expand`，已实现：臂锁定，指关节取该航点 IK 解的指关节） | 张开到全宽；合爪到手指被物体挡住，宽度在候选 `closing_width` 容差内 | `grasp_unconfirmed` |
 | `attach` | 状态事件，零运动 | 持物 = 刚体（`T_hand_object` 取自抓取绑定） | `binding_mismatch` |
 | `detach` | 状态事件，零运动 | 持物为空，物体固定在放置位姿 | `unsupported_release` |
 
@@ -297,6 +298,21 @@ d1 设计里的「跳变即拒」会改变 place 的送门轨迹与预检结果�
 同一组 CPU 输入在修改前后的送门轨迹、段字典与错误文本完全相同。F0 / F1 / F2 playground seed 0–9 逐实例与 S3 相同：
 F0 10/10、F1 10/10、F2 7/10（[e11 证据](../exps/r1/evidence/e11/README.md)）。
 
+### gripper 单独展开
+
+只动手指的段（pick 首航点的张指与合指、place 的松指、拖拽的抓握与释放）都由
+`gripper.expand(Gripper(pos, quat, finger_width), q_start, solve_ik)` 给出目标构型：臂关节取 `q_start`，指关节取
+`solve_ik(pos, quat, finger_width)` 解出的指关节，不带 IK 初值，所以和原先的锁臂换指逐元素相同。帧数（`steps` 优先，
+否则 `finger_steps`，显式 0 帧保留）、插值、hold、span 与许可仍由 `motion.chain` 拼接；`RuntimeMotionWaypoint.finger_only`
+仍是路由与 trace 标志。pick 判断首航点是否已张开（已张开则 0 帧）时也调它，IK 调用次数与次序不变。
+
+删除与替换：`motion.chain` 的 finger-only 分支、`evaluate_motion_chain` 的同位姿分支与 `MotionExecutor.pick` 的张指判断里
+三份锁臂换指的写法换成这一个动作。持物与许可沿用调用方：place 的松指段仍持物且 `rest`，退回时才空手。
+
+同一组 CPU 输入（e11 的固定请求，加首航点未张开、显式 0 帧、带 hold 的开合指段）在修改前后的送门轨迹、段字典、错误文本与
+IK 调用序列（每次 `solve_ik` 的参数与次序）完全相同（[e12 证据](../exps/r1/evidence/e12/README.md)）。指目标直接来自
+`solve_ik` 的指关节、不依赖初值，所以这一片不跑 GPU。
+
 ## 下一步
 
 模板式链路的四步迁移已完成（rocRobo 删除、`SimEnv` 快照接口、执行门、[调用链](call-chain.md)重写），读数见
@@ -308,8 +324,10 @@ F0 10/10、F1 10/10、F2 7/10（[e11 证据](../exps/r1/evidence/e11/README.md)�
    1. place 的搬运段由 `JointPlanner` 生成，删转基座与搬运高度（已实现，结果见「place 的规划搬运」）；
    2. pick 的进场段由 `JointPlanner` 生成，删 `_pick_seed_transit`（已实现，结果见「pick 的规划进场」）；
    3. 同一目标的 pick + place 在第一个物理步前整组过门（已实现，结果见「pick 先确认 place 可达」）；
-   4. `move_linear`、`gripper`、`attach`、`detach` 从 `MotionExecutor` 模板拆出，一次一个（`move_linear` 已拆出，见「move_linear 单独展开」）；
-   5. `EpisodeRun`、单资产验证与 `certify` 走同一服务，删 `run_skills`、`plan_segment`；
-4. plan 文件的 `actions` 与 LLM 可直接提交 meta action 列表，走同一搜索与门。
+   4. `move_linear`、`gripper` 从 `MotionExecutor` 模板拆出（都已拆出，见「move_linear 单独展开」「gripper 单独展开」）；
+   5. 持物由一份 `PlanState` 上的 `attach` / `detach` 事件改变，预测状态与执行后的实测状态分开；
+   6. pick / place 写成与现有行为一致的动作列表，由一个执行器展开、拼段、过门，删 `MotionExecutor.pick / place`；
+   7. 动作列表换成 plan 文件 `actions` 的写法（进场前张指、抓后直线抬升、`detach` 先于松指），这一步改变行为；
+   8. `EpisodeRun`、单资产验证与 `certify` 走这个执行器，plan 文件的 `actions` 直接执行，删 `run_skills`、`plan_segment`。
 
-然后在组合式验收场景（含开发期不读的留出族）的 test seed 上读 certified 率。
+本版只服务 pick / place，不做动作注册表与扩展接口。然后在组合式验收场景（含开发期不读的留出族）的 test seed 上读 certified 率。

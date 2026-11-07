@@ -18,6 +18,7 @@ import logging
 import numpy as np
 
 from robotsmith.grasp.planner import GraspPlan
+from robotsmith.motion import gripper
 from robotsmith.motion.chain import (
     MotionChainExecution,
     RuntimeMotionWaypoint,
@@ -198,7 +199,8 @@ class MotionExecutor:
 
         is_finger, fine_idx = classify_segments(wps)
         last_finger = max((i for i, f in enumerate(is_finger) if f), default=-1)
-        opened = np.asarray(motion_planner.solve_ik(wps[0].pos, wps[0].quat, wps[0].finger_width), dtype=np.float64)
+        opened = gripper.expand(gripper.Gripper(wps[0].pos, wps[0].quat, wps[0].finger_width), home_qpos,
+                                motion_planner.solve_ik).q_target
         open_steps = 0 if np.allclose(opened[7:], np.asarray(home_qpos, dtype=np.float64)[7:]) else None
 
         runtime_wps: list[RuntimeMotionWaypoint] = []

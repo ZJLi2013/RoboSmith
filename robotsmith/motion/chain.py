@@ -25,7 +25,7 @@ import numpy as np
 
 from robotsmith.sim.franka import Q_LOWER as _FRANKA_Q_LOWER
 from robotsmith.sim.franka import Q_UPPER as _FRANKA_Q_UPPER
-from robotsmith.motion import move_linear
+from robotsmith.motion import gripper, move_linear
 from robotsmith.motion.constants import N_ARM_JOINTS as _N_ARM_JOINTS
 from robotsmith.motion.params import MotionParams
 from robotsmith.motion.planner import MotionPlanner
@@ -90,9 +90,7 @@ def evaluate_motion_chain(
     ok = True
     for i, wp in enumerate(waypoints):
         if i > 0 and _same_pose(waypoints[i - 1], wp):
-            q = qs[-1].copy()
-            finger_q = solve_ik(wp.pos, wp.quat, wp.finger_width)
-            q[_N_ARM_JOINTS:] = finger_q[_N_ARM_JOINTS:]
+            q = gripper.expand(gripper.Gripper(wp.pos, wp.quat, wp.finger_width), qs[-1], solve_ik).q_target
         else:
             q = solve_ik(wp.pos, wp.quat, wp.finger_width, init_qpos=qs[-1])
         q = np.asarray(q, dtype=np.float64)
@@ -197,15 +195,13 @@ def _solve_segment(
 ) -> tuple[np.ndarray, list[np.ndarray] | None, float]:
     """Solve one segment → (endpoint qpos, dense path | None, arm displacement).
 
-    Routing: finger-only locks the arm; a linear segment is expanded by
+    Routing: finger-only is expanded by ``gripper`` (arm locked); a linear segment is expanded by
     ``move_linear`` (and reports its per-step continuity metric); otherwise plain
     per-pose IK, interpolated in joint space.
     """
     segment_path: list[np.ndarray] | None = None
     if wp.finger_only:
-        q_to = q_from.copy()
-        finger_q = motion_planner.solve_ik(wp.pos, wp.quat, wp.finger_width)
-        q_to[_N_ARM_JOINTS:] = finger_q[_N_ARM_JOINTS:]
+        q_to = gripper.expand(gripper.Gripper(wp.pos, wp.quat, wp.finger_width), q_from, motion_planner.solve_ik).q_target
     elif wp.linear is not None:
         if i == 0:
             raise ValueError("cartesian segment requires a previous waypoint")
