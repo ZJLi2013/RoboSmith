@@ -94,7 +94,7 @@ flowchart TD
         end
         subgraph MO["运动 motion/"]
             CH["chain.execute_motion_chain → _solve_segment 逐段路由<br/>_assemble_trajectory 给每段写 span / holding / allow / pose / reach"]
-            F["只动手指：手臂锁定"]
+            F["只动手指：gripper.expand，手臂锁定"]
             C["直线段（最终接近、下放、拖拽、退回）<br/>move_linear.expand，逐步 IK；pick 遇跳变拒绝，place 与拖拽保留"]
             G["其余段：GenesisBackend.solve_ik + _interpolate，关节线性插值"]
         end
@@ -165,8 +165,11 @@ pick 的手指闭合段允许手指碰目标（`grip`），其后一段持物且
   把一段笛卡尔直线展开成关节路径：`start_pos` 是上一航点的名义位置，`q_start` 是逐点 IK 的初值，每 1 cm 一点、至多 24 点；
   单步关节变化超过 0.8 rad 时，`on_jump="refuse"` 抛 `RuntimeError("<label> IK discontinuity: ...")`，`"keep"` 返回路径并标
   `continuous=False`。零物理步、无状态，不签发凭证。
+- `motion/gripper.expand(Gripper(pos, quat, finger_width), q_start, solve_ik)` 给只动手指的段算目标构型：臂关节取
+  `q_start`，指关节取 `solve_ik(pos, quat, finger_width)` 的指关节（不带初值），返回 `GripperSegment(q_target)`。
+  零物理步、无状态，不签发凭证，不改持物状态。
 - `motion/chain.execute_motion_chain(waypoints, motion_planner, start_qpos, params, *, tail_hold_steps)` 做「航点 → IK
-  （`linear` 段交给 `move_linear.expand`）→ 关节插值」，返回 `MotionChainExecution`，每段带 `span`、`holding`、`allow`、
+  （`finger_only` 段交给 `gripper.expand`，`linear` 段交给 `move_linear.expand`）→ 关节插值」，返回 `MotionChainExecution`，每段带 `span`、`holding`、`allow`、
   航点位姿 `pose` 与到达下标 `reach`；`spans_of` 把它们转成门的 `Span`，`poses_of` 转成 `verify` 的 `poses`。
   跳变策略写在航点的 `linear` 上：pick 的最终接近 `refuse`，place 的下放、退回与拖拽各段 `keep`。
 - `MotionExecutor.pick(plan, motion_planner, home_qpos, params)`、`place(..., *, phase)`、`drag_handle(..., action)`；
