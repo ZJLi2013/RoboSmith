@@ -74,7 +74,7 @@ plan 类失败重写剩余步骤，`execution_failed` 按 physical 失败上报�
 flowchart TD
     subgraph PK["pick._select：按候选顺序"]
         GEO["grasp/geometric.GeometricGraspPlanner.plan<br/>写回的抓法在前，再按有向包围盒枚举 top_down / side"]
-        PM["pick._pick_request<br/>IK 解首航点（初值 = home 转基座或 ik_seed）；MotionExecutor.pick 从那里起、首航点锁臂<br/>抓取段先单独 verify，再 JointPlanner.connect 规划进场段<br/>Holding 取自候选的抓取位姿，poses 取自航点"]
+        PM["pick._pick_request<br/>IK 解首航点（初值 = home 转基座或 ik_seed）；MotionExecutor.pick 从那里起、首航点锁臂<br/>抓取段先单独 verify，再 JointPlanner.connect 规划进场段<br/>plan_state.binding 取候选的抓取位姿，poses 取自航点"]
         V1{"ExecutionGate.verify"}
         PRE{"pick._place_check：下一步是单阶段 place 时<br/>在 SimEnv.posed(pick 末点, 目标在手中) 里 plan_segment 这个 place<br/>凭证与 trace 丢弃"}
         TR["sim_env.SimEnv.trial_from_here<br/>重放、恢复快照；物体抬高超过 0.02 m 算抬起"]
@@ -85,15 +85,15 @@ flowchart TD
         PP["place._resolve_place_plan → grasp/planner.plan_place<br/>落点 = 目标点 + 抓取相对高度"]
         PC["place._connect：IK 解 standoff，手指取当前值<br/>JointPlanner.connect 带持物规划搬运段"]
         PX["MotionExecutor.place(phase=descend)<br/>从 standoff 下放、松手、退回"]
-        V3{"ExecutionGate.verify<br/>rest = 放置目标的 entity；Holding 取自实测手与物体位姿"}
+        V3{"ExecutionGate.verify<br/>rest = 放置目标的 entity；plan_state.binding 取实测手与物体位姿"}
     end
 
     subgraph LOW["底层：执行与运动"]
         subgraph EX["执行 execution/"]
-            EXE["executor.MotionExecutor<br/>pick / place / drag_handle：航点模板 → RuntimeMotionWaypoint（holding / allow / linear）"]
+            EXE["executor.MotionExecutor<br/>pick / place / drag_handle：航点模板 → RuntimeMotionWaypoint（allow / linear / attach / detach）"]
         end
         subgraph MO["运动 motion/"]
-            CH["chain.execute_motion_chain → _solve_segment 逐段路由<br/>_assemble_trajectory 给每段写 span / holding / allow / pose / reach"]
+            CH["chain.execute_motion_chain → _solve_segment 逐段路由<br/>PlanState 逐段推进 q、经 attach / detach 改持物<br/>_assemble_trajectory 给每段写 span / holding / allow / pose / reach"]
             F["只动手指：gripper.expand，手臂锁定"]
             C["直线段（最终接近、下放、拖拽、退回）<br/>move_linear.expand，逐步 IK；pick 遇跳变拒绝，place 与拖拽保留"]
             G["其余段：GenesisBackend.solve_ik + _interpolate，关节线性插值"]
@@ -168,11 +168,16 @@ pick 的手指闭合段允许手指碰目标（`grip`），其后一段持物且
 - `motion/gripper.expand(Gripper(pos, quat, finger_width), q_start, solve_ik)` 给只动手指的段算目标构型：臂关节取
   `q_start`，指关节取 `solve_ik(pos, quat, finger_width)` 的指关节（不带初值），返回 `GripperSegment(q_target)`。
   零物理步、无状态，不签发凭证，不改持物状态。
-- `motion/chain.execute_motion_chain(waypoints, motion_planner, start_qpos, params, *, tail_hold_steps)` 做「航点 → IK
+- `motion/plan_state.PlanState(q, holding)` 是预测构型与持物绑定；`attach(state, Holding)` / `detach(state)` 是改变持物的
+  唯一途径，保持 `q`。`binding(target, hand_pose, object_pose)` 给出 `Holding(target, hand⁻¹ · object)`，pick 传候选抓取位姿，
+  place 传实测手位姿。
+- `motion/chain.execute_motion_chain(waypoints, motion_planner, start: PlanState, params, *, tail_hold_steps)` 做「航点 → IK
   （`finger_only` 段交给 `gripper.expand`，`linear` 段交给 `move_linear.expand`）→ 关节插值」，返回 `MotionChainExecution`，每段带 `span`、`holding`、`allow`、
   航点位姿 `pose` 与到达下标 `reach`；`spans_of` 把它们转成门的 `Span`，`poses_of` 转成 `verify` 的 `poses`。
+  每段从 `state.q` 起、段末推进到终点构型；航点的 `attach` / `detach` 在该段结束后生效，段的 `holding` 读运行时的状态；末态在 `.state`。
   跳变策略写在航点的 `linear` 上：pick 的最终接近 `refuse`，place 的下放、退回与拖拽各段 `keep`。
-- `MotionExecutor.pick(plan, motion_planner, home_qpos, params)`、`place(..., *, phase)`、`drag_handle(..., action)`；
+- `MotionExecutor.pick(plan, motion_planner, home_qpos, params, *, grasp)`（最后一个合指段后 attach `grasp`）、
+  `place(plan, motion_planner, start: PlanState, params, *, phase)`（松指后 detach）、`drag_handle(..., action)`；
   `place` 的 `descend` 从当前构型先走一段到 standoff 的关节插值（规划搬运之后几乎不动），再下放、松手、退回。
 - `scenario/relations.rigid_moving_links`：关节子 link 加上与它固定连接的 link，给 `clear_of` 的扫掠占地用。
 - 启动脚本 `scripts/setup/run_scenario.sh` 只挂仓库与 Hugging Face 缓存，不挂 Docker socket。
