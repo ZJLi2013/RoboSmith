@@ -26,7 +26,7 @@ flowchart TD
         OC["open_close.run_open / run_close<br/>gate.ungated"]
     end
 
-    INF["Refused（search_exhausted：全在门前被拒，零物理步）<br/>或 ExecutionFailed（过门候选试抓后都没抬起，带 steps）<br/>EpisodeRun.stopped 记 cause、evidence、steps；零帧，停在这一步"]
+    INF["Refused（search_exhausted：全在门前被拒，零物理步）<br/>或 ExecutionFailed（过门候选试抓后都没抬起，带 steps）<br/>pick 已执行后 place 被拒：记 execution_failed，evidence.refused 带原标签，steps 从 pick 起算<br/>EpisodeRun.stopped 记 cause、evidence、steps；零帧，停在这一步"]
     CUR["ExecutionGate.check_current<br/>不是本门签发、或凭证指纹 ≠ 当前指纹就抛 StaleMotion"]
 
     subgraph SIM["仿真与判定"]
@@ -50,7 +50,7 @@ flowchart TD
 ```
 
 技能内部见下一张图。file 与 agent 两条路径共用 `EpisodeRun`，只是步骤表的来源不同。plan 文件里的 `actions`
-（六动作组合）现在只被 `load_plan` 校验，还没有执行路径。agent 路径上零步拒绝（`Refused` 的标签）按
+（六动作组合）现在只被 `load_plan` 校验，还没有执行路径。pick 已走过物理步之后组合即提交，place 仍从实测状态重新规划，这时它被拒就记 `execution_failed`。agent 路径上零步拒绝（`Refused` 的标签）按
 plan 类失败重写剩余步骤，`execution_failed` 按 physical 失败上报；重写后的步骤全部执行完，episode 就不再算被拒。
 
 ## 一个技能：候选、整条轨迹、过门
@@ -61,6 +61,7 @@ flowchart TD
         GEO["grasp/geometric.GeometricGraspPlanner.plan<br/>写回的抓法在前，再按有向包围盒枚举 top_down / side"]
         PM["pick._pick_request<br/>IK 解首航点（初值 = home 转基座或 ik_seed）；MotionExecutor.pick 从那里起、首航点锁臂<br/>抓取段先单独 verify，再 JointPlanner.connect 规划进场段<br/>Holding 取自候选的抓取位姿，poses 取自航点"]
         V1{"ExecutionGate.verify"}
+        PRE{"pick._place_check：下一步是单阶段 place 时<br/>在 SimEnv.posed(pick 末点, 目标在手中) 里 plan_segment 这个 place<br/>凭证与 trace 丢弃"}
         TR["sim_env.SimEnv.trial_from_here<br/>重放、恢复快照；物体抬高超过 0.02 m 算抬起"]
         V2{"恢复后对同一条轨迹再 verify"}
     end
@@ -80,7 +81,9 @@ flowchart TD
 
     GEO --> PM --> V1
     V1 -- 拒绝，记 gate --> PM
-    V1 -- 通过 --> TR
+    V1 -- 通过 --> PRE
+    PRE -- place 被拒，记 place --> PM
+    PRE -- 可达或不预检 --> TR
     TR -- 没抬起 --> PM
     TR -- 抬起 --> V2
     V2 -- 通过 --> OKP["签发 VerifiedMotion"]
@@ -124,7 +127,8 @@ pick 的手指闭合段允许手指碰目标（`grip`），其后一段持物且
 - `sim/sim_env.SimEnv`：`contacts_at(qpos, held, placed)`、`hand_pose(qpos)`、`object_pose(name)` 在快照事务里查询，
   返回前还原；`joint_limits`、`joined_links`、`lever_arms(held)`（每个关节的力臂上界，持物算在手上）读机器人模型；
   `hold(qpos, name, T)` 把机器人与物体摆成持物起态，是一次不步进的真实写入；`state_fingerprint()` 带真实写入代次，
-  `step()`、`reset()` 与 `hold()` 递增。
+  `step()`、`reset()` 与 `hold()` 递增。`posed(qpos, objects)` 是不步进的摆放事务：手臂与给定物体摆到给定位姿，退出时还原；
+  Genesis 的快照还原会丢掉未步进的写入，所以事务里每次查询还原后都重放摆放。事务期间指纹带事务序号，里面签发的凭证在事务外不当前。
 - `motion/joint_planner.JointPlanner(env, gate, *, seed, max_queries, max_seconds).connect(q_start, q_goal, *, target, rest,
   holding, label)`：关节空间 lazy RRT-Connect，状态与按 `lever_arms` 细分到每步 ≤ 5 mm 的连边点只经 `check_point`，路径由
   `verify(..., budget=)` 签发，返回 `Connection(motion, queries, seconds, nodes, direct)`。搜索与签发共用一个 budget：

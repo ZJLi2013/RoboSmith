@@ -204,7 +204,7 @@ place: sample(place | g) · move_to(p.pre) · move_linear(p.place) · detach(p.s
 ### 规划器
 
 `robotsmith/motion/joint_planner.py` 的 `JointPlanner(env, gate, *, seed=0).connect(q_start, q_goal, *, target, rest=(),
-holding=None, label="move_to")` 已实现，place 用它规划搬运段，pick 还没接入。它是仓库内的 lazy RRT-Connect（双树、固定种子），依赖只有 numpy：
+holding=None, label="move_to")` 已实现，place 用它规划搬运段，pick 用它规划进场段。它是仓库内的 lazy RRT-Connect（双树、固定种子），依赖只有 numpy：
 
 - 合法性只问 `gate.check_point`，持物带调用方的 `Holding`；路径由 `gate.verify` 签发，返回
   `Connection(motion, queries, seconds, nodes, direct)`。查询与失败都零物理步、不改状态。
@@ -263,6 +263,20 @@ barrier 5–8 个物理步，而门在签发时判这些点合法。这是已知
 F2 7/10（另 3 个仍是松手段的已知接触）、F4 10/10 零步拒绝；die_01 单资产抓取 3/3，与之前相同。单实例耗时比 S1 长约 45%
 （F0 平均 125 s）。
 
+### pick 先确认 place 可达
+
+下一个技能是静态锚点上的单阶段 place 时，`pick._select` 对每个过门的候选，在 `SimEnv.posed(pick 末点, {目标: 手 · T})` 里用
+`plan_segment` 规划这个 place（`held_place_z` 按该候选算，trace 写进一份新的 `skill_traces`，凭证丢弃）；被拒的候选记下 place 的证据、
+不试抓。全部如此时 pick 零步 `search_exhausted`。动态锚点（分 transport / descend 两段的 place）不预检。pick 已走过物理步之后，
+place 仍从实测状态重新规划与过门，这时它被拒，`EpisodeRun` 记 `execution_failed`，`evidence.refused` 保留原标签。
+
+`posed` 是不步进的摆放事务。Genesis 的 `scene.reset(scene.get_state())` 会丢掉上次 step 之后的 `set_pos` / `set_dofs_position`，
+所以事务里每次查询的快照还原之后都重放摆放；没有这一步，预检的搬运起点里被抓物回到桌面，每个候选都被判与桌面碰撞。
+
+在 playground seed 0–9 上逐实例与 pick 的规划进场（S2）相同（[e10 证据](../exps/r1/evidence/e10/README.md)）：F0 10/10、F1 10/10、
+F2 7/10、F4 10/10 零步拒绝。公开输入里没有 place 不可达的组合，所以零步拒绝的那一支只由 CPU 测试覆盖。单实例耗时比 S2 长约
+15–20%（F0 平均 151 s）。
+
 ## 下一步
 
 模板式链路的四步迁移已完成（rocRobo 删除、`SimEnv` 快照接口、执行门、[调用链](call-chain.md)重写），读数见
@@ -273,7 +287,7 @@ F2 7/10（另 3 个仍是松手段的已知接触）、F4 10/10 零步拒绝；d
 3. 模板链路逐片替换，每片只改一件事，在 playground seed 0–9 上与[逐片迁移的 dev 对照](acceptance.md#逐片迁移的-dev-对照)比较：
    1. place 的搬运段由 `JointPlanner` 生成，删转基座与搬运高度（已实现，结果见「place 的规划搬运」）；
    2. pick 的进场段由 `JointPlanner` 生成，删 `_pick_seed_transit`（已实现，结果见「pick 的规划进场」）；
-   3. 同一目标的 pick + place 在第一个物理步前整组过门；
+   3. 同一目标的 pick + place 在第一个物理步前整组过门（已实现，结果见「pick 先确认 place 可达」）；
    4. `move_linear`、`gripper`、`attach`、`detach` 从 `MotionExecutor` 模板拆出，一次一个；
    5. `EpisodeRun`、单资产验证与 `certify` 走同一服务，删 `run_skills`、`plan_segment`；
 4. plan 文件的 `actions` 与 LLM 可直接提交 meta action 列表，走同一搜索与门。
