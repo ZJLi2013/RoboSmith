@@ -70,3 +70,20 @@ def test_pick_holds_after_its_last_finger_segment_and_place_until_its_release_en
     assert [(s["label"], s["holding"]) for s in transport.segments] == [("transport", True)]
     with pytest.raises(ValueError):
         exe.place(_plan(), planner, PlanState(np.zeros(9)), params)
+
+
+def test_the_chain_advances_q_through_each_segment_and_hands_over_where_it_ends():
+    params, exe, planner = MotionParams(), MotionExecutor(), GenesisBackend(_ik)
+    pick = exe.pick(_plan(), planner, _ik(_plan().waypoints[0].pos, QUAT, 0.0), params, grasp=HELD)
+    for seg, q_end in zip(pick.segments, pick.q_waypoints[1:]):
+        start, end = seg["span"]
+        if end > start:
+            np.testing.assert_array_equal(pick.trajectory[end - 1], q_end)
+    np.testing.assert_array_equal(pick.state.q, pick.trajectory[-1])
+    assert pick.state.holding is HELD
+    carried = exe.place(_plan(), planner, pick.state, params, phase="transport")
+    np.testing.assert_array_equal(carried.q_waypoints[0], pick.state.q)
+    assert carried.state.holding is HELD
+    placed = exe.place(_plan(), planner, carried.state, params)
+    np.testing.assert_array_equal(placed.state.q, placed.trajectory[-1])
+    assert placed.state.holding is None

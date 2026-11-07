@@ -155,10 +155,11 @@ class RuntimeMotionWaypoint:
 
 @dataclass
 class MotionChainExecution:
-    """Generated trajectory plus runtime diagnostics."""
+    """Generated trajectory plus runtime diagnostics; ``state`` is where the chain leaves the arm and the hand."""
 
     trajectory: list[np.ndarray]
     q_waypoints: list[np.ndarray]
+    state: PlanState
     segments: list[dict] = field(default_factory=list)
 
 
@@ -323,15 +324,16 @@ def execute_motion_chain(
     """Execute runtime waypoints with seed-continuous IK and diagnostics.
 
     Per-pose IK goes through ``motion_planner.solve_ik``; nothing here checks
-    collisions. A segment is ``holding`` when the plan state holds something while it runs.
+    collisions. Each segment starts from the plan state's ``q`` and advances it to its end configuration; a
+    segment is ``holding`` when the plan state holds something while it runs.
     """
-    q_targets = [np.asarray(start.q, dtype=np.float64).copy()]
+    state = PlanState(np.asarray(start.q, dtype=np.float64).copy(), start.holding)
+    q_targets = [state.q]
     segment_paths: list[list[np.ndarray] | None] = []
     segments: list[dict] = []
-    state = start
 
     for i, wp in enumerate(waypoints):
-        q_from = q_targets[-1]
+        q_from = state.q
         q_to, segment_path, max_joint_step = _solve_segment(
             i,
             wp,
@@ -355,6 +357,7 @@ def execute_motion_chain(
                 "allow": wp.allow,
             }
         )
+        state = PlanState(q_to, state.holding)
         if wp.attach is not None:
             state = attach(state, wp.attach)
         if wp.detach:
@@ -366,6 +369,7 @@ def execute_motion_chain(
             waypoints, q_targets, segment_paths, segments, tail_hold_steps
         ),
         q_waypoints=q_targets,
+        state=state,
         segments=segments,
     )
 
