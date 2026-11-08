@@ -7,7 +7,7 @@ A waypoint chain is solved once and consumed two ways:
   running a rollout. Used by grasp scoring.
 - ``execute_motion_chain`` — **runtime**: solve the chain and expand it into a full
   step-by-step joint-space trajectory (velocity-adaptive timing). Used by
-  ``MotionExecutor``.
+  ``MotionExecutor.run``.
 
 Both share segment classification (``classify_segments`` / ``_same_pose``): a
 finger-only waypoint repeats the previous EE pose with a different finger width,
@@ -25,11 +25,10 @@ import numpy as np
 
 from robotsmith.sim.franka import Q_LOWER as _FRANKA_Q_LOWER
 from robotsmith.sim.franka import Q_UPPER as _FRANKA_Q_UPPER
-from robotsmith.execution.gate import Holding
 from robotsmith.motion import gripper, move_linear
 from robotsmith.motion.constants import N_ARM_JOINTS as _N_ARM_JOINTS
 from robotsmith.motion.params import MotionParams
-from robotsmith.motion.plan_state import PlanState, attach, detach
+from robotsmith.motion.plan_state import Attach, Detach, PlanState, attach, detach
 from robotsmith.motion.planner import MotionPlanner
 
 logger = logging.getLogger(__name__)
@@ -148,9 +147,6 @@ class RuntimeMotionWaypoint:
     linear: Literal["refuse", "keep"] | None = None
     hold_after_steps: int = 0
     allow: str | None = None
-    # Applied to the plan state once this segment and its hold end.
-    attach: Holding | None = None
-    detach: bool = False
 
 
 @dataclass
@@ -314,25 +310,35 @@ def _assemble_trajectory(
 
 
 def execute_motion_chain(
-    waypoints: list[RuntimeMotionWaypoint],
+    actions: Sequence[RuntimeMotionWaypoint | Attach | Detach],
     motion_planner: MotionPlanner,
     start: PlanState,
     params: MotionParams,
     *,
     tail_hold_steps: int = 0,
 ) -> MotionChainExecution:
-    """Execute runtime waypoints with seed-continuous IK and diagnostics.
+    """Execute an action list with seed-continuous IK and diagnostics.
 
     Per-pose IK goes through ``motion_planner.solve_ik``; nothing here checks
     collisions. Each segment starts from the plan state's ``q`` and advances it to its end configuration; a
-    segment is ``holding`` when the plan state holds something while it runs.
+    segment is ``holding`` when the plan state holds something while it runs. ``Attach`` / ``Detach`` change the
+    holding where they stand in the list, after the previous segment and its hold.
     """
     state = PlanState(np.asarray(start.q, dtype=np.float64).copy(), start.holding)
     q_targets = [state.q]
     segment_paths: list[list[np.ndarray] | None] = []
     segments: list[dict] = []
+    waypoints: list[RuntimeMotionWaypoint] = []
 
-    for i, wp in enumerate(waypoints):
+    for wp in actions:
+        if isinstance(wp, Attach):
+            state = attach(state, wp.holding)
+            continue
+        if isinstance(wp, Detach):
+            state = detach(state)
+            continue
+        i = len(waypoints)
+        waypoints.append(wp)
         q_from = state.q
         q_to, segment_path, max_joint_step = _solve_segment(
             i,
@@ -358,10 +364,6 @@ def execute_motion_chain(
             }
         )
         state = PlanState(q_to, state.holding)
-        if wp.attach is not None:
-            state = attach(state, wp.attach)
-        if wp.detach:
-            state = detach(state)
 
     _log_segments(waypoints, segments, params, tail_hold_steps)
     return MotionChainExecution(

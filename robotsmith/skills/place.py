@@ -11,6 +11,7 @@ from __future__ import annotations
 import numpy as np
 
 from robotsmith.execution.gate import Holding, MotionRejected, Refused, Span, VerifiedMotion, poses_of, spans_of
+from robotsmith.execution.meta_actions import place_actions
 from robotsmith.grasp.planner import GraspPlan
 from robotsmith.motion.joint_planner import JointPlanner
 from robotsmith.motion.plan_state import PlanState, binding
@@ -109,8 +110,8 @@ def run_place(ctx: SkillContext) -> VerifiedMotion:
             if ctx.phase == "transport":
                 segments, tail = [], []
             else:
-                result = ctx.executor.place(place_plan, ctx.motion_planner, PlanState(start, holding), ctx.params,
-                                            phase="descend")
+                result = ctx.executor.run("place", place_actions(place_plan, ctx.params, phase="descend"),
+                                          ctx.motion_planner, PlanState(start, holding), ctx.params)
                 segments, tail = result.segments, result.trajectory
             spans = ([Span("transport", 0, len(transit), holding=holding is not None)]
                      + spans_of(segments, len(transit)))

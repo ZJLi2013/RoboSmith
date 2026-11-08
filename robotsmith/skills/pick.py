@@ -13,11 +13,12 @@ import numpy as np
 
 from robotsmith.execution.gate import (ExecutionFailed, MotionRejected, Refused, Span, VerifiedMotion, poses_of,
                                        spans_of)
+from robotsmith.execution.meta_actions import pick_actions
 from robotsmith.grasp.planner import GraspPlan
 from robotsmith.grasp.transforms import pose_matrix
 from robotsmith.motion.joint_planner import JointPlanner
 from robotsmith.motion.params import MotionParams
-from robotsmith.motion.plan_state import binding
+from robotsmith.motion.plan_state import PlanState, binding
 from robotsmith.skills.base import Skill, SkillContext
 from robotsmith.skills.registry import bound_leaf, plan_segment, register, skill_phases
 
@@ -156,7 +157,9 @@ def _pick_request(ctx: SkillContext, plan: GraspPlan) -> tuple[dict, dict]:
     q_pre[7:] = q0[7:]
     target = ctx.skill.target
     holding = binding(target, (plan.grasp_pos, plan.grasp_quat), ctx.gate.env.object_pose(target))
-    result = ctx.executor.pick(plan, ctx.motion_planner, q_pre, _pick_motion_params(ctx), grasp=holding)
+    params = _pick_motion_params(ctx)
+    result = ctx.executor.run("pick", pick_actions(plan, q_pre, params, ctx.motion_planner.solve_ik, grasp=holding),
+                              ctx.motion_planner, PlanState(q_pre), params, tail_hold_steps=params.lift_hold_steps)
     ctx.gate.verify(result.trajectory, spans_of(result.segments), target=target, q_start=q_pre, holding=holding,
                     poses=poses_of(result.segments))
     c = JointPlanner(ctx.gate.env, ctx.gate).connect(q0, q_pre, target=target, label="approach")

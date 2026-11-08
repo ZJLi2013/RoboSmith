@@ -17,6 +17,7 @@ from robotsmith.motion.planner import GenesisBackend
 from robotsmith.execution.gate import ExecutionFailed, Refused
 from robotsmith.grasp.transforms import pose_matrix
 from robotsmith.motion.joint_planner import JointPlanner
+from robotsmith.motion.plan_state import Attach
 from robotsmith.skills import Skill, run_skills
 from robotsmith.skills.registry import SKILL_DEFS, SkillDef
 from robotsmith.assets.geometry import rotate_vec_wxyz
@@ -127,6 +128,8 @@ class _FakePlan:
         self.pre_grasp_pos = np.array([0.5, 0.0, 0.2])
         self.pre_grasp_quat = self.grasp_quat
         self.retreat_pos = None
+        self.retreat_quat = self.grasp_quat
+        self.finger_open, self.finger_closed = 0.04, 0.0
         self.waypoints = [SimpleNamespace(pos=self.pre_grasp_pos, quat=self.grasp_quat, finger_width=0.04)]
         self.metadata = {}
 
@@ -153,12 +156,14 @@ class _FakeExecutor:
         self.calls = []
         self.last_motion_trace = None
 
-    def pick(self, *a, **k):
-        self.calls.append("pick")
+    def run(self, name, actions, motion_planner, start, params, **k):
+        self.calls.append(name)
+        return getattr(self, name)(actions, start)
+
+    def pick(self, actions, start):
         return _chain([np.full(9, 1.0)])
 
-    def place(self, *a, **k):
-        self.calls.append("place")
+    def place(self, actions, start):
         return _chain([np.full(9, 2.0)], holding=True)
 
     def drag_handle(self, *a, **k):
@@ -309,7 +314,7 @@ class TestRegistryDispatch:
         ex, state = _FakeExecutor(), _scene_state()
         starts = []
         pick = ex.pick
-        ex.pick = lambda plan, mp, start, *a, **k: starts.append(np.array(start)) or pick()
+        ex.pick = lambda actions, start: starts.append(np.array(start.q)) or pick(actions, start)
         state["grasp_trial"] = trial
         try:
             motions = run_skills([Skill("pick", "die")], Plans(), ex, ik, state, MotionParams(), gate=gate)
@@ -394,7 +399,7 @@ class TestRegistryDispatch:
     def test_place_carries_the_held_object_along_the_planned_connection(self, gate, monkeypatch):
         starts = []
         monkeypatch.setattr(_FakeExecutor, "place",
-                            lambda self, plan, mp, start, *a, **k: starts.append(np.array(start.q)) or
+                            lambda self, actions, start: starts.append(np.array(start.q)) or
                             _chain([np.full(9, 2.0)], holding=True))
         motions, state = self._pick_place(gate, _FakeExecutor())
         q0, q_pre = np.full(9, 1.0), np.array([0.0] * 7 + [1.0, 1.0])
@@ -434,12 +439,15 @@ class TestRegistryDispatch:
 
     def test_each_candidate_attaches_its_own_grasp_and_place_starts_from_the_measured_hand(self, gate, monkeypatch):
         grasps, starts = [], []
-        monkeypatch.setattr(_FakeExecutor, "pick",
-                            lambda self, *a, grasp, **k: grasps.append(grasp) or _chain([np.full(9, 1.0)]))
-        monkeypatch.setattr(_FakeExecutor, "place", lambda self, plan, mp, start, *a, **k:
+        monkeypatch.setattr(_FakeExecutor, "pick", lambda self, actions, start:
+                            grasps.extend(a.holding for a in actions if isinstance(a, Attach))
+                            or _chain([np.full(9, 1.0)]))
+        monkeypatch.setattr(_FakeExecutor, "place", lambda self, actions, start:
                             starts.append(start) or _chain([np.full(9, 2.0)], holding=True))
         plans = self._plans(0.2, 0.3)
         plans[1].grasp_pos = np.array([0.5, 0.0, 0.15])
+        for p in plans:
+            p.waypoints.append(SimpleNamespace(pos=p.waypoints[0].pos, quat=p.grasp_quat, finger_width=0.0))
         lifted = iter([False, True])
         motions, _ = self._pick_then_place(gate, plans, trial=lambda traj, target:
                                            {"lifted": next(lifted), "lift_m": 0.1, "seconds": 0.5})
