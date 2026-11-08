@@ -163,9 +163,8 @@ def _pick_request(ctx: SkillContext, plan: GraspPlan) -> tuple[dict, dict]:
     params = _pick_motion_params(ctx)
 
     def run(start, start_hand, approach):
-        return ctx.executor.run("pick", pick_actions(plan, start, start_hand, approach, params, solve_ik,
-                                                     grasp=holding),
-                                ctx.motion_planner, PlanState(start), params, tail_hold_steps=params.lift_hold_steps)
+        actions = pick_actions(plan, start, start_hand, approach, params, solve_ik, grasp=holding)
+        return ctx.executor.run("pick", actions, ctx.motion_planner, PlanState(start), params)
 
     grasp = run(q_pre, (plan.pre_grasp_pos, plan.pre_grasp_quat), ())
     ctx.gate.verify(grasp.trajectory, spans_of(grasp.segments), target=target, q_start=q_pre, holding=holding,

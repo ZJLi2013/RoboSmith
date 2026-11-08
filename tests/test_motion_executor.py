@@ -86,7 +86,7 @@ def _pick(exe, planner, params):
     pre = (plan.pre_grasp_pos, plan.pre_grasp_quat)
     q = _trivial_ik(*pre, 0.04)
     return exe.run("pick", pick_actions(plan, q, pre, (), params, planner.solve_ik, grasp=HELD), planner,
-                   PlanState(q), params, tail_hold_steps=params.lift_hold_steps)
+                   PlanState(q), params)
 
 
 def _segment_frames(result, idx):

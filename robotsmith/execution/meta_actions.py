@@ -38,7 +38,7 @@ def pick_actions(
     The fingers open where the arm is at ``start_q`` (``start_hand`` is its hand pose there), in zero steps when they
     already are. ``approach`` is the planned joint path from there to the pre-grasp configuration, empty when
     ``start_q`` already is it. The close may touch the target (``allow="grip"``) and settles; ``grasp`` is held from
-    then on, and the lift may still touch the support it leaves (``allow="rest"``).
+    then on, and the lift may still touch the support it leaves (``allow="rest"``) and holds for ``lift_hold_steps``.
     """
     opened = gripper.expand(gripper.Gripper(*start_hand, plan.finger_open), start_q, solve_ik).q_target
     already_open = np.allclose(opened[7:], np.asarray(start_q, dtype=np.float64)[7:])
@@ -54,7 +54,8 @@ def pick_actions(
                               hold_after_steps=params.grasp_settle_steps, allow="grip"),
         Attach(grasp),
         RuntimeMotionWaypoint(pos=np.asarray(plan.grasp_pos, dtype=np.float64) + LIFT, quat=plan.grasp_quat,
-                              finger_width=plan.finger_closed, label="lift", linear="keep", allow="rest"),
+                              finger_width=plan.finger_closed, label="lift", linear="keep",
+                              hold_after_steps=params.lift_hold_steps, allow="rest"),
     ]
 
 

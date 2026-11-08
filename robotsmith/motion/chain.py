@@ -254,7 +254,6 @@ def _log_segments(
     waypoints: list[RuntimeMotionWaypoint],
     segments: list[dict],
     params: MotionParams,
-    tail_hold_steps: int,
 ) -> None:
     logger.debug(
         "[MotionExecutor] velocity-adaptive steps "
@@ -276,7 +275,6 @@ def _log_segments(
             segment["steps"],
         )
     total = sum(int(seg["steps"]) + int(seg["hold_after_steps"]) for seg in segments)
-    total += tail_hold_steps
     logger.debug(
         "  total trajectory: %s steps (%.2fs sim time)",
         total,
@@ -289,10 +287,9 @@ def _assemble_trajectory(
     q_targets: list[np.ndarray],
     segment_paths: list[list[np.ndarray] | None],
     segments: list[dict],
-    tail_hold_steps: int,
 ) -> list[np.ndarray]:
     """Expand per-segment endpoints/paths into the full step-by-step trajectory; each segment's ``span`` is
-    its ``[start, end)`` in it, holds included (the tail hold belongs to the last segment), and ``reach`` the
+    its ``[start, end)`` in it, its hold included, and ``reach`` the
     point where its waypoint ``pose`` is reached (``None`` when the segment adds no point)."""
     traj: list[np.ndarray] = []
     for i, wp in enumerate(waypoints):
@@ -308,9 +305,6 @@ def _assemble_trajectory(
         segments[i]["span"] = [start, len(traj)]
         segments[i]["pose"] = (np.asarray(wp.pos, dtype=np.float64), np.asarray(wp.quat, dtype=np.float64))
         segments[i]["reach"] = start + max(moved - 1, 0) if len(traj) > start else None
-    if tail_hold_steps > 0:
-        traj += [q_targets[-1].copy() for _ in range(tail_hold_steps)]
-        segments[-1]["span"][1] = len(traj)
     return traj
 
 
@@ -319,8 +313,6 @@ def execute_motion_chain(
     motion_planner: MotionPlanner,
     start: PlanState,
     params: MotionParams,
-    *,
-    tail_hold_steps: int = 0,
 ) -> MotionChainExecution:
     """Execute an action list with seed-continuous IK and diagnostics.
 
@@ -370,11 +362,9 @@ def execute_motion_chain(
         )
         state = PlanState(q_to, state.holding)
 
-    _log_segments(waypoints, segments, params, tail_hold_steps)
+    _log_segments(waypoints, segments, params)
     return MotionChainExecution(
-        trajectory=_assemble_trajectory(
-            waypoints, q_targets, segment_paths, segments, tail_hold_steps
-        ),
+        trajectory=_assemble_trajectory(waypoints, q_targets, segment_paths, segments),
         q_waypoints=q_targets,
         state=state,
         segments=segments,

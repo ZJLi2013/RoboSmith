@@ -136,7 +136,7 @@ def _pick(plan, start, params):
     planner = GenesisBackend(_ik)
     return MotionExecutor().run("pick", pick_actions(plan, start, (plan.pre_grasp_pos, plan.pre_grasp_quat), (),
                                                      params, planner.solve_ik, grasp=GRASP),
-                                planner, PlanState(start), params, tail_hold_steps=params.lift_hold_steps)
+                                planner, PlanState(start), params)
 
 
 def _pick_motion():

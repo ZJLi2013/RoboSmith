@@ -47,7 +47,7 @@ def _pick(exe, planner, params, finger=0.0):
     q0, opened, q_pre = _ik(*START, finger), _ik(*START, 0.04), _ik(_plan().pre_grasp_pos, QUAT, 0.04)
     approach = [opened + (q_pre - opened) * t for t in (0.5, 1.0)]
     return exe.run("pick", pick_actions(_plan(), q0, START, approach, params, planner.solve_ik, grasp=HELD), planner,
-                   PlanState(q0), params, tail_hold_steps=params.lift_hold_steps)
+                   PlanState(q0), params)
 
 
 def _place(exe, planner, params, start, phase="all"):
