@@ -8,6 +8,7 @@ import pytest
 from robotsmith.motion.chain import _compute_steps, _same_pose
 from robotsmith.execution.executor import MotionExecutor
 from robotsmith.execution.gate import Holding
+from robotsmith.execution.meta_actions import pick_actions, place_actions
 from robotsmith.motion.plan_state import PlanState
 from robotsmith.motion.planner import GenesisBackend
 from robotsmith.motion.params import MotionParams
@@ -51,7 +52,7 @@ class TestComputeSteps:
         assert steps == 5
 
 
-# -- MotionExecutor.pick / place --
+# -- the pick / place action lists --
 
 def _trivial_ik(pos, quat, finger_width, init_qpos=None, **_kw):
     q = np.zeros(9)
@@ -80,6 +81,12 @@ def _pick_plan():
     )
 
 
+def _pick(exe, planner, params):
+    q = np.zeros(9)
+    return exe.run("pick", pick_actions(_pick_plan(), q, params, planner.solve_ik, grasp=HELD), planner,
+                   PlanState(q), params, tail_hold_steps=params.lift_hold_steps)
+
+
 def _segment_frames(result, idx):
     start, end = result.segments[idx]["span"]
     return np.asarray(result.trajectory)[start:end]
@@ -89,7 +96,7 @@ class TestPickMotionChain:
     def test_segment_types(self):
         """Fine segment is the grasp approach (seg 1), not the retreat."""
         exe = MotionExecutor()
-        exe.pick(_pick_plan(), GenesisBackend(_trivial_ik), np.zeros(9), MotionParams(), grasp=HELD)
+        _pick(exe, GenesisBackend(_trivial_ik), MotionParams())
         types = [s["type"] for s in exe.last_motion_trace["segments"]]
         assert types[1:4] == ["fine", "finger", "normal"]
 
@@ -102,8 +109,7 @@ class TestPickMotionChain:
             return q
 
         exe = MotionExecutor()
-        traj = exe.pick(_pick_plan(), GenesisBackend(unstable_ik), np.zeros(9),
-                        MotionParams(finger_steps=10), grasp=HELD)
+        traj = _pick(exe, GenesisBackend(unstable_ik), MotionParams(finger_steps=10))
         arm = _segment_frames(traj, 2)[:, :7]
         np.testing.assert_allclose(arm, np.tile([0.5, 0.0, 0.10, 0, 0, 0, 0], (len(arm), 1)),
                                    atol=1e-6)
@@ -135,7 +141,8 @@ class TestPlaceMotionChain:
             retreat_steps=6,
         )
         exe = MotionExecutor()
-        traj = exe.place(plan, GenesisBackend(unstable_open_ik), PlanState(np.zeros(9), HELD), params)
+        traj = exe.run("place", place_actions(plan, params), GenesisBackend(unstable_open_ik),
+                       PlanState(np.zeros(9), HELD), params)
 
         segs = exe.last_motion_trace["segments"]
         labels = [s["label"] for s in segs]

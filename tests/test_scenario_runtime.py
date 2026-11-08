@@ -140,11 +140,10 @@ class _FakePlanner:
 class _FakeExecutor:
     last_motion_trace = None
 
-    def pick(self, plan, motion_planner, qpos, params, **kwargs):
-        return SimpleNamespace(trajectory=[np.ones(9)], segments=[
-            {"label": "lift", "span": [0, 1], "holding": False, "allow": None}])
-
-    def place(self, plan, motion_planner, qpos, params, *, phase="all", **kwargs):
+    def run(self, name, actions, motion_planner, start, params, **kwargs):
+        if name == "pick":
+            return SimpleNamespace(trajectory=[np.ones(9)], segments=[
+                {"label": "lift", "span": [0, 1], "holding": False, "allow": None}])
         self.last_motion_trace = {"action": "place", "segments": []}
         return SimpleNamespace(trajectory=[np.full(9, 2.0)], segments=[
             {"label": "descend", "span": [0, 1], "holding": True, "allow": "rest"}])

@@ -11,9 +11,11 @@ import pytest
 from robotsmith.execution.executor import MotionExecutor
 from robotsmith.execution.gate import (ExecutionFailed, ExecutionGate, Holding, MotionRejected, Refused, Span,
                                        StaleMotion, VerifiedMotion, certified, permitted, poses_of, spans_of)
+from robotsmith.execution.meta_actions import pick_actions
 from robotsmith.grasp.planner import GraspPlan
 from robotsmith.grasp.transforms import pose_matrix
 from robotsmith.motion.params import MotionParams
+from robotsmith.motion.plan_state import PlanState
 from robotsmith.motion.planner import GenesisBackend
 from robotsmith.scenario_runtime import runner
 from robotsmith.skills import Skill, run_skills
@@ -129,10 +131,16 @@ def _at_first_waypoint(plan, finger):
 GRASP = Holding("die", np.eye(4))
 
 
+def _pick(plan, start, params):
+    planner = GenesisBackend(_ik)
+    return MotionExecutor().run("pick", pick_actions(plan, start, params, planner.solve_ik, grasp=GRASP), planner,
+                                PlanState(start), params, tail_hold_steps=params.lift_hold_steps)
+
+
 def _pick_motion():
     params = MotionParams()
     plan = _pick_plan()
-    result = MotionExecutor().pick(plan, GenesisBackend(_ik), _at_first_waypoint(plan, 0.0), params, grasp=GRASP)
+    result = _pick(plan, _at_first_waypoint(plan, 0.0), params)
     transit = _points(0.1, 0.2)
     return transit + result.trajectory, [Span("transit", 0, 2)] + spans_of(result.segments, 2), params
 
@@ -148,7 +156,7 @@ def test_pick_spans_tile_the_whole_trajectory_with_holds_and_rules():
 def test_pick_poses_are_the_waypoints_at_the_points_that_reach_them():
     params = MotionParams()
     plan = _pick_plan()
-    result = MotionExecutor().pick(plan, GenesisBackend(_ik), _at_first_waypoint(plan, 0.0), params, grasp=GRASP)
+    result = _pick(plan, _at_first_waypoint(plan, 0.0), params)
     poses = poses_of(result.segments, 2)
     assert len(poses) == len(plan.waypoints)
     traj = _points(0.1, 0.2) + result.trajectory
@@ -164,11 +172,11 @@ def test_pick_poses_are_the_waypoints_at_the_points_that_reach_them():
 def test_pick_holds_the_arm_at_its_start_through_the_first_waypoint():
     plan, params = _pick_plan(), MotionParams()
     start = _at_first_waypoint(plan, 0.0)
-    result = MotionExecutor().pick(plan, GenesisBackend(_ik), start, params, grasp=GRASP)
+    result = _pick(plan, start, params)
     first = spans_of(result.segments)[0]
     assert first.end == params.finger_steps
     assert all(np.allclose(q[:7], start[:7]) for q in result.trajectory[:first.end])
-    opened = MotionExecutor().pick(plan, GenesisBackend(_ik), _at_first_waypoint(plan, 0.04), params, grasp=GRASP)
+    opened = _pick(plan, _at_first_waypoint(plan, 0.04), params)
     assert spans_of(opened.segments)[0].end == 0
 
 
@@ -485,7 +493,7 @@ class _Planner:
 class _Executor:
     last_motion_trace = None
 
-    def pick(self, *a, **k):
+    def run(self, *a, **k):
         return SimpleNamespace(trajectory=_points(0.1, 0.2), segments=[
             {"label": "seg", "span": [0, 2], "holding": False, "allow": None}])
 
