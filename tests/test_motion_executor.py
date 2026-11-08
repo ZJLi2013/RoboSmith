@@ -82,8 +82,10 @@ def _pick_plan():
 
 
 def _pick(exe, planner, params):
-    q = np.zeros(9)
-    return exe.run("pick", pick_actions(_pick_plan(), q, params, planner.solve_ik, grasp=HELD), planner,
+    plan = _pick_plan()
+    pre = (plan.pre_grasp_pos, plan.pre_grasp_quat)
+    q = _trivial_ik(*pre, 0.04)
+    return exe.run("pick", pick_actions(plan, q, pre, (), params, planner.solve_ik, grasp=HELD), planner,
                    PlanState(q), params, tail_hold_steps=params.lift_hold_steps)
 
 
@@ -93,13 +95,6 @@ def _segment_frames(result, idx):
 
 
 class TestPickMotionChain:
-    def test_segment_types(self):
-        """Fine segment is the grasp approach (seg 1), not the retreat."""
-        exe = MotionExecutor()
-        _pick(exe, GenesisBackend(_trivial_ik), MotionParams())
-        types = [s["type"] for s in exe.last_motion_trace["segments"]]
-        assert types[1:4] == ["fine", "finger", "normal"]
-
     def test_finger_seg_locks_arm_joints(self):
         """IK that jumps when fingers close must not move the arm during the close."""
         def unstable_ik(pos, quat, finger_width, init_qpos=None):
@@ -110,7 +105,7 @@ class TestPickMotionChain:
 
         exe = MotionExecutor()
         traj = _pick(exe, GenesisBackend(unstable_ik), MotionParams(finger_steps=10))
-        arm = _segment_frames(traj, 2)[:, :7]
+        arm = _segment_frames(traj, 3)[:, :7]
         np.testing.assert_allclose(arm, np.tile([0.5, 0.0, 0.10, 0, 0, 0, 0], (len(arm), 1)),
                                    atol=1e-6)
 

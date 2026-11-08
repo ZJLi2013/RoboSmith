@@ -93,10 +93,11 @@ def test_pick_place_and_drag_expand_their_lines_through_move_linear(monkeypatch)
             Waypoint(pos=np.array([0.5, 0.0, 0.3]), quat=QUAT, finger_width=0.0),
         ],
     )
-    q = _ik(plan.waypoints[0].pos, QUAT, 0.04)
-    exe.run("pick", pick_actions(plan, q, params, planner.solve_ik, grasp=Holding("die", np.eye(4))), planner,
+    pre = (plan.pre_grasp_pos, plan.pre_grasp_quat)
+    q = _ik(*pre, 0.04)
+    exe.run("pick", pick_actions(plan, q, pre, (), params, planner.solve_ik, grasp=Holding("die", np.eye(4))), planner,
             PlanState(q), params)
-    assert seen == [("wp1", "refuse")]
+    assert seen == [("descend", "refuse"), ("lift", "keep")]
     seen.clear()
     exe.run("place", place_actions(plan, params), planner, PlanState(np.zeros(9), Holding("die", np.eye(4))), params)
     assert seen == [("descend", "keep"), ("retreat", "keep")]

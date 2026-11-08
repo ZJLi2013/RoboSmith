@@ -147,6 +147,8 @@ class RuntimeMotionWaypoint:
     linear: Literal["refuse", "keep"] | None = None
     hold_after_steps: int = 0
     allow: str | None = None
+    # A ``move_to`` the planner already searched: its points, the last at this waypoint; empty stays put.
+    path: tuple[np.ndarray, ...] | None = None
 
 
 @dataclass
@@ -197,11 +199,14 @@ def _solve_segment(
     """Solve one segment → (endpoint qpos, dense path | None, arm displacement).
 
     Routing: finger-only is expanded by ``gripper`` (arm locked); a linear segment is expanded by
-    ``move_linear`` (and reports its per-step continuity metric); otherwise plain
-    per-pose IK, interpolated in joint space.
+    ``move_linear`` (and reports its per-step continuity metric); a planned ``path`` is taken as it is;
+    otherwise plain per-pose IK, interpolated in joint space.
     """
     segment_path: list[np.ndarray] | None = None
-    if wp.finger_only:
+    if wp.path is not None:
+        segment_path = [np.asarray(q, dtype=np.float64).copy() for q in wp.path]
+        q_to = segment_path[-1].copy() if segment_path else q_from
+    elif wp.finger_only:
         q_to = gripper.expand(gripper.Gripper(wp.pos, wp.quat, wp.finger_width), q_from, motion_planner.solve_ik).q_target
     elif wp.linear is not None:
         if i == 0:

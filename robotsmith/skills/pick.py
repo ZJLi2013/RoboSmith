@@ -1,8 +1,8 @@
 """``pick`` primitive: select an executable grasp and lift the object.
 
-The approach to each candidate's first waypoint is a ``JointPlanner`` connection; the descend, grasp and lift are
-the executor's segment from there. Each candidate's whole trajectory goes through the execution gate first, and a
-following single-phase place is planned from where it ends; one that passes both is tried in
+Each candidate is the executor's pick list: open the fingers, a ``JointPlanner`` approach to its pre-grasp, the
+straight descend, the close, and the straight lift. Each candidate's whole trajectory goes through the execution
+gate first, and a following single-phase place is planned from where it ends; one that passes both is tried in
 simulation (``scene_state["grasp_trial"]``) and, if it lifts the target, verified again on the restored
 scene and executed. Without a trial callback the first candidate that passes the gate is used.
 """
@@ -11,11 +11,11 @@ from __future__ import annotations
 
 import numpy as np
 
-from robotsmith.execution.gate import (ExecutionFailed, MotionRejected, Refused, Span, VerifiedMotion, poses_of,
-                                       spans_of)
+from robotsmith.execution.gate import ExecutionFailed, MotionRejected, Refused, VerifiedMotion, poses_of, spans_of
 from robotsmith.execution.meta_actions import pick_actions
 from robotsmith.grasp.planner import GraspPlan
 from robotsmith.grasp.transforms import pose_matrix
+from robotsmith.motion import gripper
 from robotsmith.motion.joint_planner import JointPlanner
 from robotsmith.motion.params import MotionParams
 from robotsmith.motion.plan_state import PlanState, binding
@@ -146,28 +146,34 @@ def _select(ctx: SkillContext, trial) -> tuple[GraspPlan, VerifiedMotion]:
 
 
 def _pick_request(ctx: SkillContext, plan: GraspPlan) -> tuple[dict, dict]:
-    """``gate.verify`` keywords for ``plan``, and the approach's record: a ``JointPlanner`` approach from the
-    current joints to the candidate's first waypoint, the executor's pick segment from there, their spans and
-    waypoint poses, and the target held at the candidate's grasp pose. The pick segment passes the gate on its own
-    before the approach is searched, so a candidate the gate rejects costs no search."""
+    """``gate.verify`` keywords for ``plan``, and the approach's record: the pick list run from the current joints,
+    with the fingers opened there and a ``JointPlanner`` approach from the opened joints to the candidate's
+    pre-grasp, its spans and waypoint poses, and the target held at the candidate's grasp pose. The list from the
+    pre-grasp on passes the gate on its own before the approach is searched, so a candidate the gate rejects costs no
+    search."""
     q0 = np.asarray(ctx.qpos, dtype=np.float64)
-    first = plan.waypoints[0]
-    q_pre = np.asarray(ctx.motion_planner.solve_ik(first.pos, first.quat, first.finger_width,
-                                                   init_qpos=_ik_init(ctx, plan)), dtype=np.float64)
-    q_pre[7:] = q0[7:]
+    env, solve_ik = ctx.gate.env, ctx.motion_planner.solve_ik
+    hand = env.hand_pose(q0)
+    opened = gripper.expand(gripper.Gripper(*hand, plan.finger_open), q0, solve_ik).q_target
+    q_pre = np.asarray(solve_ik(plan.pre_grasp_pos, plan.pre_grasp_quat, plan.finger_open,
+                                init_qpos=_ik_init(ctx, plan)), dtype=np.float64)
+    q_pre[7:] = opened[7:]
     target = ctx.skill.target
-    holding = binding(target, (plan.grasp_pos, plan.grasp_quat), ctx.gate.env.object_pose(target))
+    holding = binding(target, (plan.grasp_pos, plan.grasp_quat), env.object_pose(target))
     params = _pick_motion_params(ctx)
-    result = ctx.executor.run("pick", pick_actions(plan, q_pre, params, ctx.motion_planner.solve_ik, grasp=holding),
-                              ctx.motion_planner, PlanState(q_pre), params, tail_hold_steps=params.lift_hold_steps)
-    ctx.gate.verify(result.trajectory, spans_of(result.segments), target=target, q_start=q_pre, holding=holding,
-                    poses=poses_of(result.segments))
-    c = JointPlanner(ctx.gate.env, ctx.gate).connect(q0, q_pre, target=target, label="approach")
-    approach = list(c.motion.trajectory)
-    n = len(approach)
-    return ({"trajectory": approach + result.trajectory,
-             "spans": [Span("approach", 0, n)] + spans_of(result.segments, n),
-             "poses": poses_of(result.segments, n), "target": target, "q_start": ctx.qpos, "holding": holding},
+
+    def run(start, start_hand, approach):
+        return ctx.executor.run("pick", pick_actions(plan, start, start_hand, approach, params, solve_ik,
+                                                     grasp=holding),
+                                ctx.motion_planner, PlanState(start), params, tail_hold_steps=params.lift_hold_steps)
+
+    grasp = run(q_pre, (plan.pre_grasp_pos, plan.pre_grasp_quat), ())
+    ctx.gate.verify(grasp.trajectory, spans_of(grasp.segments), target=target, q_start=q_pre, holding=holding,
+                    poses=poses_of(grasp.segments))
+    c = JointPlanner(env, ctx.gate).connect(opened, q_pre, target=target, label="approach")
+    result = run(q0, hand, c.motion.trajectory)
+    return ({"trajectory": result.trajectory, "spans": spans_of(result.segments), "poses": poses_of(result.segments),
+             "target": target, "q_start": ctx.qpos, "holding": holding},
             {"ok": True, "queries": c.queries, "seconds": c.seconds, "nodes": c.nodes, "direct": c.direct})
 
 

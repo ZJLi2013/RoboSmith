@@ -39,10 +39,15 @@ def _plan():
     )
 
 
-def _pick(exe, planner, params):
-    q = _ik(_plan().waypoints[0].pos, QUAT, 0.0)
-    return exe.run("pick", pick_actions(_plan(), q, params, planner.solve_ik, grasp=HELD), planner, PlanState(q),
-                   params, tail_hold_steps=params.lift_hold_steps)
+START = (np.array([0.3, 0.2, 0.4]), QUAT)
+
+
+def _pick(exe, planner, params, finger=0.0):
+    """From the arm at ``START`` with the fingers at ``finger``, along a straight joint path to the pre-grasp."""
+    q0, opened, q_pre = _ik(*START, finger), _ik(*START, 0.04), _ik(_plan().pre_grasp_pos, QUAT, 0.04)
+    approach = [opened + (q_pre - opened) * t for t in (0.5, 1.0)]
+    return exe.run("pick", pick_actions(_plan(), q0, START, approach, params, planner.solve_ik, grasp=HELD), planner,
+                   PlanState(q0), params, tail_hold_steps=params.lift_hold_steps)
 
 
 def _place(exe, planner, params, start, phase="all"):
@@ -70,18 +75,58 @@ def test_a_binding_holds_the_object_where_it_is_relative_to_the_given_hand():
     assert not np.allclose(predicted.t_hand_object, actual.t_hand_object)
 
 
-def test_pick_holds_after_its_last_finger_segment_and_place_until_its_release_ends():
+def test_pick_holds_from_its_close_and_place_until_its_descend_ends():
     params, exe, planner = MotionParams(), MotionExecutor(), GenesisBackend(_ik)
     pick = _pick(exe, planner, params)
     assert [(s["label"], s["holding"], s["allow"]) for s in pick.segments] == [
-        ("wp0", False, None), ("wp1", False, None), ("wp2", False, "grip"), ("wp3", True, "rest")]
+        ("open", False, None), ("approach", False, None), ("descend", False, None), ("close", False, "grip"),
+        ("lift", True, "rest")]
     place = _place(exe, planner, params, PlanState(np.zeros(9), HELD))
     assert [(s["label"], s["holding"], s["allow"]) for s in place.segments] == [
-        ("transport", True, None), ("descend", True, "rest"), ("release", True, "rest"), ("retreat", False, "grip")]
+        ("transport", True, None), ("descend", True, "rest"), ("release", False, "grip"), ("retreat", False, "grip")]
     transport = _place(exe, planner, params, PlanState(np.zeros(9), HELD), phase="transport")
     assert [(s["label"], s["holding"]) for s in transport.segments] == [("transport", True)]
     with pytest.raises(ValueError):
         _place(exe, planner, params, PlanState(np.zeros(9)))
+
+
+def test_pick_opens_the_fingers_where_the_arm_starts_before_it_moves():
+    params, exe, planner = MotionParams(), MotionExecutor(), GenesisBackend(_ik)
+    pick = _pick(exe, planner, params)
+    opening, approach = pick.segments[0], pick.segments[1]
+    q0 = _ik(*START, 0.0)
+    frames = np.asarray(pick.trajectory[slice(*opening["span"])])
+    assert len(frames) == params.finger_steps and np.allclose(frames[:, :7], q0[:7])
+    np.testing.assert_allclose(frames[-1][7:], 0.04)
+    # The approach starts from the opened hand and is the planned path, point for point.
+    np.testing.assert_array_equal(pick.trajectory[approach["span"][0]][7:], [0.04, 0.04])
+    assert approach["span"][1] - approach["span"][0] == 2
+    already = _pick(exe, planner, params, finger=0.04)
+    assert already.segments[0]["span"] == [0, 0]
+
+
+def test_pick_lifts_in_a_straight_line_along_world_z_after_the_attach():
+    params, exe, planner = MotionParams(), MotionExecutor(), GenesisBackend(_ik)
+    pick = _pick(exe, planner, params)
+    lift = pick.segments[-1]
+    assert lift["label"] == "lift" and lift["cartesian"] and lift["holding"]
+    frames = np.asarray(pick.trajectory[lift["span"][0]:lift["span"][1] - params.lift_hold_steps])[:, :3]
+    assert len(frames) > 1
+    np.testing.assert_allclose(frames[:, :2], np.tile([0.5, 0.0], (len(frames), 1)), atol=1e-12)
+    assert np.all(np.diff(frames[:, 2]) > 0)
+    # 0.10 m above the grasp, not the candidate's last waypoint 0.3.
+    np.testing.assert_allclose(frames[-1], [0.5, 0.0, 0.2], atol=1e-12)
+
+
+def test_place_detaches_before_its_fingers_open():
+    params, exe, planner = MotionParams(), MotionExecutor(), GenesisBackend(_ik)
+    actions = place_actions(_plan(), params)
+    kinds = [a.label if isinstance(a, RuntimeMotionWaypoint) else type(a).__name__ for a in actions]
+    assert kinds == ["transport", "descend", "Detach", "release", "retreat"]
+    place = _place(exe, planner, params, PlanState(np.zeros(9), HELD))
+    descend, release = place.segments[1], place.segments[2]
+    assert descend["holding"] and not release["holding"] and release["finger_only"]
+    assert release["span"][0] == descend["span"][1]
 
 
 def test_the_chain_advances_q_through_each_segment_and_hands_over_where_it_ends():

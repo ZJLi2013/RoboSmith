@@ -11,7 +11,7 @@ import pytest
 from robotsmith.execution.executor import MotionExecutor
 from robotsmith.execution.gate import (ExecutionFailed, ExecutionGate, Holding, MotionRejected, Refused, Span,
                                        StaleMotion, VerifiedMotion, certified, permitted, poses_of, spans_of)
-from robotsmith.execution.meta_actions import pick_actions
+from robotsmith.execution.meta_actions import pick_actions, place_actions
 from robotsmith.grasp.planner import GraspPlan
 from robotsmith.grasp.transforms import pose_matrix
 from robotsmith.motion.params import MotionParams
@@ -132,9 +132,11 @@ GRASP = Holding("die", np.eye(4))
 
 
 def _pick(plan, start, params):
+    """From the arm at the pre-grasp, so the approach is empty."""
     planner = GenesisBackend(_ik)
-    return MotionExecutor().run("pick", pick_actions(plan, start, params, planner.solve_ik, grasp=GRASP), planner,
-                                PlanState(start), params, tail_hold_steps=params.lift_hold_steps)
+    return MotionExecutor().run("pick", pick_actions(plan, start, (plan.pre_grasp_pos, plan.pre_grasp_quat), (),
+                                                     params, planner.solve_ik, grasp=GRASP),
+                                planner, PlanState(start), params, tail_hold_steps=params.lift_hold_steps)
 
 
 def _pick_motion():
@@ -149,8 +151,8 @@ def test_pick_spans_tile_the_whole_trajectory_with_holds_and_rules():
     traj, spans, params = _pick_motion()
     assert spans[-1].end == len(traj) and params.lift_hold_steps > 0
     assert [(s.label, s.holding, s.allow) for s in spans] == [
-        ("transit", False, None), ("wp0", False, None), ("wp1", False, None), ("wp2", False, "grip"),
-        ("wp3", True, "rest")]
+        ("transit", False, None), ("open", False, None), ("approach", False, None), ("descend", False, None),
+        ("close", False, "grip"), ("lift", True, "rest")]
 
 
 def test_pick_poses_are_the_waypoints_at_the_points_that_reach_them():
@@ -158,18 +160,19 @@ def test_pick_poses_are_the_waypoints_at_the_points_that_reach_them():
     plan = _pick_plan()
     result = _pick(plan, _at_first_waypoint(plan, 0.0), params)
     poses = poses_of(result.segments, 2)
-    assert len(poses) == len(plan.waypoints)
+    wanted = [plan.pre_grasp_pos, plan.grasp_pos, plan.grasp_pos, plan.grasp_pos + [0.0, 0.0, 0.10]]
+    assert len(poses) == len(wanted)
     traj = _points(0.1, 0.2) + result.trajectory
-    for (i, (pos, quat)), wp in zip(sorted(poses.items()), plan.waypoints):
-        np.testing.assert_allclose(traj[i][:3], wp.pos)
-        np.testing.assert_allclose(pos, wp.pos)
-        np.testing.assert_allclose(quat, wp.quat)
-    # The approach's intermediate points ask for no pose.
-    approach = next(s for s in spans_of(result.segments, 2) if s.label == "wp0")
-    assert [i for i in range(approach.start, approach.end) if i in poses] == [approach.end - 1]
+    for (i, (pos, quat)), want in zip(sorted(poses.items()), wanted):
+        np.testing.assert_allclose(traj[i][:3], want)
+        np.testing.assert_allclose(pos, want)
+        np.testing.assert_allclose(quat, plan.grasp_quat)
+    # The descend's intermediate points ask for no pose.
+    descend = next(s for s in spans_of(result.segments, 2) if s.label == "descend")
+    assert [i for i in range(descend.start, descend.end) if i in poses] == [descend.end - 1]
 
 
-def test_pick_holds_the_arm_at_its_start_through_the_first_waypoint():
+def test_pick_holds_the_arm_at_its_start_while_the_fingers_open():
     plan, params = _pick_plan(), MotionParams()
     start = _at_first_waypoint(plan, 0.0)
     result = _pick(plan, start, params)
@@ -180,14 +183,14 @@ def test_pick_holds_the_arm_at_its_start_through_the_first_waypoint():
     assert spans_of(opened.segments)[0].end == 0
 
 
-@pytest.mark.parametrize("where", ["transit", "wp2", "tail"])
+@pytest.mark.parametrize("where", ["transit", "close", "tail"])
 def test_gate_rejects_a_violation_in_any_span_including_holds(where):
     traj, spans, _ = _pick_motion()
     by = {s.label: s for s in spans}
-    index = {"transit": 1, "wp2": by["wp2"].end - 1, "tail": len(traj) - 1}[where]
+    index = {"transit": 1, "close": by["close"].end - 1, "tail": len(traj) - 1}[where]
     palm = (("robot", "hand"), ("wall", "base"))
     scene = _Scene({index: [palm]})
-    holding = _holding_at(scene, traj[by["wp3"].start - 1])
+    holding = _holding_at(scene, traj[by["lift"].start - 1])
     with pytest.raises(MotionRejected) as exc:
         ExecutionGate(scene).verify(traj, spans, target="die", q_start=Q0, holding=holding)
     assert exc.value.index == index
@@ -270,6 +273,20 @@ def test_a_released_object_stays_where_the_hand_left_it():
     assert placed[0] is placed[1] is None and placed[2][0] == placed[3][0] == "die"
     # Released at point 1, hand 0.3 m along x from where T was taken: the die moved with it.
     np.testing.assert_allclose(placed[2][1][:3, 3], [0.8, 0.0, 0.8], atol=1e-9)
+
+
+def test_the_release_is_checked_with_the_object_placed():
+    params, plan, planner, scene = MotionParams(), _pick_plan(), GenesisBackend(_ik), _Scene()
+    start = _ik(plan.pre_grasp_pos, plan.pre_grasp_quat, 0.0)
+    holding = _holding_at(scene, start)
+    result = MotionExecutor().run("place", place_actions(plan, params), planner, PlanState(start, holding), params)
+    spans = spans_of(result.segments)
+    release = next(s for s in spans if s.label == "release")
+    scene.hits = {release.start: [(("robot", "left_finger"), ("die", "base"))]}
+    ExecutionGate(scene).verify(result.trajectory, spans, target="die", q_start=start, holding=holding)
+    asked = scene.queries[release.start:release.end]
+    assert len(asked) == params.release_steps
+    assert all(held is None and placed[0] == "die" for _, held, placed in asked)
 
 
 def test_stale_verified_motion_is_not_executed():
@@ -486,16 +503,22 @@ class _Planner:
     def plan(self, *a, **k):
         quat = np.array([0.0, 1.0, 0.0, 0.0])
         return [SimpleNamespace(grasp_pos=np.array([0.5, 0.0, 0.85]), grasp_quat=quat, metadata={"candidate_index": i},
-                                waypoints=[SimpleNamespace(pos=np.array([0.5, 0.0, 0.95]), quat=quat, finger_width=0.04)])
+                                pre_grasp_pos=np.array([0.5, 0.0, 0.95]), pre_grasp_quat=quat, finger_open=0.04,
+                                finger_closed=0.0)
                 for i in range(2)]
 
 
 class _Executor:
+    """The pick list's planned approach, then two fixed points."""
+
     last_motion_trace = None
 
-    def run(self, *a, **k):
-        return SimpleNamespace(trajectory=_points(0.1, 0.2), segments=[
-            {"label": "seg", "span": [0, 2], "holding": False, "allow": None}])
+    def run(self, name, actions, *a, **k):
+        approach = [np.asarray(q) for q in actions[1].path]
+        n = len(approach)
+        return SimpleNamespace(trajectory=approach + _points(0.1, 0.2), segments=[
+            {"label": "approach", "span": [0, n], "holding": False, "allow": None},
+            {"label": "seg", "span": [n, n + 2], "holding": False, "allow": None}])
 
 
 def test_a_refused_step_steps_no_physics():
