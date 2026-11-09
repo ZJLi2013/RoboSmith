@@ -50,6 +50,12 @@ def _pose_q(env, backend, rng) -> np.ndarray:
                       dtype=np.float64)
 
 
+def _matrix(value, shape) -> np.ndarray:
+    """``value`` as a float array of ``shape``, a leading batch of one dropped (``to_numpy`` keeps only row 0)."""
+    a = np.asarray(value.cpu().numpy() if hasattr(value, "cpu") else value, dtype=np.float64)
+    return a.reshape(-1)[-int(np.prod(shape)):].reshape(shape)
+
+
 def _model(env, q):
     """Mass-matrix diagonal of the arm joints at ``q`` (the larger of Genesis's and the bound
     ``sum_l m_l |J_v|^2 + lambda_max(I_l) |J_w|^2`` plus armature, since ``get_mass_mat`` may hold the last step's
