@@ -3,13 +3,15 @@
   python scripts/acceptance/calibrate_clearance.py --out out/calibration --commit <sha>
 
 Two cases, each in its own process (Genesis initialises once per process). ``empty``: ``default_rng(0)`` draws
-joint configurations uniformly within the arm limits, kept when the gate passes them and the hand is at least 5 cm
-above the table; from the settled home pose, ``JointPlanner.connect`` reaches each in turn and a 0.10 m
-``move_linear`` (``keep``) follows in a direction drawn uniformly on the unit sphere. A draw the gate or the planner
-refuses is replaced by the next. ``held``: ``die_01`` at (0.50, 0.00) on the table, picked with the planner's first
-top-down candidate, then the same with ``default_rng(1)``. Every trajectory point is one ``control_dofs_position``
-and one physics step, as the recorder runs them; the deviation of a step is
-``lever_arms(held) @ |q_actual - q_cmd|``.
+hand poses, the position uniform over ``DEFAULT_WORKSPACE_XY`` and 0.05-0.35 m above the table, pointing down at a
+uniform yaw; IK starts from home with the base joint aimed at the position, as the pick's does, and a pose is kept
+when the gate passes the solution at that pose. From the settled home pose, ``JointPlanner.connect`` (its own budget)
+reaches each in turn and a 0.10 m ``move_linear`` (``keep``) follows in a direction drawn uniformly on the unit
+sphere. A draw the gate or the planner refuses is replaced by the next; each draw takes four uniforms (x, y, z,
+yaw) or three normals (direction) from the generator, kept or not. ``held``: ``die_01`` at (0.50, 0.00) on the
+table, picked with the planner's first top-down candidate, then the same with ``default_rng(1)``. Every trajectory
+point is one ``control_dofs_position`` and one physics step, as the recorder runs them; the deviation of a step is
+``lever_arms(held) @ |q_actual - q_cmd|``. A case that has not finished in ``CASE_SECONDS`` stops.
 
 Writes ``segments.jsonl`` (one row per segment) and ``calibration.json``: ``e_m`` (the largest deviation),
 ``s_m`` (the gate's check spacing), ``r_m`` (the surface sampling radius) and ``d_m = ceil_mm(e + s / 2)``.
@@ -22,6 +24,7 @@ import json
 import math
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -32,9 +35,10 @@ sys.path.insert(0, str(REPO))
 CASES = {"empty": 0, "held": 1}
 N_GOALS = 20
 LINEAR_M = 0.10
-HAND_ABOVE_TABLE_M = 0.05
+HAND_ABOVE_TABLE_M = (0.05, 0.35)
 DIE_XY = (0.50, 0.00)
 MAX_DRAWS = 400
+CASE_SECONDS = 900
 
 
 def _scene(case: str):
@@ -64,6 +68,11 @@ class _Case:
         self.holding = None
         self.rows: list[dict] = []
         self.steps: list[float] = []
+        self.t0 = time.perf_counter()
+
+    def _in_time(self) -> None:
+        if time.perf_counter() - self.t0 > CASE_SECONDS:
+            raise RuntimeError(f"{self.case} did not finish in {CASE_SECONDS} s ({len(self.rows)} segments)")
 
     # ---- execution ----
 
@@ -150,12 +159,26 @@ class _Case:
     # ---- the segments ----
 
     def _legal_goal(self, rng, span) -> np.ndarray | None:
-        lo, hi = self.env.joint_limits
-        q = self.q.copy()
-        q[:7] = rng.uniform(lo[:7], hi[:7])
-        if self.env.hand_pose(q)[0][2] < self.env.table_surface_z + HAND_ABOVE_TABLE_M:
-            return None
-        why = self.gate.check_point(q, span, target="die", held=self._held())
+        from robotsmith.grasp.transforms import (
+            TOP_DOWN_QUAT,
+            quat_wxyz_to_matrix,
+            rotmat_to_quat_wxyz,
+        )
+        from robotsmith.scenes.config import DEFAULT_WORKSPACE_XY
+        from robotsmith.sim.franka import HOME_QPOS
+
+        (x0, y0), (x1, y1) = DEFAULT_WORKSPACE_XY
+        (z0, z1), table = HAND_ABOVE_TABLE_M, self.env.table_surface_z
+        x, y, z, yaw = rng.uniform([x0, y0, table + z0, -np.pi], [x1, y1, table + z1, np.pi])
+        c, s = np.cos(yaw), np.sin(yaw)
+        quat = rotmat_to_quat_wxyz(np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
+                                   @ quat_wxyz_to_matrix(np.asarray(TOP_DOWN_QUAT, dtype=np.float64)))
+        init = np.asarray(HOME_QPOS, dtype=np.float64).copy()
+        init[0] = float(np.arctan2(y, x))
+        q = np.asarray(self.backend.solve_ik(np.array([x, y, z]), quat, float(self.q[7]), init_qpos=init),
+                       dtype=np.float64)
+        q[7:] = self.q[7:]
+        why = self.gate.check_point(q, span, target="die", held=self._held(), pose=(np.array([x, y, z]), quat))
         return q if why is None else None
 
     def connect(self, rng) -> None:
@@ -164,6 +187,7 @@ class _Case:
 
         span = Span("move_to", 0, 1, holding=self.holding is not None)
         for draw in range(1, MAX_DRAWS + 1):
+            self._in_time()
             goal = self._legal_goal(rng, span)
             if goal is None:
                 continue
@@ -187,6 +211,7 @@ class _Case:
         from robotsmith.motion.plan_state import PlanState
 
         for draw in range(1, MAX_DRAWS + 1):
+            self._in_time()
             u = rng.normal(size=3)
             u /= np.linalg.norm(u)
             self._rebind()
