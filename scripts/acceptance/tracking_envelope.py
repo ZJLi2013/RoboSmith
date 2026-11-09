@@ -58,7 +58,8 @@ def _model(env, q):
 
     franka, n = env.franka, env.franka.n_dofs
     with env.posed(q, {}):
-        mass = to_numpy(franka.get_mass_mat()).reshape(n, n)
+        mass = to_numpy(franka.get_mass_mat()).reshape(-1)
+        mass = np.diag(mass) if mass.size == n else mass.reshape(n, n)
         bound, tau = np.zeros(n), np.zeros(n)
         for link in franka.links:
             m = float(to_numpy(link.get_mass()).reshape(-1)[0])
@@ -92,7 +93,7 @@ def envelope(e_m: float) -> dict:
     rows, worst = [], {"zeta_min": np.inf, "saturation_max": 0.0, "sag_max_m": 0.0}
     for k in range(N_POSES):
         q = _pose_q(env, backend, rng)
-        m_jj, tau_g = _model(env, q)
+        m_jj, tau_g, mass_gap = _model(env, q)
         for case, lv in lever.items():
             extra = m_die * lv**2 if case == "held" else 0.0
             tau = np.abs(tau_g) + (m_die * 9.81 * lv if case == "held" else 0.0)
@@ -101,7 +102,8 @@ def envelope(e_m: float) -> dict:
             sag = float(lv @ (tau / kp))
             rows.append({"pose": k, "case": case, "q": np.round(q, 5).tolist(),
                          "zeta": np.round(zeta, 3).tolist(), "saturation": np.round(saturation, 3).tolist(),
-                         "sag_m": round(sag, 6)})
+                         "sag_m": round(sag, 6), "tau_g": np.round(tau_g, 3).tolist(),
+                         "mass_gap": round(mass_gap, 5)})
             worst["zeta_min"] = min(worst["zeta_min"], float(zeta.min()))
             worst["saturation_max"] = max(worst["saturation_max"], float(saturation.max()))
             worst["sag_max_m"] = max(worst["sag_max_m"], sag)
