@@ -187,6 +187,10 @@ pick 的手指闭合段允许手指碰目标（`grip`），其后的直线抬升
 - `MotionExecutor.run(name, actions, motion_planner, start: PlanState, params)` 是动作列表进运动链的唯一入口，
   把 trace 记为 `last_motion_trace`；pick 的 `lift_hold_steps` 是抬升项自己的 `hold_after_steps`。`drag_handle(..., action)` 也经它。
 - `scenario/relations.rigid_moving_links`：关节子 link 加上与它固定连接的 link，给 `clear_of` 的扫掠占地用。
+- `scenes/genesis_loader` 加载 Franka 时给 `gs.materials.Rigid(gravity_compensation=1.0)`：机器人连杆的重力被完全抵消，
+  持物与其它物体照受重力，关节 PD 停在门检查过的命令构型上，不靠位置误差扛重力。门仍只判接触，回放仍是每点一次下发、
+  一步物理、不确认到位。结果见[公开动作语义与重力补偿](manipulation.md#公开动作语义与重力补偿)
+  （[e15](../exps/r1/evidence/e15/README.md)、[e19](../exps/r1/evidence/e19/README.md)）。
 - 启动脚本 `scripts/setup/run_scenario.sh` 只挂仓库与 Hugging Face 缓存，不挂 Docker socket。
 
 ## 开关
