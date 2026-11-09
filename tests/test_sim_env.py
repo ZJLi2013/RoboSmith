@@ -347,6 +347,8 @@ def test_the_clearance_lower_bound_sees_a_face_whose_vertices_are_far():
     assert bounds[("link5", "wall")] <= d / 2
     assert bounds[("link5", "wall")] < vertex_distance.min()
     assert "die" not in {entity for _, entity in bounds}
+    near = {(link, entity): dist for link, entity, dist in env.clearance_at(np.zeros(9), within=d)}
+    assert near == pytest.approx(bounds)
 
 
 def test_a_fixture_without_box_collision_geometry_raises():

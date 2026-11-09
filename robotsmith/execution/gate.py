@@ -22,9 +22,9 @@ LIMIT_TOL_RAD = 1e-4
 REFUSALS = ("search_exhausted", "unsupported", "infeasible")
 CLEARANCE_M = 0.01
 # These spans put the hand on the object, so the hand and fingers stay contact-only; every other span keeps the
-# clearance on the whole robot.
+# clearance on the whole robot. ``link0`` stands on the support and never moves, so it has no clearance to keep.
 CONTACT_SPANS = frozenset({"descend", "close", "lift", "release", "retreat"})
-ARM_LINKS = frozenset(f"link{i}" for i in range(8))
+ARM_LINKS = frozenset(f"link{i}" for i in range(1, 8))
 ROBOT_LINKS = ARM_LINKS | {"hand", *FINGER_LINKS}
 
 
@@ -191,7 +191,7 @@ class ExecutionGate:
         within 5 mm / 0.05 rad of ``pose`` when the point asks for one, no contact between robot links that are not
         joined, every other contact ``permitted``, and each watched link's clearance to a fixture or the support at
         least ``CLEARANCE_M`` (``clearance``, with the link, the entity and the distance). A free span watches every
-        robot link; a contact span watches ``link0``–``link7`` only. ``held`` / ``placed`` pose the target as
+        moving robot link; a contact span watches ``link1``–``link7`` only. ``held`` / ``placed`` pose the target as
         ``contacts_at`` takes them. Reads only; the scene is as it was on return or raise."""
         q = np.asarray(q, dtype=np.float64)
         lo, hi = self.env.joint_limits
@@ -214,7 +214,7 @@ class ExecutionGate:
             elif not permitted(pair, span, target, rest):
                 return {"reason": "collision", "pair": pair}
         watched = ARM_LINKS if span.label in CONTACT_SPANS else ROBOT_LINKS
-        for link, entity, dist in self.env.clearance_at(q, held=held):
+        for link, entity, dist in self.env.clearance_at(q, held=held, within=CLEARANCE_M):
             if link in watched and dist < CLEARANCE_M:
                 return {"reason": "clearance", "link": link, "entity": entity,
                         "distance_m": round(float(dist), 5)}

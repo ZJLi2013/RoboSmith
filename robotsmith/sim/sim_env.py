@@ -93,9 +93,8 @@ def _sample_surface(verts, faces, radius: float) -> np.ndarray:
     return pts[np.sort(keep)]
 
 
-def _point_box_distance(points, center, quat, extents) -> np.ndarray:
-    """Exact distance from each point to the oriented box. Zero inside."""
-    rot = quat_wxyz_to_matrix(np.asarray(quat, dtype=np.float64))
+def _point_box_distance(points, center, rot, extents) -> np.ndarray:
+    """Exact distance from each point to the box at ``center`` rotated by ``rot``. Zero inside."""
     local = (np.asarray(points, dtype=np.float64) - np.asarray(center, dtype=np.float64)) @ rot
     delta = np.abs(local) - np.asarray(extents, dtype=np.float64) / 2.0
     return np.linalg.norm(np.maximum(delta, 0.0), axis=1)
@@ -107,10 +106,11 @@ def _is_box(geom) -> bool:
     return str(name).upper() == "BOX" if name is not None else kind in (5, "BOX")
 
 
-def _world_samples(geom, local) -> np.ndarray:
+def _pose(geom) -> tuple[np.ndarray, np.ndarray]:
+    """World position and rotation matrix of a Genesis geom."""
     pos = to_numpy(geom.get_pos()).reshape(-1)[:3].astype(np.float64)
     quat = to_numpy(geom.get_quat()).reshape(-1)[:4].astype(np.float64)
-    return np.asarray(local, dtype=np.float64) @ quat_wxyz_to_matrix(quat).T + pos
+    return pos, quat_wxyz_to_matrix(quat)
 
 
 def ensure_display():
@@ -423,26 +423,32 @@ class SimEnv:
         unknown = ("env", "?")
         return [(owner.get(int(a), unknown), owner.get(int(b), unknown)) for a, b in pairs]
 
-    def clearance_at(self, qpos, held=None):
+    def clearance_at(self, qpos, held=None, *, within: float | None = None):
         """``[(link, entity, metres), ...]``: a lower bound on the distance from each robot link's collision
         surface to each fixture and to the support. The bound is the nearest sample's exact point-to-box distance
         minus ``SAMPLE_R_M``, and the samples cover every face to that radius, so the bound does not exceed the
-        true distance. A fixture or support that is not a box raises. ``held`` is not a clearance body. The scene
-        is unchanged on return."""
+        true distance. With ``within``, a geom whose bounding sphere is already that far from a box reports the
+        sphere's distance instead, which is also a lower bound. A fixture or support that is not a box raises.
+        ``held`` is not a clearance body. The scene is unchanged on return."""
         obstacles = self._clearance_obstacles()
         best: dict[tuple[str, str], float] = {}
         with self._snapshot():
             self._set_arm(qpos)
-            boxes = [(label, to_numpy(geom.get_pos()).reshape(-1)[:3].astype(np.float64),
-                      to_numpy(geom.get_quat()).reshape(-1)[:4].astype(np.float64), extents)
-                     for label, geom, extents in obstacles]
+            boxes = [(label, *_pose(geom), extents) for label, geom, extents in obstacles]
             for link, geoms in self._surface_samples.items():
-                pts = np.concatenate([_world_samples(geom, local) for geom, local in geoms])
-                for label, center, quat, extents in boxes:
-                    bound = float(_point_box_distance(pts, center, quat, extents).min() - SAMPLE_R_M)
-                    key = (link, label)
-                    if key not in best or bound < best[key]:
-                        best[key] = bound
+                for geom, local, centre, radius in geoms:
+                    pos, rot = _pose(geom)
+                    world = None
+                    for label, b_pos, b_rot, extents in boxes:
+                        bound = float(_point_box_distance((rot @ centre + pos)[None], b_pos, b_rot, extents)[0]
+                                      - radius)
+                        if within is None or bound < within:
+                            if world is None:
+                                world = local @ rot.T + pos
+                            bound = float(_point_box_distance(world, b_pos, b_rot, extents).min() - SAMPLE_R_M)
+                        key = (link, label)
+                        if key not in best or bound < best[key]:
+                            best[key] = bound
         return [(link, label, dist) for (link, label), dist in best.items()]
 
     def _clearance_obstacles(self):
@@ -477,7 +483,9 @@ class SimEnv:
                 continue
             pts = _sample_surface(np.asarray(geom.init_verts, dtype=np.float64), faces.reshape(-1, 3), SAMPLE_R_M)
             if len(pts):
-                groups.setdefault(geom.link.name, []).append((geom, pts))
+                centre = (pts.min(axis=0) + pts.max(axis=0)) / 2.0
+                radius = float(np.linalg.norm(pts - centre, axis=1).max())
+                groups.setdefault(geom.link.name, []).append((geom, pts, centre, radius))
         return groups
 
     @contextmanager
