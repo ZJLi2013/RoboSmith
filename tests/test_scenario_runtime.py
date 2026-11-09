@@ -9,7 +9,9 @@ from robotsmith.scenario_runtime.runner import run_scenario_episode
 from robotsmith.tasks.task_spec import SuccessNode, TaskSpec as LegacyTaskSpec
 from robotsmith.grasp.planner import GraspPlan, Waypoint
 from robotsmith.motion.params import MotionParams
-from robotsmith.skills import Skill, run_skills
+from robotsmith.scenario.load import pick_part, place_part
+from robotsmith.skills import Skill
+from conftest import plan_skills
 
 
 def test_run_scenario_episode_reanchors_to_live_resolved_positions(monkeypatch):
@@ -57,27 +59,22 @@ def test_run_scenario_episode_reanchors_to_live_resolved_positions(monkeypatch):
             return {}
 
         def solve_ik(self, *args, **kwargs):
-            raise AssertionError("not used by stubbed plan_segment")
+            raise AssertionError("not used by the stubbed _plan")
 
     seen: dict = {}
 
-    def fake_plan_segment(
-        skill, index, skills, planner, executor, solve_ik, scene_state, params,
-        qpos, held_category=None, held_place_z=None, phase="all", *, gate, **_,
-    ):
+    def fake_plan(self, skill, index, planned, scene_state, phase):
         seen["positions"] = scene_state["positions"]
         assert "joint_positions" in scene_state
         scene_state["skill_traces"].append({"skill": skill.name, "target": skill.target})
-        return gate.ungated([np.zeros(9, dtype=np.float32)]), held_category, held_place_z
+        return self.gate.ungated([np.zeros(9, dtype=np.float32)])
 
     recorded: list[int] = []
 
     def fake_record_episode(env, dataset, seg, task_spec, **kwargs):
         recorded.append(len(seg))
 
-    monkeypatch.setattr(
-        "robotsmith.scenario_runtime.runner.plan_segment", fake_plan_segment
-    )
+    monkeypatch.setattr("robotsmith.scenario_runtime.runner.EpisodeRun._plan", fake_plan)
     task = LegacyTaskSpec(
         name="cap_move_die_to_goal",
         scene="cap_move_die_to_goal",
@@ -167,8 +164,9 @@ def test_place_z_resolution(place_params, drop_z, resolved, source, gate):
         "skill_traces": [],
     }
 
-    run_skills(
-        [Skill("pick", "die", "die"), Skill("place", "goal", "die", place_params)],
+    plan_skills(
+        [Skill("pick", "die", "die", {"actions": pick_part("die")}),
+         Skill("place", "goal", "die", {**place_params, "actions": place_part("die", "goal")})],
         planner,
         _FakeExecutor(),
         solve_ik=lambda *args, **kwargs: np.zeros(9),
@@ -195,19 +193,19 @@ class _StubEnv:
         return "s"
 
     def solve_ik(self, *args, **kwargs):
-        raise AssertionError("not used by stubbed plan_segment")
+        raise AssertionError("not used by the stubbed _plan")
 
 
 @pytest.mark.parametrize("refused_at, cause, steps", [("pick", "search_exhausted", 0), ("place", "execution_failed", 3)])
 def test_a_place_refused_after_the_pick_stepped_is_an_execution_failure(monkeypatch, refused_at, cause, steps):
     evidence = {"reason": "no transport to the standoff", "transport": {"ok": False, "queries": 4}}
 
-    def plan(skill, *args, gate, **kwargs):
+    def plan(self, skill, *args):
         if skill.name == refused_at:
             raise Refused("search_exhausted", evidence)
-        return gate.ungated([np.zeros(9)] * 3), None, None
+        return self.gate.ungated([np.zeros(9)] * 3)
 
-    monkeypatch.setattr("robotsmith.scenario_runtime.runner.plan_segment", plan)
+    monkeypatch.setattr("robotsmith.scenario_runtime.runner.EpisodeRun._plan", plan)
     task = LegacyTaskSpec(name="t", scene="t", instruction="",
                           success=SuccessNode.leaf("object_above", {"object": "die", "reference": "table"}),
                           skills=[Skill("pick", "die"), Skill("place", "goal")])

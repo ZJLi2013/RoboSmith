@@ -16,12 +16,14 @@ from typing import Callable
 
 import numpy as np
 
-from robotsmith.execution.gate import ExecutionFailed, ExecutionGate, Refused
+from robotsmith.execution.gate import ExecutionFailed, ExecutionGate, Refused, VerifiedMotion
 from robotsmith.grasp.geometric import GeometricGraspPlanner
+from robotsmith.motion.planner import GenesisBackend
 from robotsmith.scenario_runtime import handoff
 from robotsmith.sim.franka import HOME_QPOS, to_numpy_f32
 from robotsmith.sim.world_state import collect_world_state, settle_window
-from robotsmith.skills import SKILL_DEFS, plan_segment, resolve_frame, skill_phases
+from robotsmith.skills import SKILL_DEFS, SkillContext, resolve_frame, skill_phases
+from robotsmith.skills.base import _resolve_skill_category
 from robotsmith.tasks import evaluate_success
 from robotsmith.tasks.task_spec import TaskSpec
 
@@ -99,8 +101,10 @@ class EpisodeRun:
     Only motions the execution gate verified against the current scene are executed."""
 
     def __init__(self, env, task_spec: TaskSpec, *, executor, motion_params, dataset, record_fn: Callable,
-                 target_frames: dict, camera_names, env_state_names):
+                 target_frames: dict, camera_names, env_state_names, grasp_selection: str = "trial"):
         self.env, self.task_spec, self.executor, self.motion_params = env, task_spec, executor, motion_params
+        # "trial_all" tries every pick candidate, for probes that need the executable fraction.
+        self.grasp_selection = grasp_selection
         self.dataset, self.record_fn, self.target_frames = dataset, record_fn, target_frames
         self.gate = ExecutionGate(env)
         self.camera_names, self.env_state_names = camera_names, env_state_names
@@ -116,6 +120,24 @@ class EpisodeRun:
         self.pick_start = 0
         self.window = None
         self.stopped = None
+
+    def _plan(self, skill, index: int, planned: list, scene_state: dict, phase: str) -> VerifiedMotion:
+        """One phase of ``skill`` planned by its primitive from the live ``scene_state``, verified by the gate
+        against the current scene; raises ``Refused`` / ``ExecutionFailed`` like the primitive. The primitive's
+        carry-over (``held_category`` / ``held_place_z``) is kept for the next step."""
+        skill_def = SKILL_DEFS.get(skill.name)
+        if skill_def is None:
+            raise ValueError(f"Unknown skill: {skill.name!r}")
+        ctx = SkillContext(
+            skill=skill, index=index, skills=planned, planner=self.env.planner, executor=self.executor,
+            motion_planner=GenesisBackend(self.env.solve_ik), params=self.motion_params, scene_state=scene_state,
+            qpos=self.qpos, category=_resolve_skill_category(skill, scene_state.get("assets", {}),
+                                                             self.held_category),
+            gate=self.gate, held=self.held, held_category=self.held_category, held_place_z=self.held_place_z,
+            phase=phase)
+        motion = skill_def.primitive(ctx)
+        self.held_category, self.held_place_z = ctx.held_category, ctx.held_place_z
+        return motion
 
     def _record_step(self, q):
         self.record_fn(self.env, self.dataset, [q], self.task_spec, camera_names=self.camera_names,
@@ -143,16 +165,13 @@ class EpisodeRun:
             if skill.name == "pick":
                 self.pick_start = self.frame_count
             for phase in phases:
-                scene_state = _live_scene_state(env, self.target_frames, self.skill_traces)
+                scene_state = _live_scene_state(env, self.target_frames, self.skill_traces,
+                                                trial_all=self.grasp_selection == "trial_all")
                 if step_start is None:
                     step_start = {n: np.asarray(p).tolist() for n, p in collect_object_positions(env).items()}
                 obj = skill.target if skill.name == "pick" else self.held
                 try:
-                    motion, self.held_category, self.held_place_z = plan_segment(
-                        skill, i, planned, env.planner, self.executor, env.solve_ik,
-                        scene_state, self.motion_params, self.qpos, self.held_category, self.held_place_z,
-                        phase=phase, gate=self.gate, held=self.held,
-                    )
+                    motion = self._plan(skill, i, planned, scene_state, phase)
                 except (Refused, ExecutionFailed) as exc:
                     entry = {"skill": skill.name, "phase": phase, "target": skill.target, "object": obj,
                              "done": False, "cause": exc.label, "evidence": exc.evidence,
@@ -319,6 +338,8 @@ def _live_scene_state(
     env,
     target_frames: dict,
     skill_traces: list[dict],
+    *,
+    trial_all: bool = False,
 ) -> dict:
     scene_state = {
         "home_qpos": HOME_QPOS.copy(),
@@ -337,7 +358,7 @@ def _live_scene_state(
     }
     # Geometric candidates are judged by trying them from the live scene (snapshot, replay, restore).
     if isinstance(getattr(env, "planner", None), GeometricGraspPlanner):
-        scene_state["grasp_trial"] = env.trial_from_here
+        scene_state["grasp_trial"], scene_state["grasp_trial_all"] = env.trial_from_here, trial_all
     # Resolve every named target against the live world so e.g. a tray slot
     # tracks the drawer's current opening instead of a static "fully open" point.
     for name, frame in target_frames.items():

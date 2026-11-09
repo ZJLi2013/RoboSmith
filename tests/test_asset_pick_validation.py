@@ -7,12 +7,16 @@ name-derived grasp category.
 """
 
 import random
+from types import SimpleNamespace
 
 import numpy as np
 
-from robotsmith.execution.gate import Refused
+from conftest import ClearEnv
+from robotsmith.motion.params import MotionParams
+from robotsmith.motion.plan_state import Attach
 from robotsmith.rollout import asset_pick_validation as apv
 from robotsmith.rollout.asset_pick_validation import _make_scene, _make_task
+from robotsmith.scenario.load import pick_part
 
 
 def test_make_scene_wires_single_named_object():
@@ -31,60 +35,62 @@ def test_make_task_derives_category_from_asset_name():
     assert task.name == "pick_apple_02"
     assert task.success.predicate == "object_above"
     assert [skill.to_dict() for skill in task.skills] == [
-        {"name": "pick", "target": "object", "params": {}, "category": "apple"},
+        {"name": "pick", "target": "object", "params": {"actions": pick_part("object")}, "category": "apple"},
     ]
 
 
 def test_object_xy_pins_the_object_before_settling(monkeypatch):
     monkeypatch.setattr(apv, "build_episode_positions",
                         lambda *a, **k: {"object": np.array([0.55, 0.10, 0.03])})
-    monkeypatch.setattr(apv, "run_skills", lambda *a, **k: [])
     reset_xy = {}
 
     class Env:
         entity_map = {"object": object()}
-        object_heights, asset_map, object_quats, table_surface_z = {}, {}, {}, 0.0
-        planner = solve_ik = None
 
         def reset(self, xy_map, settle_steps):
             reset_xy.update(xy_map)
             return {"object": np.array([*xy_map["object"], 0.025])}
 
-    plan = apv._prepare_asset_pick_episode(Env(), _make_task("die_01"), rng=random.Random(0), executor=None,
-                                           motion_params=None, settle_steps=1, object_xy=(0.42, -0.27))
+    initial = apv._reset_asset_pick_episode(Env(), _make_task("die_01"), rng=random.Random(0), settle_steps=1,
+                                            object_xy=(0.42, -0.27))
     assert reset_xy["object"] == (0.42, -0.27)
-    np.testing.assert_allclose(plan.initial_positions["object"], [0.42, -0.27, 0.025])
+    np.testing.assert_allclose(initial["object"], [0.42, -0.27, 0.025])
 
 
-def test_trial_selection_trials_from_a_snapshot_and_a_refused_pick_has_no_motion(monkeypatch):
-    monkeypatch.setattr(apv, "build_episode_positions",
-                        lambda *a, **k: {"object": np.array([0.55, 0.10, 0.03])})
-    resets, seen = [], {}
+def test_asset_validation_runs_its_pick_through_an_episode_run():
+    quat = np.array([0.0, 1.0, 0.0, 0.0])
+    candidate = SimpleNamespace(grasp_pos=np.array([0.5, 0.0, 0.12]), grasp_quat=quat,
+                                pre_grasp_pos=np.array([0.5, 0.0, 0.2]), pre_grasp_quat=quat,
+                                finger_open=0.04, finger_closed=0.0, metadata={"candidate_index": 0})
 
-    def skills(task_skills, planner, executor, solve_ik, scene_state, params, *, gate):
-        seen["trial"] = scene_state["grasp_trial"]
-        raise Refused("search_exhausted", {"reason": "no pick candidate passed the gate and its trial",
-                                           "candidates": 3})
+    class Env(ClearEnv):
+        entity_map = {"object": SimpleNamespace(get_pos=lambda: np.array([0.5, 0.0, 0.1]))}
+        object_heights, asset_map, object_quats, table_surface_z = {"object": 0.02}, {}, {}, 0.0
+        planner = SimpleNamespace(plan=lambda *a, **k: [candidate])
 
-    monkeypatch.setattr(apv, "run_skills", skills)
+        @staticmethod
+        def solve_ik(pos, quat, finger, init_qpos=None):
+            return np.r_[np.full(7, pos[0]), 0.0, 0.0]
 
-    class Env:
-        entity_map = {"object": object()}
-        object_heights, asset_map, object_quats, table_surface_z = {}, {}, {}, 0.0
-        planner = solve_ik = None
+    lists = []
 
-        def reset(self, xy_map, settle_steps):
-            resets.append(dict(xy_map))
-            return {"object": np.array([*xy_map["object"], 0.025])}
+    class Executor:
+        last_motion_trace = None
 
-        def trial_from_here(self, trajectory, target):
-            raise AssertionError("not called by the stubbed run_skills")
+        def run(self, name, actions, motion_planner, start, params, **k):
+            lists.append(actions)
+            approach = [np.asarray(q) for q in actions[1].path]
+            return SimpleNamespace(trajectory=approach + [np.full(9, 1.0)], segments=[
+                {"label": "approach", "span": [0, len(approach)], "holding": False, "allow": None},
+                {"label": "lift", "span": [len(approach), len(approach) + 1], "holding": False, "allow": None}])
 
-    env = Env()
-    plan = apv._prepare_asset_pick_episode(env, _make_task("die_01"), rng=random.Random(0), executor=None,
-                                           motion_params=None, settle_steps=1, object_xy=(0.42, -0.27),
-                                           grasp_selection="trial")
-    assert seen["trial"] == env.trial_from_here and resets == [{"object": (0.42, -0.27)}]
-    assert plan.motions == [] and plan.stopped == {
-        "cause": "search_exhausted", "steps": 0,
-        "evidence": {"reason": "no pick candidate passed the gate and its trial", "candidates": 3}}
+    recorded = []
+    run = apv._run_pick(Env(), _make_task("die_01"), executor=Executor(), motion_params=MotionParams(), dataset=None,
+                        record_fn=lambda env, dataset, seg, task, **k: recorded.append(len(seg)) or [],
+                        camera_names=("up",), grasp_selection="trial")
+    whole = lists[-1]
+    assert [a.label if not isinstance(a, Attach) else "attach" for a in whole] == [
+        "open", "approach", "descend", "close", "attach", "lift"]
+    np.testing.assert_allclose(whole[-1].pos, candidate.grasp_pos + [0.0, 0.0, 0.10])
+    assert run.stopped is None and recorded == [run.frame_count] and run.frame_count > 1
+    assert apv._pick_trace(run.skill_traces)["selected_candidate_index"] == 0

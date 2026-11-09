@@ -12,13 +12,17 @@ from robotsmith.execution.executor import MotionExecutor
 from robotsmith.execution.gate import (ExecutionFailed, ExecutionGate, Holding, MotionRejected, Refused, Span,
                                        StaleMotion, VerifiedMotion, certified, permitted, poses_of, spans_of)
 from robotsmith.execution.meta_actions import pick_actions, place_actions
+from robotsmith.scenario.load import pick_part, place_part
 from robotsmith.grasp.planner import GraspPlan
 from robotsmith.grasp.transforms import pose_matrix
 from robotsmith.motion.params import MotionParams
 from robotsmith.motion.plan_state import PlanState
 from robotsmith.motion.planner import GenesisBackend
 from robotsmith.scenario_runtime import runner
-from robotsmith.skills import Skill, run_skills
+from robotsmith.skills import Skill
+from conftest import pick_skill, plan_skills
+
+PICK, PLACE = pick_part("die"), place_part("die", "mat")
 
 WALL = (("robot", "left_finger"), ("wall", "base"))
 
@@ -134,7 +138,7 @@ GRASP = Holding("die", np.eye(4))
 def _pick(plan, start, params):
     """From the arm at the pre-grasp, so the approach is empty."""
     planner = GenesisBackend(_ik)
-    return MotionExecutor().run("pick", pick_actions(plan, start, (plan.pre_grasp_pos, plan.pre_grasp_quat), (),
+    return MotionExecutor().run("pick", pick_actions(PICK, plan, start, (plan.pre_grasp_pos, plan.pre_grasp_quat), (),
                                                      params, planner.solve_ik, grasp=GRASP),
                                 planner, PlanState(start), params)
 
@@ -279,7 +283,7 @@ def test_the_release_is_checked_with_the_object_placed():
     params, plan, planner, scene = MotionParams(), _pick_plan(), GenesisBackend(_ik), _Scene()
     start = _ik(plan.pre_grasp_pos, plan.pre_grasp_quat, 0.0)
     holding = _holding_at(scene, start)
-    result = MotionExecutor().run("place", place_actions(plan, params), planner, PlanState(start, holding), params)
+    result = MotionExecutor().run("place", place_actions(PLACE, plan, params), planner, PlanState(start, holding), params)
     spans = spans_of(result.segments)
     release = next(s for s in spans if s.label == "release")
     scene.hits = {release.start: [(("robot", "left_finger"), ("die", "base"))]}
@@ -313,7 +317,7 @@ def _episode(monkeypatch, plan):
     def judge(env, entry, *a, **k):
         entry.update(done=True, completion={})
 
-    monkeypatch.setattr(runner, "plan_segment", plan)
+    monkeypatch.setattr(runner.EpisodeRun, "_plan", lambda self, skill, *a: plan(skill, gate=self.gate))
     monkeypatch.setattr(runner, "_live_scene_state", lambda *a, **k: {"positions": {}, "joint_positions": {}})
     monkeypatch.setattr(runner, "_judge_completion", judge)
     run = runner.EpisodeRun(env, object(), executor=None, motion_params=None, dataset=None, record_fn=record,
@@ -324,9 +328,9 @@ def _episode(monkeypatch, plan):
 def test_episode_replays_the_verified_trajectory_without_ik(monkeypatch):
     issued = []
 
-    def plan(*a, gate, **k):
+    def plan(skill, gate):
         issued.append(gate.ungated(_points(1, 2)))
-        return issued[-1], None, None
+        return issued[-1]
 
     run, recorded = _episode(monkeypatch, plan)
     run.run_steps([Skill("pick", "die")], [])
@@ -335,10 +339,10 @@ def test_episode_replays_the_verified_trajectory_without_ik(monkeypatch):
 
 
 def test_episode_refuses_a_motion_verified_on_another_state(monkeypatch):
-    def plan(*a, gate, **k):
+    def plan(skill, gate):
         motion = gate.ungated(_points(1))
         gate.env.state_fingerprint = lambda: "after"
-        return motion, None, None
+        return motion
 
     run, recorded = _episode(monkeypatch, plan)
     with pytest.raises(StaleMotion):
@@ -349,7 +353,7 @@ def test_episode_refuses_a_motion_verified_on_another_state(monkeypatch):
 def test_rejected_step_records_zero_frames(monkeypatch):
     calls = []
 
-    def plan(skill, *a, **k):
+    def plan(skill, gate):
         calls.append(skill.name)
         raise Refused("search_exhausted", {"reason": "no pick candidate passed the gate and its trial",
                                            "candidates": 2})
@@ -535,7 +539,7 @@ def test_a_refused_step_steps_no_physics():
 
     state = {"home_qpos": Q0, "positions": {"die": np.array([0.5, 0.0, 0.8])}, "grasp_trial": trial}
     with pytest.raises(Refused) as exc:
-        run_skills([Skill("pick", "die")], _Planner(), _Executor(), lambda *a, **k: Q0, state, MotionParams(),
+        plan_skills([pick_skill("die")], _Planner(), _Executor(), lambda *a, **k: Q0, state, MotionParams(),
                    gate=ExecutionGate(scene))
     assert exc.value.label == "search_exhausted" and trials == [] and scene.writes == 0
     assert [t["gate"]["reason"] for t in exc.value.evidence["trials"]] == ["collision", "collision"]
@@ -543,6 +547,6 @@ def test_a_refused_step_steps_no_physics():
     # Trials that stepped physics and lifted nothing are a failed execution, not a zero-step refusal.
     del scene.contacts_at
     with pytest.raises(ExecutionFailed) as failed:
-        run_skills([Skill("pick", "die")], _Planner(), _Executor(), lambda *a, **k: Q0, dict(state), MotionParams(),
+        plan_skills([pick_skill("die")], _Planner(), _Executor(), lambda *a, **k: Q0, dict(state), MotionParams(),
                    gate=ExecutionGate(scene))
     assert failed.value.label == "execution_failed" and trials == ["die", "die"] and failed.value.steps == 6

@@ -44,7 +44,8 @@ agent 写步骤表（pick X、place X on Y…），技能执行，每步判定�
 | Genesis 场景状态：快照、构型、状态指纹 | `SimEnv` |
 | 「这条轨迹能不能执行」、持物生命周期与接触许可规则 | `ExecutionGate`（许可规则只在 `permitted` 一处；读实际物理接触的验收用同模块的 `certified`，见 [certified 读数](acceptance.md#被测链路的-certified-读数)） |
 | 候选及其顺序（抓取）、place 的搬运目标 | 技能层（`run_pick` / `run_place`） |
-| pick / place 的动作列表：公开动作的顺序、允许接触与 `Attach` / `Detach` 的位置 | `execution.meta_actions`（`pick_actions` / `place_actions`） |
+| plan 文件的 `actions` 切成 pick / place 段；只有 `steps` 时展开成公开组合的段 | `scenario.load`（`actions_to_intents`；`pick_part` / `place_part`） |
+| 把一段逐项译成动作列表：段的顺序、允许接触与 `Attach` / `Detach` 的位置 | `execution.meta_actions`（`check_part` / `pick_actions` / `place_actions`） |
 | 动作列表进运动链的入口 | `MotionExecutor.run`（拖拽的段也经它） |
 | 规划中的预测构型与持物绑定 | `motion.plan_state.PlanState`（只经 `attach` / `detach` 改变持物） |
 | 关键位姿到稠密关节路径与段边界 | `motion.chain.execute_motion_chain` |
@@ -273,7 +274,7 @@ F2 7/10（另 3 个仍是松手段的已知接触）、F4 10/10 零步拒绝；d
 ### pick 先确认 place 可达
 
 下一个技能是静态锚点上的单阶段 place 时，`pick._select` 对每个过门的候选，在 `SimEnv.posed(pick 末点, {目标: 手 · T})` 里用
-`plan_segment` 规划这个 place（`held_place_z` 按该候选算，trace 写进一份新的 `skill_traces`，凭证丢弃）；被拒的候选记下 place 的证据、
+place 原语规划这个 place（`held_place_z` 按该候选算，trace 写进一份新的 `skill_traces`，凭证丢弃）；被拒的候选记下 place 的证据、
 不试抓。全部如此时 pick 零步 `search_exhausted`。动态锚点（分 transport / descend 两段的 place）不预检。pick 已走过物理步之后，
 place 仍从实测状态重新规划与过门，这时它被拒，`EpisodeRun` 记 `execution_failed`，`evidence.refused` 保留原标签。
 
@@ -352,7 +353,7 @@ GPU 上 F0 / F1 / F2 playground seed 0–9 逐实例与 e13 相同：F0 10/10、
 ### 公开动作语义与重力补偿
 
 动作列表按公开 plan 文件 `actions` 的顺序与含义执行：pick 在当前构型张指（已张开则 0 帧）→ 带规划路径的 `move_to` 到 pre-grasp →
-直线下探 → 合指（含 settle）→ `Attach` → 沿世界 +Z 直线抬升 `LIFT` = 0.10 m；place 是搬运 → 直线下放 → `Detach` → 松指 → 直线退回。
+直线下探 → 合指（含 settle）→ `Attach` → 沿世界 +Z 直线抬升 0.10 m；place 是搬运 → 直线下放 → `Detach` → 松指 → 直线退回。
 门把松指段按物体已放下检查。`tail_hold_steps` 与航点分类删除。
 
 `scenes/genesis_loader` 加载 Franka 时给 `gs.materials.Rigid(gravity_compensation=1.0)`，与真实 Franka 力矩控制器的重力补偿
@@ -363,6 +364,21 @@ GPU 上 F0 / F1 / F2 playground seed 0–9 逐实例与 e13 相同：F0 10/10、
 开补偿、门仍只判接触，F0 / F1 / F2 playground seed 0–9 全部 certified：F0 10/10、F1 10/10、F2 10/10（e14 为 7/10），
 单实例耗时比 e14 长约 10%（[e19 证据](../exps/r1/evidence/e19/README.md)）。
 门与执行之间仍没有偏差界：回放开环下发、不确认到位，动态跟踪滞后（KV / KP = 0.1 s）未被约束。
+
+### plan 文件的 actions 直接执行
+
+`load_scenario` 读到 plan 文件的 `actions` 时，按 `sample` 把它切成 pick 段与 place 段，每个技能带着自己那段
+（`Skill.params["actions"]`）执行；`pick_actions` / `place_actions` 逐项翻译这段，抬升的方向与距离取自段里的
+`move_linear {direction, dist}`。只有 `steps` 的文件（含 agent 写的步骤）把每个 pick / place 展开成公开组合的同一段
+（`pick_part` / `place_part`）。段内顺序与公开组合不同时，加载即报 `PlanInvalid`；第一版只接受这一种顺序，可变的只有直线抬升的向量、
+物体与放置面。
+
+`EpisodeRun._plan` 是技能分派的唯一入口：pick 的 place 预检以复制的 `SkillContext` 直接调 place 原语，单资产验证每个 episode
+建一个 `EpisodeRun`（`grasp_selection` 选 `trial` / `trial_all`）。`run_skills`、`plan_segment` 与常量 `LIFT` 已删除。
+
+CPU 上同一份公开 plan 的 `steps` 与 `actions` 送门的轨迹与段完全相同，改动段里的抬升距离就改变送门轨迹。GPU 上 F0 / F1 / F2
+playground seed 0–9 逐实例与重力补偿那批相同（F0 10/10、F1 10/10、F2 10/10），die_01 单资产抓取 3/3
+（[e16 证据](../exps/r1/evidence/e16/README.md)）。
 
 ## 下一步
 
@@ -379,6 +395,6 @@ GPU 上 F0 / F1 / F2 playground seed 0–9 逐实例与 e13 相同：F0 10/10、
    5. 持物由一份 `PlanState` 上的 `attach` / `detach` 事件改变，预测状态与执行后的实测状态分开（已实现，见「持物由 PlanState 改变」）；
    6. pick / place 写成与现有行为一致的动作列表，由一个执行器展开、拼段、过门，删 `MotionExecutor.pick / place`（已实现，见「pick / place 是一个执行器跑的动作列表」）；
    7. 动作列表换成 plan 文件 `actions` 的写法（进场前张指、抓后直线抬升、`detach` 先于松指），这一步改变行为，Franka 同时开满重力补偿（已实现，见「公开动作语义与重力补偿」）；
-   8. `EpisodeRun`、单资产验证与 `certify` 走这个执行器，plan 文件的 `actions` 直接执行，删 `run_skills`、`plan_segment`。
+   8. `EpisodeRun`、单资产验证与 `certify` 走这个执行器，plan 文件的 `actions` 直接执行，删 `run_skills`、`plan_segment`（已实现，见「plan 文件的 actions 直接执行」）。
 
 本版只服务 pick / place，不做动作注册表与扩展接口。然后在组合式验收场景（含开发期不读的留出族）的 test seed 上读 certified 率。

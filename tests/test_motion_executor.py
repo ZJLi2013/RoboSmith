@@ -9,10 +9,13 @@ from robotsmith.motion.chain import _compute_steps, _same_pose
 from robotsmith.execution.executor import MotionExecutor
 from robotsmith.execution.gate import Holding
 from robotsmith.execution.meta_actions import pick_actions, place_actions
+from robotsmith.scenario.load import pick_part, place_part
 from robotsmith.motion.plan_state import PlanState
 from robotsmith.motion.planner import GenesisBackend
 from robotsmith.motion.params import MotionParams
 from robotsmith.grasp.planner import GraspPlan, Waypoint
+
+PICK, PLACE = pick_part("die"), place_part("die", "mat")
 
 DT = 1.0 / 30  # Genesis control dt
 IDENTITY = np.array([1, 0, 0, 0], dtype=np.float64)
@@ -85,7 +88,7 @@ def _pick(exe, planner, params):
     plan = _pick_plan()
     pre = (plan.pre_grasp_pos, plan.pre_grasp_quat)
     q = _trivial_ik(*pre, 0.04)
-    return exe.run("pick", pick_actions(plan, q, pre, (), params, planner.solve_ik, grasp=HELD), planner,
+    return exe.run("pick", pick_actions(PICK, plan, q, pre, (), params, planner.solve_ik, grasp=HELD), planner,
                    PlanState(q), params)
 
 
@@ -136,7 +139,7 @@ class TestPlaceMotionChain:
             retreat_steps=6,
         )
         exe = MotionExecutor()
-        traj = exe.run("place", place_actions(plan, params), GenesisBackend(unstable_open_ik),
+        traj = exe.run("place", place_actions(PLACE, plan, params), GenesisBackend(unstable_open_ik),
                        PlanState(np.zeros(9), HELD), params)
 
         segs = exe.last_motion_trace["segments"]

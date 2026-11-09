@@ -1,5 +1,6 @@
 """Plan files: the acceptance families' meta actions load, plans the first version cannot run are rejected rather
-than skipped, and a file frozen with the old keys reads the same through both entries."""
+than skipped, a file's actions are what its steps run, and a file frozen with the old keys reads the same through
+both entries."""
 
 import re
 import shutil
@@ -74,6 +75,34 @@ def test_the_old_keys_do_not_admit_what_the_new_ones_reject(tmp_path):
     (pushed / "f0_open.yaml").write_text(unbound, encoding="utf-8")
     with pytest.raises(PlanInvalid, match="names no candidate"):
         load_plan(pushed / "f0_open.yaml")
+
+
+def _intents(scenario: Path):
+    return load_scenario(scenario, seed=100)[2].intents
+
+
+def test_a_steps_only_plan_runs_the_same_parts_as_its_actions(tmp_path):
+    new = (PLANS / "f0_open.yaml").read_text(encoding="utf-8")
+    steps_only = _intents(_pair(tmp_path, new[:new.index("\nactions:")] + "\n"))
+    actions = load_plan(PLANS / "f0_open.yaml")
+    assert [(i.name, i.target) for i in steps_only] == [("pick", "die"), ("place", "mat.top")]
+    assert [i.params["actions"] for i in steps_only] == [actions[:7], actions[7:]]
+    assert steps_only == _intents(ACCEPTANCE / "f0_open.yaml")
+
+
+def test_the_actions_decide_the_lift_when_steps_are_also_given(tmp_path):
+    new = (PLANS / "f0_open.yaml").read_text(encoding="utf-8")
+    pick = _intents(_pair(tmp_path, new.replace("dist: 0.10", "dist: 0.05", 1)))[0]
+    assert pick.params["actions"][-1] == {"move_linear": {"direction": [0, 0, 1], "dist": 0.05}}
+
+
+def test_a_composition_in_another_order_is_refused_at_load(tmp_path):
+    new = (PLANS / "f0_open.yaml").read_text(encoding="utf-8")
+    close = "  - gripper: {width: close, target: die}\n"
+    attach_first = new.replace(close, "").replace("  - attach: g\n", "  - attach: g\n" + close, 1)
+    scenario = _pair(tmp_path, attach_first)
+    with pytest.raises(PlanInvalid, match="the first version runs"):
+        load_scenario(scenario, seed=100)
 
 
 def test_a_file_mixing_an_old_key_with_its_new_one_is_rejected(tmp_path):

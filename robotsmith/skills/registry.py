@@ -1,28 +1,19 @@
-"""Skill registry + the generic execution loop.
+"""Skill registry.
 
-A task is an ordered list of ``Skill``s. ``run_skills`` executes them
+A task is an ordered list of ``Skill``s. ``EpisodeRun`` executes them
 sequentially through the ``SKILL_DEFS`` registry (one definition per action:
 its primitive and, once migrated, its completion condition). Adding a new action
 means dropping a module with an ``@register("name")`` primitive into this
-package — ``run_skills`` / ``plan_segment`` stay generic loops (no if/elif growth).
+package — the episode loop stays generic (no if/elif growth).
 """
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from typing import Callable
 
-import numpy as np
-
-from robotsmith.grasp.planner import GraspPlanner
-from robotsmith.execution.executor import MotionExecutor
-from robotsmith.execution.gate import ExecutionGate, VerifiedMotion
-from robotsmith.motion.params import MotionParams
-from robotsmith.motion.planner import GenesisBackend, MotionPlanner
-from robotsmith.skills.base import Skill, SkillContext, _resolve_skill_category
-
-logger = logging.getLogger(__name__)
+from robotsmith.execution.gate import VerifiedMotion
+from robotsmith.skills.base import Skill, SkillContext
 
 @dataclass(frozen=True)
 class SkillDef:
@@ -85,105 +76,3 @@ def skill_phases(skill: Skill, target_frame=None) -> list[str]:
         return ["transport", "descend"]
     return ["all"]
 
-
-def plan_segment(
-    skill: Skill,
-    index: int,
-    skills: list[Skill],
-    planner: GraspPlanner,
-    executor: MotionExecutor,
-    solve_ik: Callable,
-    scene_state: dict,
-    params: MotionParams,
-    qpos: np.ndarray,
-    held_category: str | None = None,
-    held_place_z: float | None = None,
-    motion_planner: MotionPlanner | None = None,
-    phase: str = "all",
-    *,
-    gate: ExecutionGate,
-    held: str | None = None,
-) -> tuple[VerifiedMotion, str | None, float | None]:
-    """Plan one skill's motion from the given (live) scene_state, verified by ``gate`` against the
-    current scene (``held`` names the object in the hand). Raises ``Refused`` when no candidate passes before
-    any physics step, ``ExecutionFailed`` when none passes after trials that stepped physics.
-
-    Returns ``(motion, held_category, held_place_z)``; the carry-over state is
-    threaded into the next segment. The segment-level runtime re-reads object and
-    joint poses into ``scene_state`` before each call so each subtask anchors to
-    the world's actual current state (e.g. ``close`` to where the drawer really
-    is); ``run_skills`` calls it over a static scene_state.
-    """
-    skill_def = SKILL_DEFS.get(skill.name)
-    if skill_def is None:
-        raise ValueError(f"Unknown skill: {skill.name!r}")
-    # Single motion seam: wrap the bare Genesis ``solve_ik`` in the collision-blind
-    # GenesisBackend when no collision-aware planner is wired, so primitives/executor
-    # always go through one MotionPlanner instead of a raw callable.
-    ctx = SkillContext(
-        skill=skill,
-        index=index,
-        skills=skills,
-        planner=planner,
-        executor=executor,
-        motion_planner=motion_planner or GenesisBackend(solve_ik),
-        params=params,
-        scene_state=scene_state,
-        qpos=qpos,
-        category=_resolve_skill_category(
-            skill, scene_state.get("assets", {}), held_category
-        ),
-        gate=gate,
-        held=held,
-        held_category=held_category,
-        held_place_z=held_place_z,
-        phase=phase,
-    )
-    logger.debug(
-        "[skills] subtask %d %s(%s) phase=%s; live joint_positions=%s",
-        index, skill.name, skill.target, phase,
-        scene_state.get("joint_positions", {}),
-    )
-    seg = skill_def.primitive(ctx)
-    return seg, ctx.held_category, ctx.held_place_z
-
-
-def run_skills(
-    skills: list[Skill],
-    planner: GraspPlanner,
-    executor: MotionExecutor,
-    solve_ik: Callable,
-    scene_state: dict,
-    params: MotionParams,
-    *,
-    gate: ExecutionGate,
-) -> list[VerifiedMotion]:
-    """Plan a full skill sequence open-loop over one static ``scene_state``.
-
-    Every motion is verified against the scene as it is now, so only the first one is still
-    current when it starts; the rest go stale as soon as it runs.
-
-    Thin loop over ``plan_segment``. Genesis-free tests use this; the simulator
-    runtime calls ``plan_segment`` per subtask with a live-refreshed scene_state.
-
-    ``scene_state`` must contain ``"home_qpos"`` and ``"positions"``; optional
-    ``"object_heights"``, ``"assets"``, ``"object_quats"``,
-    ``"table_surface_z"``, ``"joint_positions"``.
-    """
-    motions: list[VerifiedMotion] = []
-    qpos = scene_state["home_qpos"].copy()
-    held: str | None = None
-    held_category: str | None = None
-    held_place_z: float | None = None
-
-    for i, skill in enumerate(skills):
-        motion, held_category, held_place_z = plan_segment(
-            skill, i, skills, planner, executor, solve_ik, scene_state, params,
-            qpos, held_category, held_place_z, gate=gate, held=held,
-        )
-        motions.append(motion)
-        if motion.trajectory:
-            qpos = motion.trajectory[-1]
-        held = skill.target if skill.name == "pick" else None if skill.name == "place" else held
-
-    return motions

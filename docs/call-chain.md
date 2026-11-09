@@ -25,13 +25,13 @@ flowchart TD
     CLI["scripts/datagen/run_generated_scenario.py<br/>main → materialize_candidate → run_scenario_smoke"]
 
     subgraph ORCH["编排：做哪几步"]
-        T["--planner file（默认）<br/>scenarios/plans/ 下同名 YAML 的 steps<br/>runner.run_scenario_episode"]
+        T["--planner file（默认）<br/>scenarios/plans/ 下同名 YAML 的 actions（没有时展开 steps）<br/>runner.run_scenario_episode"]
         A["--planner agent --role certifier|baseline<br/>planner.run_agentic_episode<br/>render_request → call_llm → parse_steps"]
         RF["planner.route_failure<br/>plan 类失败（含零步拒绝）重写剩余步骤，最多 MAX_REPLANS = 2 次"]
         RUN["runner.EpisodeRun.run_steps<br/>每步按 skill_phases 分段；每段先 _live_scene_state 重读仿真"]
     end
 
-    subgraph SKILL["技能：skills/registry.plan_segment 按 SKILL_DEFS 分发，返回 VerifiedMotion"]
+    subgraph SKILL["技能：runner.EpisodeRun._plan 按 SKILL_DEFS 分发，返回 VerifiedMotion"]
         PICK["pick.run_pick"]
         PLACE["place.run_place"]
         OC["open_close.run_open / run_close<br/>gate.ungated"]
@@ -64,8 +64,10 @@ flowchart TD
     style SIM fill:#f2f2f2,stroke:#666
 ```
 
-技能内部见下一张图。file 与 agent 两条路径共用 `EpisodeRun`，只是步骤表的来源不同。plan 文件里的 `actions`
-（六动作组合）现在只被 `load_plan` 校验，还没有执行路径。pick 已走过物理步之后组合即提交，place 仍从实测状态重新规划，这时它被拒就记 `execution_failed`。agent 路径上零步拒绝（`Refused` 的标签）按
+技能内部见下一张图。file 与 agent 两条路径共用 `EpisodeRun`，只是步骤表的来源不同。plan 文件有 `actions`（六动作组合）时，
+`scenario/load.actions_to_intents` 按 `sample` 把它切成 pick / place 两段，每个技能带着自己那段（`Skill.params["actions"]`）；
+只有 `steps` 时（agent 写的步骤也是）`steps_to_intents` 把每步展开成公开组合的同一段（`pick_part` / `place_part`）。
+段内顺序与公开组合不同即加载时 `PlanInvalid`。pick 已走过物理步之后组合即提交，place 仍从实测状态重新规划，这时它被拒就记 `execution_failed`。agent 路径上零步拒绝（`Refused` 的标签）按
 plan 类失败重写剩余步骤，`execution_failed` 按 physical 失败上报；重写后的步骤全部执行完，episode 就不再算被拒。
 
 ## 一个技能：候选、整条轨迹、过门
@@ -74,9 +76,9 @@ plan 类失败重写剩余步骤，`execution_failed` 按 physical 失败上报�
 flowchart TD
     subgraph PK["pick._select：按候选顺序"]
         GEO["grasp/geometric.GeometricGraspPlanner.plan<br/>写回的抓法在前，再按有向包围盒枚举 top_down / side"]
-        PM["pick._pick_request<br/>当前构型张指；IK 解 pre-grasp（初值 = home 转基座或 ik_seed）<br/>从 pre-grasp 起的 pick 列表先单独 verify，再 JointPlanner.connect 从张指后的构型规划进场段<br/>MotionExecutor.run 从当前构型跑整张 meta_actions.pick_actions，进场段是带路径的 move_to 项<br/>plan_state.binding 取候选的抓取位姿"]
+        PM["pick._pick_request<br/>当前构型张指；IK 解 pre-grasp（初值 = home 转基座或 ik_seed）<br/>从 pre-grasp 起的 pick 列表先单独 verify，再 JointPlanner.connect 从张指后的构型规划进场段<br/>MotionExecutor.run 从当前构型跑 meta_actions.pick_actions 译出的整张列表，进场段是带路径的 move_to 项<br/>plan_state.binding 取候选的抓取位姿"]
         V1{"ExecutionGate.verify"}
-        PRE{"pick._place_check：下一步是单阶段 place 时<br/>在 SimEnv.posed(pick 末点, 目标在手中) 里 plan_segment 这个 place<br/>凭证与 trace 丢弃"}
+        PRE{"pick._place_check：下一步是单阶段 place 时<br/>在 SimEnv.posed(pick 末点, 目标在手中) 里以复制的 SkillContext 调 place 原语<br/>凭证与 trace 丢弃"}
         TR["sim_env.SimEnv.trial_from_here<br/>重放、恢复快照；物体抬高超过 0.02 m 算抬起"]
         V2{"恢复后对同一条轨迹再 verify"}
     end
@@ -178,10 +180,11 @@ pick 的手指闭合段允许手指碰目标（`grip`），其后的直线抬升
   航点位姿 `pose` 与到达下标 `reach`；`spans_of` 把它们转成门的 `Span`，`poses_of` 转成 `verify` 的 `poses`。
   每段从 `state.q` 起、段末推进到终点构型，段的 `holding` 读运行时的状态；末态在 `.state`。
   跳变策略写在航点的 `linear` 上：pick 的最终接近 `refuse`，pick 的抬升、place 的下放、退回与拖拽各段 `keep`。
-- `execution/meta_actions.pick_actions(plan, start_q, start_hand, approach, params, solve_ik, *, grasp)` 与
-  `place_actions(place_plan, params, *, phase)` 按公开 plan 文件 `actions` 的顺序与含义给出 pick / place 的动作列表：
+- `execution/meta_actions.pick_actions(part, plan, start_q, start_hand, approach, params, solve_ik, *, grasp)` 与
+  `place_actions(part, place_plan, params, *, phase)` 把技能带的 plan 段（`Skill.params["actions"]`）逐项译成动作列表：
   pick 是张指（起点已张开则 0 帧）→ 带规划路径的 `move_to` 到 pre-grasp → `move_linear` 到抓取位姿 → 合指（含 settle）→
-  `Attach(grasp)` → 沿世界 +Z 直线抬升 `LIFT` = 0.10 m；place 是搬运 → 直线下放 → `Detach()` → 松指 → 直线退回。
+  `Attach(grasp)` → 按段里的 `move_linear {direction, dist}` 直线抬升（公开组合是世界 +Z 0.10 m）；place 是搬运 → 直线下放 →
+  `Detach()` → 松指 → 直线退回。`check_part` 在加载时确认段内顺序就是这一种。
   两张表只读候选的位姿与指宽，不读也不分类它的航点；
   `place` 的 `descend` 从当前构型先走一段到 standoff 的关节插值（规划搬运之后几乎不动），再下放、松手、退回。
 - `MotionExecutor.run(name, actions, motion_planner, start: PlanState, params)` 是动作列表进运动链的唯一入口，
@@ -203,8 +206,8 @@ pick 的手指闭合段允许手指碰目标（`grip`），其后的直线抬升
 
 ## 其他入口
 
-- 单资产抓取验证（`scripts/datagen/validate_asset_picks.py` → `rollout/asset_pick_validation.run_asset_pick`）经
-  `skills.run_skills` 走同一套技能、门与执行器，不经 `EpisodeRun`；试抓用 `SimEnv.trial_from_here`，回放前同样
-  `check_current`；pick 停下时把 `cause`、`evidence`、`steps` 记进 `stopped`、零帧，不写 episode。
+- 单资产抓取验证（`scripts/datagen/validate_asset_picks.py` → `rollout/asset_pick_validation.run_asset_pick`）每个
+  episode 建一个 `EpisodeRun`（`grasp_selection` 选 `trial` / `trial_all`），pick 带公开组合的 pick 段，走同一套技能、门与
+  执行器；pick 停下时把 `cause`、`evidence`、`steps` 记进 `stopped`、零帧，不写 episode。
 - 修复环工具（`grasp/diagnostics/tool.try_candidates`）把 agent 提出的抓法交给单资产入口，以 `trial_all` 试遍，
   所以同样只经门执行。

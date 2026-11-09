@@ -9,6 +9,8 @@ scene and executed. Without a trial callback the first candidate that passes the
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 
 from robotsmith.execution.gate import ExecutionFailed, MotionRejected, Refused, VerifiedMotion, poses_of, spans_of
@@ -19,8 +21,8 @@ from robotsmith.motion import gripper
 from robotsmith.motion.joint_planner import JointPlanner
 from robotsmith.motion.params import MotionParams
 from robotsmith.motion.plan_state import PlanState, binding
-from robotsmith.skills.base import Skill, SkillContext
-from robotsmith.skills.registry import bound_leaf, plan_segment, register, skill_phases
+from robotsmith.skills.base import Skill, SkillContext, _resolve_skill_category
+from robotsmith.skills.registry import SKILL_DEFS, bound_leaf, register, skill_phases
 
 
 def _candidates(ctx: SkillContext) -> tuple[list[GraspPlan], dict]:
@@ -163,7 +165,8 @@ def _pick_request(ctx: SkillContext, plan: GraspPlan) -> tuple[dict, dict]:
     params = _pick_motion_params(ctx)
 
     def run(start, start_hand, approach):
-        actions = pick_actions(plan, start, start_hand, approach, params, solve_ik, grasp=holding)
+        actions = pick_actions(ctx.skill.params["actions"], plan, start, start_hand, approach, params, solve_ik,
+                               grasp=holding)
         return ctx.executor.run("pick", actions, ctx.motion_planner, PlanState(start), params)
 
     grasp = run(q_pre, (plan.pre_grasp_pos, plan.pre_grasp_quat), ())
@@ -193,11 +196,13 @@ def _place_check(ctx: SkillContext, plan: GraspPlan, request: dict, place: Skill
     q_end = np.asarray(request["trajectory"][-1], dtype=np.float64)
     target = ctx.skill.target
     held_at = pose_matrix(*env.hand_pose(q_end)) @ request["holding"].t_hand_object
+    place_ctx = replace(ctx, skill=place, index=ctx.index + 1, scene_state={**ctx.scene_state, "skill_traces": []},
+                        qpos=q_end, category=_resolve_skill_category(place, ctx.scene_state.get("assets", {}),
+                                                                     ctx.category),
+                        held=target, held_category=ctx.category, held_place_z=_held_place_z(ctx, plan), phase="all")
     with env.posed(q_end, {target: held_at}):
         try:
-            plan_segment(place, ctx.index + 1, ctx.skills, ctx.planner, ctx.executor, None,
-                         {**ctx.scene_state, "skill_traces": []}, ctx.params, q_end, ctx.category,
-                         _held_place_z(ctx, plan), ctx.motion_planner, gate=ctx.gate, held=target)
+            SKILL_DEFS["place"].primitive(place_ctx)
         except Refused as exc:
             record["place"] = {"ok": False, "label": exc.label, **exc.evidence}
             return False

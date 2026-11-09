@@ -102,7 +102,7 @@ class _Env:
         return {}
 
     def solve_ik(self, *args, **kwargs):
-        raise AssertionError("not used by the stubbed plan_segment")
+        raise AssertionError("not used by the stubbed _plan")
 
 
 def test_finger_contacts_name_each_finger_once_and_drop_invalid_or_foreign_links():
@@ -114,8 +114,8 @@ def test_finger_contacts_name_each_finger_once_and_drop_invalid_or_foreign_links
 
 def _picks(monkeypatch, env, n, lift_per_pick, success, bindings=None):
     """Each pick records 2 frames, closes both fingers on the die and raises it by ``lift_per_pick``."""
-    monkeypatch.setattr(runner, "plan_segment",
-                        lambda skill, *a, **kw: (kw["gate"].ungated([np.zeros(9)] * 2), None, None))
+    monkeypatch.setattr(runner.EpisodeRun, "_plan",
+                        lambda self, skill, *a: self.gate.ungated([np.zeros(9)] * 2))
 
     def record(env, dataset, seg, task_spec, **kw):
         env.scene.t += len(seg)

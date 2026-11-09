@@ -81,13 +81,13 @@ class _Env:
         return {}
 
     def solve_ik(self, *args, **kwargs):
-        raise AssertionError("not used by the stubbed plan_segment")
+        raise AssertionError("not used by the stubbed _plan")
 
 
 def _run(monkeypatch, steps, bindings, *, robot=False, phases=None):
     """Drive an episode whose every phase records 2 frames; return env, task, result and recorded lengths."""
-    monkeypatch.setattr(runner, "plan_segment",
-                        lambda skill, *a, **kw: (kw["gate"].ungated([np.zeros(9)] * 2), None, None))
+    monkeypatch.setattr(runner.EpisodeRun, "_plan",
+                        lambda self, skill, *a: self.gate.ungated([np.zeros(9)] * 2))
     if phases is not None:
         monkeypatch.setattr(runner, "skill_phases", lambda skill, frame: phases.get(skill.name, ["all"]))
     recorded = []
@@ -179,14 +179,14 @@ def _commanding_run(monkeypatch, refused_at=None):
     recorder does. Return the env, result, verified points and every commanded target."""
     verified, commanded = [], []
 
-    def plan(skill, *a, **kw):
+    def plan(self, skill, *a):
         if skill.name == refused_at:
             raise Refused("search_exhausted", {"reason": "no carry height passed the gate"})
         q = [np.full(9, len(verified) + 1.0), np.full(9, len(verified) + 2.0)]
         verified.extend(q)
-        return kw["gate"].ungated(q), None, None
+        return self.gate.ungated(q)
 
-    monkeypatch.setattr(runner, "plan_segment", plan)
+    monkeypatch.setattr(runner.EpisodeRun, "_plan", plan)
 
     def record(env, dataset, seg, task_spec, **kw):
         for q in seg:
