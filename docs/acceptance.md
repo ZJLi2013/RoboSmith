@@ -29,14 +29,15 @@
 | F5 留出 | `heldout/f5_clutter.yaml` | 解封前不在本文写 | 解封前不在本文写 | 可解 |
 
 五族的任务相同：把 die 放到垫子（`mat_01.top`）上；plan 文件在 `plans/`（留出族在 `heldout/plans/`），
-`steps` 是现有链路跑的技能步骤，`actions` 是六动作组合。被测的是技能层以下，所以不让 LLM 写步骤。
+`steps` 是技能步骤，`actions` 是六动作组合，文件有 `actions` 时运行时执行它。被测的是技能层以下，所以不让 LLM 写步骤。
 split：`playground` 0–9，`test` 100–119。
 
 ### plan 文件的 `actions`：六动作组合
 
 `actions` 是[下一版](manipulation.md#下一版设计规划给出的-meta-action-组合未实现)交给运行时的组合，五族逐字相同：
 候选由场景几何决定，组合里没有场景名、见证轨迹或搬运高度。`robotsmith/scenario/load.py` 的 `load_plan` /
-`check_plan` 校验它，六动作以外的请求（如 `push`）报 `PlanInvalid`。现有链路还不执行它。
+`check_plan` 校验它，六动作以外的请求（如 `push`）报 `PlanInvalid`。`load_scenario` 按 `sample` 把它切成 pick / place
+两段交给 `EpisodeRun` 执行，段内顺序与公开组合不同也报 `PlanInvalid`；只有 `steps` 的文件展开成同样的两段。
 
 `read_plan_file` 是读 plan 文件的唯一入口（`load_scenario` 与 `load_plan` 都经它）。留出族的 plan 文件在改名前冻结，保留旧键 `teacher` / `plan`，
 读时映射为 `name` / `actions`；同一文件新旧键混用报 `PlanInvalid`。它只读文件，不回写、不跨调用缓存，YAML 与 schema
