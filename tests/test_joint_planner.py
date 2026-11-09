@@ -53,6 +53,9 @@ class _Arm:
         self.queries.append((np.array(x), held))
         return [pair for region, pair, held_only in self.hits if (held is not None or not held_only) and region(x)]
 
+    def clearance_at(self, x, held=None):
+        return []
+
     def state_fingerprint(self):
         return str(self.writes)
 

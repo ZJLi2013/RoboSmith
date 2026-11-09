@@ -1,8 +1,8 @@
 """The execution gate: every point of a trajectory is checked in the simulator before any of it runs.
 
 The gate holds the legality rules (``check_point``, ``permitted``); ``SimEnv`` answers what touches what at a
-configuration (``contacts_at``, ``hand_pose``, ``object_pose``), the robot's ``joint_limits`` and
-``joined_links``, and fingerprints the state the answer holds for.
+configuration (``contacts_at``, ``hand_pose``, ``object_pose``), how far the robot is from a fixture
+(``clearance_at``), the robot's ``joint_limits`` and ``joined_links``, and fingerprints the state the answer holds for.
 """
 
 from __future__ import annotations
@@ -20,6 +20,12 @@ SUPPORT = "env"
 FK_POS_TOL_M, FK_ROT_TOL_RAD = 0.005, 0.05
 LIMIT_TOL_RAD = 1e-4
 REFUSALS = ("search_exhausted", "unsupported", "infeasible")
+CLEARANCE_M = 0.01
+# These spans put the hand on the object, so the hand and fingers stay contact-only; every other span keeps the
+# clearance on the whole robot.
+CONTACT_SPANS = frozenset({"descend", "close", "lift", "release", "retreat"})
+ARM_LINKS = frozenset(f"link{i}" for i in range(8))
+ROBOT_LINKS = ARM_LINKS | {"hand", *FINGER_LINKS}
 
 
 @dataclass(frozen=True)
@@ -164,6 +170,17 @@ def _pose_error(a: np.ndarray, b: np.ndarray) -> tuple[float, float]:
     return float(np.linalg.norm(a[:3, 3] - b[:3, 3])), float(np.arccos(np.clip(cos, -1.0, 1.0)))
 
 
+def _in_between(a, b, lever):
+    """Configurations strictly between ``a`` and ``b`` whenever some robot point would move more than 5 mm."""
+    from robotsmith.motion.joint_planner import STEP_M, subdivide
+
+    gap = float(np.asarray(lever, dtype=np.float64) @ np.abs(
+        np.asarray(b, dtype=np.float64) - np.asarray(a, dtype=np.float64)))
+    if gap <= STEP_M + 1e-8:
+        return []
+    return subdivide(a, b, np.asarray(lever, dtype=np.float64))[:-1]
+
+
 class ExecutionGate:
     def __init__(self, env):
         self.env = env
@@ -172,8 +189,10 @@ class ExecutionGate:
     def check_point(self, q, span: Span, *, target: str, rest=(), held=None, placed=None, pose=None) -> dict | None:
         """Why ``q`` may not run under ``span``'s rules, or ``None``: finite values within the joint limits, the hand
         within 5 mm / 0.05 rad of ``pose`` when the point asks for one, no contact between robot links that are not
-        joined, and every other contact ``permitted``. ``held`` / ``placed`` pose the target as ``contacts_at``
-        takes them. Reads only; the scene is as it was on return or raise."""
+        joined, every other contact ``permitted``, and each watched link's clearance to a fixture or the support at
+        least ``CLEARANCE_M`` (``clearance``, with the link, the entity and the distance). A free span watches every
+        robot link; a contact span watches ``link0``–``link7`` only. ``held`` / ``placed`` pose the target as
+        ``contacts_at`` takes them. Reads only; the scene is as it was on return or raise."""
         q = np.asarray(q, dtype=np.float64)
         lo, hi = self.env.joint_limits
         if q.shape != lo.shape or not np.all(np.isfinite(q)):
@@ -194,14 +213,21 @@ class ExecutionGate:
                     return {"reason": "self_collision", "pair": pair}
             elif not permitted(pair, span, target, rest):
                 return {"reason": "collision", "pair": pair}
+        watched = ARM_LINKS if span.label in CONTACT_SPANS else ROBOT_LINKS
+        for link, entity, dist in self.env.clearance_at(q, held=held):
+            if link in watched and dist < CLEARANCE_M:
+                return {"reason": "clearance", "link": link, "entity": entity,
+                        "distance_m": round(float(dist), 5)}
         return None
 
     def verify(self, trajectory, spans, *, target: str, q_start, rest=(), holding: Holding | None = None,
                poses=None, budget=None) -> VerifiedMotion:
-        """``check_point`` every point of ``trajectory`` (which starts from ``q_start``) under its span; raise
-        ``MotionRejected`` at the first that fails. ``poses`` maps the points that must reach a hand pose to it.
-        A caller's ``budget`` is asked ``spend()`` before and ``check()`` after every point; what it raises ends
-        the verify with nothing issued.
+        """``check_point`` every point of ``trajectory`` (which starts from ``q_start``) under its span, and the
+        configurations ``subdivide`` inserts between consecutive points so that no robot point moves more than 5 mm
+        between checks. Those configurations are not added to the issued trajectory. Raise ``MotionRejected`` at the
+        first that fails, an in-between one at the trajectory point it leads into. ``poses`` maps the points that
+        must reach a hand pose to it. A caller's ``budget`` is asked ``spend()`` before and ``check()`` after every
+        checked configuration; what it raises ends the verify with nothing issued.
 
         Holding spans need ``holding``: where it attaches (the point before the first holding point, or
         ``q_start``) hand · T must sit within 5 mm / 0.05 rad of the target's pose now, else ``binding_mismatch``.
@@ -227,19 +253,29 @@ class ExecutionGate:
                                                    "angle_rad": round(dr, 5)})
             if held_points[-1] < len(traj) - 1:
                 released = (target, pose_matrix(*self.env.hand_pose(traj[held_points[-1]])) @ holding.t_hand_object)
+        previous = None
         for span in spans:
             held = (target, holding.t_hand_object) if span.holding else None
             placed = released if released and not span.holding and span.start > held_points[-1] else None
+            lever = self.env.lever_arms(held)
             for i in range(span.start, span.end):
-                if budget is not None:
-                    budget.spend()
-                why = self.check_point(traj[i], span, target=target, rest=rest, held=held, placed=placed,
-                                       pose=poses.get(i))
-                if budget is not None:
-                    budget.check()
-                if why is not None:
-                    raise MotionRejected(span, i, why)
+                if previous is not None:
+                    for q in _in_between(previous, traj[i], lever):
+                        self._check(q, span, i, target=target, rest=rest, held=held, placed=placed, pose=None,
+                                    budget=budget)
+                self._check(traj[i], span, i, target=target, rest=rest, held=held, placed=placed,
+                            pose=poses.get(i), budget=budget)
+                previous = traj[i]
         return self._issue(traj, spans, len(traj), holding=holding if held_points else None)
+
+    def _check(self, q, span, index, *, target, rest, held, placed, pose, budget) -> None:
+        if budget is not None:
+            budget.spend()
+        why = self.check_point(q, span, target=target, rest=rest, held=held, placed=placed, pose=pose)
+        if budget is not None:
+            budget.check()
+        if why is not None:
+            raise MotionRejected(span, index, why)
 
     def ungated(self, trajectory) -> VerifiedMotion:
         """A motion outside the gate's scope (articulated drags), stamped with the state it was planned in."""
