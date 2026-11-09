@@ -216,10 +216,13 @@ class _Case:
             u /= np.linalg.norm(u)
             self._rebind()
             pos, quat = self.env.hand_pose(self.q)
-            wp = RuntimeMotionWaypoint(pos=pos + LINEAR_M * u, quat=quat, finger_width=float(self.q[7]),
-                                       label="move", linear="keep")
+            width = float(self.q[7])
+            here = RuntimeMotionWaypoint(pos=pos, quat=quat, finger_width=width, label="move", path=())
+            wp = RuntimeMotionWaypoint(pos=pos + LINEAR_M * u, quat=quat, finger_width=width, label="move",
+                                       linear="keep")
             try:
-                result = self.executor.run("move", [wp], self.backend, PlanState(self.q, self.holding), self.params)
+                result = self.executor.run("move", [here, wp], self.backend, PlanState(self.q, self.holding),
+                                           self.params)
                 motion = self.gate.verify(result.trajectory, spans_of(result.segments), target="die", q_start=self.q,
                                           holding=self.holding, poses=poses_of(result.segments))
             except MotionRejected:
