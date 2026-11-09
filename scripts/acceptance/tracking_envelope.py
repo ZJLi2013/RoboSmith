@@ -54,23 +54,20 @@ def _model(env, q):
     """Mass-matrix diagonal of the arm joints at ``q`` (the larger of Genesis's and the bound
     ``sum_l m_l |J_v|^2 + lambda_max(I_l) |J_w|^2`` plus armature, since ``get_mass_mat`` may hold the last step's
     matrix), and their gravity torque."""
-    from robotsmith.sim.franka import to_numpy
-
     franka, n = env.franka, env.franka.n_dofs
     with env.posed(q, {}):
-        mass = to_numpy(franka.get_mass_mat()).reshape(-1)
-        mass = np.diag(mass) if mass.size == n else mass.reshape(n, n)
+        mass = _matrix(franka.get_mass_mat(), (n, n))
         bound, tau = np.zeros(n), np.zeros(n)
         for link in franka.links:
-            m = float(to_numpy(link.get_mass()).reshape(-1)[0])
+            m = float(_matrix(link.get_mass(), (1,))[0])
             if m <= 0.0:
                 continue
-            jac = to_numpy(franka.get_jacobian(link)).reshape(6, n)
-            inertia = float(np.linalg.eigvalsh(np.asarray(to_numpy(link.inertial_i), dtype=np.float64)).max())
+            jac = _matrix(franka.get_jacobian(link), (6, n))
+            inertia = float(np.linalg.eigvalsh(_matrix(link.inertial_i, (3, 3))).max())
             bound += m * (jac[:3] ** 2).sum(axis=0) + inertia * (jac[3:] ** 2).sum(axis=0)
             tau += jac[:3].T @ (m * GRAVITY)
     if hasattr(franka, "get_dofs_armature"):
-        bound += to_numpy(franka.get_dofs_armature()).reshape(-1)[:n]
+        bound += _matrix(franka.get_dofs_armature(), (n,))
     dofs = np.asarray(env.motors_dof)[:7]
     return np.maximum(np.diag(mass)[dofs], bound[dofs]), tau[dofs], float(np.abs(np.diag(mass) - bound)[dofs].max())
 
