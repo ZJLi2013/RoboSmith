@@ -72,23 +72,24 @@ def settle_violations(spawned: dict, settled: dict) -> list[str]:
 
 
 def _sample_surface(verts, faces, radius: float) -> np.ndarray:
-    """Points on the mesh such that every surface point is within ``radius`` of one."""
+    """Points on the mesh such that every surface point is within ``radius`` of one: the vertices of the triangles
+    left after splitting each at the midpoint of its longest edge until no edge exceeds ``radius·√3``, since no
+    point of a triangle is farther than its longest edge over √3 from a vertex."""
     verts = np.asarray(verts, dtype=np.float64)
     faces = np.asarray(faces, dtype=np.int64).reshape(-1, 3)
     if len(faces) == 0:
         return np.zeros((0, 3))
-    tri = verts[faces]
-    edges = np.linalg.norm(np.stack((tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 1], tri[:, 0] - tri[:, 2]), axis=1),
-                           axis=2)
-    ns = np.maximum(1, np.ceil(edges.max(axis=1) / (radius * np.sqrt(3.0))).astype(np.int64))
-    chunks = []
-    for (v0, v1, v2), n in zip(tri, ns):
-        axis = np.arange(int(n) + 1)
-        ii, jj = np.meshgrid(axis, axis, indexing="ij")
-        mask = ii + jj <= n
-        i, j = ii[mask], jj[mask]
-        chunks.append((i[:, None] * v1 + j[:, None] * v2 + (n - i - j)[:, None] * v0) / n)
-    pts = np.concatenate(chunks, axis=0)
+    tri, done, limit = verts[faces], [], radius * np.sqrt(3.0)
+    while len(tri):
+        edges = np.linalg.norm(tri[:, [1, 2, 0]] - tri, axis=2)
+        long = edges.max(axis=1) > limit
+        done.append(tri[~long])
+        tri, k = tri[long], edges[long].argmax(axis=1)
+        idx = np.arange(len(tri))
+        a, b, c = tri[idx, k], tri[idx, (k + 1) % 3], tri[idx, (k + 2) % 3]
+        m = (a + b) / 2.0
+        tri = np.concatenate((np.stack((a, m, c), axis=1), np.stack((m, b, c), axis=1)))
+    pts = np.concatenate(done).reshape(-1, 3)
     _, keep = np.unique(np.round(pts, 7), axis=0, return_index=True)
     return pts[np.sort(keep)]
 
