@@ -214,8 +214,8 @@ class ExecutionGate:
             elif not permitted(pair, span, target, rest):
                 return {"reason": "collision", "pair": pair}
         watched = ARM_LINKS if span.label in CONTACT_SPANS else ROBOT_LINKS
-        for link, entity, dist in self.env.clearance_at(q, held=held, within=CLEARANCE_M):
-            if link in watched and dist < CLEARANCE_M:
+        for link, entity, dist in self.env.clearance_at(q, held=held, links=watched, within=CLEARANCE_M):
+            if dist < CLEARANCE_M:
                 return {"reason": "clearance", "link": link, "entity": entity,
                         "distance_m": round(float(dist), 5)}
         return None

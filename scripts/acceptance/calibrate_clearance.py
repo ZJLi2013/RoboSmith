@@ -170,7 +170,10 @@ class _Case:
             self._rebind()
             try:
                 c = JointPlanner(self.env, self.gate).connect(self.q, goal, target="die", holding=self.holding)
-            except Refused:
+            except Refused as exc:
+                print(json.dumps({"case": self.case, "kind": "connect", "draw": draw, "refused": exc.evidence.get(
+                    "reason"), "queries": exc.evidence.get("queries"), "seconds": exc.evidence.get("seconds")}),
+                      flush=True)
                 continue
             q_from = self.q.copy()
             self._record("connect", q_from, c.motion.trajectory, self.env.lever_arms(self._held()),

@@ -424,19 +424,21 @@ class SimEnv:
         unknown = ("env", "?")
         return [(owner.get(int(a), unknown), owner.get(int(b), unknown)) for a, b in pairs]
 
-    def clearance_at(self, qpos, held=None, *, within: float | None = None):
+    def clearance_at(self, qpos, held=None, *, links=None, within: float | None = None):
         """``[(link, entity, metres), ...]``: a lower bound on the distance from each robot link's collision
-        surface to each fixture and to the support. The bound is the nearest sample's exact point-to-box distance
-        minus ``SAMPLE_R_M``, and the samples cover every face to that radius, so the bound does not exceed the
-        true distance. With ``within``, a geom whose bounding sphere is already that far from a box reports the
-        sphere's distance instead, which is also a lower bound. A fixture or support that is not a box raises.
-        ``held`` is not a clearance body. The scene is unchanged on return."""
+        surface (of ``links`` only, when given) to each fixture and to the support. The bound is the nearest
+        sample's exact point-to-box distance minus ``SAMPLE_R_M``, and the samples cover every face to that radius,
+        so the bound does not exceed the true distance. With ``within``, a geom whose bounding sphere is already
+        that far from a box reports the sphere's distance instead, which is also a lower bound. A fixture or
+        support that is not a box raises. ``held`` is not a clearance body. The scene is unchanged on return."""
         obstacles = self._clearance_obstacles()
         best: dict[tuple[str, str], float] = {}
         with self._snapshot():
             self._set_arm(qpos)
             boxes = [(label, *_pose(geom), extents) for label, geom, extents in obstacles]
             for link, geoms in self._surface_samples.items():
+                if links is not None and link not in links:
+                    continue
                 for geom, local, centre, radius in geoms:
                     pos, rot = _pose(geom)
                     world = None

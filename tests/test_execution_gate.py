@@ -61,8 +61,8 @@ class _Scene:
     def lever_arms(self, held=None):
         return np.zeros(9)
 
-    def clearance_at(self, qpos, held=None, within=None):
-        return self.clearance
+    def clearance_at(self, qpos, held=None, links=None, within=None):
+        return [c for c in self.clearance if links is None or c[0] in links]
 
     def state_fingerprint(self):
         return str(self.writes)
