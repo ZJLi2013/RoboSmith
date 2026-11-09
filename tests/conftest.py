@@ -17,9 +17,6 @@ class ClearEnv:
     def contacts_at(self, qpos, held=None, placed=None):
         return []
 
-    def clearance_at(self, qpos, held=None, links=None, within=None):
-        return []
-
     def lever_arms(self, held=None):
         return np.r_[np.full(7, 0.01), 1.0, 1.0]
 

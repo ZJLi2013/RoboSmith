@@ -2,7 +2,6 @@
 
 import contextlib
 import dataclasses
-import itertools
 import warnings
 from types import SimpleNamespace
 
@@ -10,21 +9,8 @@ import numpy as np
 import pytest
 
 from robotsmith.execution.executor import MotionExecutor
-from robotsmith.execution.gate import (
-    CLEARANCE_M,
-    ExecutionFailed,
-    ExecutionGate,
-    Holding,
-    MotionRejected,
-    Refused,
-    Span,
-    StaleMotion,
-    VerifiedMotion,
-    certified,
-    permitted,
-    poses_of,
-    spans_of,
-)
+from robotsmith.execution.gate import (ExecutionFailed, ExecutionGate, Holding, MotionRejected, Refused, Span,
+                                       StaleMotion, VerifiedMotion, certified, permitted, poses_of, spans_of)
 from robotsmith.execution.meta_actions import pick_actions, place_actions
 from robotsmith.grasp.planner import GraspPlan
 from robotsmith.grasp.transforms import pose_matrix
@@ -46,7 +32,6 @@ class _Scene:
 
     def __init__(self, hits=None, obj=(np.array([0.5, 0.0, 0.8]), np.array([1.0, 0, 0, 0]))):
         self.hits, self.obj, self.queries, self.writes = hits or {}, obj, [], 0
-        self.clearance = []
 
     def contacts_at(self, qpos, held=None, placed=None):
         self.queries.append((np.asarray(qpos).copy(), held, placed))
@@ -59,10 +44,7 @@ class _Scene:
         return self.obj
 
     def lever_arms(self, held=None):
-        return np.zeros(9)
-
-    def clearance_at(self, qpos, held=None, links=None, within=None):
-        return [c for c in self.clearance if links is None or c[0] in links]
+        return np.r_[np.full(7, 0.01), 1.0, 1.0]
 
     def state_fingerprint(self):
         return str(self.writes)
@@ -564,57 +546,3 @@ def test_a_refused_step_steps_no_physics():
         run_skills([Skill("pick", "die")], _Planner(), _Executor(), lambda *a, **k: Q0, dict(state), MotionParams(),
                    gate=ExecutionGate(scene))
     assert failed.value.label == "execution_failed" and trials == ["die", "die"] and failed.value.steps == 6
-
-
-def test_a_free_span_point_inside_the_clearance_of_a_fixture_is_refused():
-    scene = _Scene()
-    scene.clearance = [("hand", "wall", CLEARANCE_M / 2)]
-    why = ExecutionGate(scene).check_point(Q0, Span("approach", 0, 1), target="die")
-    assert why["reason"] == "clearance" and why["link"] == "hand" and why["entity"] == "wall"
-    assert why["distance_m"] == pytest.approx(CLEARANCE_M / 2)
-
-
-def test_a_free_span_point_beyond_twice_the_clearance_passes():
-    scene = _Scene()
-    scene.clearance = [("hand", "wall", 2 * CLEARANCE_M)]
-    assert ExecutionGate(scene).check_point(Q0, Span("transport", 0, 1), target="die") is None
-
-
-def test_the_hand_near_a_fixture_in_a_contact_span_is_judged_by_contact_only():
-    scene = _Scene()
-    scene.clearance = [("hand", "wall", CLEARANCE_M / 2), ("left_finger", "wall", CLEARANCE_M / 2)]
-    assert ExecutionGate(scene).check_point(Q0, Span("descend", 0, 1), target="die") is None
-
-
-def test_an_arm_link_inside_the_clearance_in_a_contact_span_is_refused():
-    scene = _Scene()
-    scene.clearance = [("link5", "barrier", CLEARANCE_M / 2)]
-    why = ExecutionGate(scene).check_point(Q0, Span("lift", 0, 1), target="die")
-    assert why["reason"] == "clearance" and why["link"] == "link5" and why["entity"] == "barrier"
-
-
-def test_the_held_object_is_not_held_to_the_clearance():
-    scene = _Scene()
-    scene.clearance = [("die", "wall", CLEARANCE_M / 2), ("link5", "wall", 2 * CLEARANCE_M)]
-    assert ExecutionGate(scene).check_point(Q0, Span("transport", 0, 1, holding=True), target="die") is None
-
-
-def test_verify_checks_configurations_between_points_without_adding_any():
-    scene = _Scene()
-    lever = np.zeros(9)
-    lever[3] = 1.0
-    scene.lever_arms = lambda held=None: lever
-    start, end = np.zeros(9), np.zeros(9)
-    end[0], end[3] = 0.0005, 0.04
-    hand_move = np.linalg.norm(scene.hand_pose(end)[0] - scene.hand_pose(start)[0])
-    assert hand_move < 0.001 and float(lever @ np.abs(end - start)) > 0.02
-    motion = ExecutionGate(scene).verify([start, end], [Span("approach", 0, 2)], target="die", q_start=start)
-    assert len(motion.trajectory) == 2
-    np.testing.assert_allclose(motion.trajectory[0], start)
-    np.testing.assert_allclose(motion.trajectory[1], end)
-    asked = [q for q, _, _ in scene.queries]
-    assert len(asked) > 2
-    np.testing.assert_allclose(asked[0], start)
-    np.testing.assert_allclose(asked[-1], end)
-    for left, right in itertools.pairwise(asked):
-        assert float(lever @ np.abs(right - left)) <= 0.005 + 1e-8

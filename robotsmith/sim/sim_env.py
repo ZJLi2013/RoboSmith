@@ -26,7 +26,7 @@ from robotsmith.sim.franka import (
 from robotsmith.assets.schema import Asset
 from robotsmith.grasp.geometric import GeometricGraspPlanner
 from robotsmith.grasp.planner import GraspPlanner
-from robotsmith.grasp.transforms import pose_matrix, quat_wxyz_to_matrix, rotmat_to_quat_wxyz
+from robotsmith.grasp.transforms import pose_matrix, rotmat_to_quat_wxyz
 from robotsmith.scenes.config import SceneConfig
 
 logger = logging.getLogger(__name__)
@@ -45,8 +45,6 @@ PASSIVE_JOINT_DAMPING = 20.0
 SETTLE_MAX_XY_M = 0.05
 SETTLE_MAX_DROP_M = 0.05
 SETTLE_MAX_TILT_DEG = 30.0
-# Any point of a collision face is within this of a sample, so sample-distance minus it does not exceed the true one.
-SAMPLE_R_M = 0.001
 
 
 class SceneInvalid(RuntimeError):
@@ -69,49 +67,6 @@ def settle_violations(spawned: dict, settled: dict) -> list[str]:
         if dxy > SETTLE_MAX_XY_M or drop > SETTLE_MAX_DROP_M or tilt > SETTLE_MAX_TILT_DEG:
             out.append(f"{name}: moved {dxy:.3f} m, dropped {drop:.3f} m, tilted {tilt:.0f} deg")
     return out
-
-
-def _sample_surface(verts, faces, radius: float) -> np.ndarray:
-    """Points on the mesh such that every surface point is within ``radius`` of one: the vertices of the triangles
-    left after splitting each at the midpoint of its longest edge until no edge exceeds ``radius·√3``, since no
-    point of a triangle is farther than its longest edge over √3 from a vertex."""
-    verts = np.asarray(verts, dtype=np.float64)
-    faces = np.asarray(faces, dtype=np.int64).reshape(-1, 3)
-    if len(faces) == 0:
-        return np.zeros((0, 3))
-    tri, done, limit = verts[faces], [], radius * np.sqrt(3.0)
-    while len(tri):
-        edges = np.linalg.norm(tri[:, [1, 2, 0]] - tri, axis=2)
-        long = edges.max(axis=1) > limit
-        done.append(tri[~long])
-        tri, k = tri[long], edges[long].argmax(axis=1)
-        idx = np.arange(len(tri))
-        a, b, c = tri[idx, k], tri[idx, (k + 1) % 3], tri[idx, (k + 2) % 3]
-        m = (a + b) / 2.0
-        tri = np.concatenate((np.stack((a, m, c), axis=1), np.stack((m, b, c), axis=1)))
-    pts = np.concatenate(done).reshape(-1, 3)
-    _, keep = np.unique(np.round(pts, 7), axis=0, return_index=True)
-    return pts[np.sort(keep)]
-
-
-def _point_box_distance(points, center, rot, extents) -> np.ndarray:
-    """Exact distance from each point to the box at ``center`` rotated by ``rot``. Zero inside."""
-    local = (np.asarray(points, dtype=np.float64) - np.asarray(center, dtype=np.float64)) @ rot
-    delta = np.abs(local) - np.asarray(extents, dtype=np.float64) / 2.0
-    return np.linalg.norm(np.maximum(delta, 0.0), axis=1)
-
-
-def _is_box(geom) -> bool:
-    kind = getattr(geom, "type", None)
-    name = getattr(kind, "name", None)
-    return str(name).upper() == "BOX" if name is not None else kind in (5, "BOX")
-
-
-def _pose(geom) -> tuple[np.ndarray, np.ndarray]:
-    """World position and rotation matrix of a Genesis geom."""
-    pos = to_numpy(geom.get_pos()).reshape(-1)[:3].astype(np.float64)
-    quat = to_numpy(geom.get_quat()).reshape(-1)[:4].astype(np.float64)
-    return pos, quat_wxyz_to_matrix(quat)
 
 
 def ensure_display():
@@ -423,73 +378,6 @@ class SimEnv:
             pairs = self.scene.sim.rigid_solver.detect_collision()
         unknown = ("env", "?")
         return [(owner.get(int(a), unknown), owner.get(int(b), unknown)) for a, b in pairs]
-
-    def clearance_at(self, qpos, held=None, *, links=None, within: float | None = None):
-        """``[(link, entity, metres), ...]``: a lower bound on the distance from each robot link's collision
-        surface (of ``links`` only, when given) to each fixture and to the support. The bound is the nearest
-        sample's exact point-to-box distance minus ``SAMPLE_R_M``, and the samples cover every face to that radius,
-        so the bound does not exceed the true distance. With ``within``, a geom whose bounding sphere is already
-        that far from a box reports the sphere's distance instead, which is also a lower bound. A fixture or
-        support that is not a box raises. ``held`` is not a clearance body. The scene is unchanged on return."""
-        obstacles = self._clearance_obstacles()
-        best: dict[tuple[str, str], float] = {}
-        with self._snapshot():
-            self._set_arm(qpos)
-            boxes = [(label, *_pose(geom), extents) for label, geom, extents in obstacles]
-            for link, geoms in self._surface_samples.items():
-                if links is not None and link not in links:
-                    continue
-                for geom, local, centre, radius in geoms:
-                    pos, rot = _pose(geom)
-                    world = None
-                    for label, b_pos, b_rot, extents in boxes:
-                        bound = float(_point_box_distance((rot @ centre + pos)[None], b_pos, b_rot, extents)[0]
-                                      - radius)
-                        if within is None or bound < within:
-                            if world is None:
-                                world = local @ rot.T + pos
-                            bound = float(_point_box_distance(world, b_pos, b_rot, extents).min() - SAMPLE_R_M)
-                        key = (link, label)
-                        if key not in best or bound < best[key]:
-                            best[key] = bound
-        return [(link, label, dist) for (link, label), dist in best.items()]
-
-    def _clearance_obstacles(self):
-        named = {id(ent): name for name, ent in self.entity_map.items()}
-        out = []
-        for ent in getattr(self.scene, "entities", []):
-            if ent is self.franka:
-                continue
-            name = named.get(id(ent))
-            if name is not None:
-                asset = self.asset_map.get(name)
-                if asset is None or not asset.is_fixture:
-                    continue
-                label = name
-            else:
-                label = "env"
-            for geom in getattr(ent, "geoms", []):
-                if not _is_box(geom):
-                    raise ValueError(f"{label} collision geometry is not a box")
-                data = np.asarray(getattr(geom, "data", None), dtype=np.float64).reshape(-1)
-                if data.size < 3:
-                    raise ValueError(f"{label} box has no extents")
-                out.append((label, geom, data[:3].copy()))
-        return out
-
-    @cached_property
-    def _surface_samples(self):
-        groups: dict = {}
-        for geom in getattr(self.franka, "geoms", []):
-            faces = np.asarray(getattr(geom, "init_faces", ()), dtype=np.int64)
-            if faces.size == 0:
-                continue
-            pts = _sample_surface(np.asarray(geom.init_verts, dtype=np.float64), faces.reshape(-1, 3), SAMPLE_R_M)
-            if len(pts):
-                centre = (pts.min(axis=0) + pts.max(axis=0)) / 2.0
-                radius = float(np.linalg.norm(pts - centre, axis=1).max())
-                groups.setdefault(geom.link.name, []).append((geom, pts, centre, radius))
-        return groups
 
     @contextmanager
     def posed(self, qpos, objects: dict[str, np.ndarray]):
