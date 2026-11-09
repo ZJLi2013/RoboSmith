@@ -123,7 +123,7 @@ class _Env:
         return {} if self.q is None else {"drawer": {"slide": self.q}}
 
     def solve_ik(self, *args, **kwargs):
-        raise AssertionError("not used by the stubbed plan_segment")
+        raise AssertionError("not used by the stubbed _plan")
 
 
 CLOSED = {"status": "bound", "predicate": "joint_closed", "params": {"object": "drawer", "joint": "slide", "threshold": 0.02}}
@@ -132,8 +132,8 @@ INSIDE = SuccessNode.leaf("object_in_box", {"object": "die", "parent": "drawer",
 
 
 def _close(monkeypatch, env, success, on_record=None):
-    monkeypatch.setattr(runner, "plan_segment",
-                        lambda skill, *a, **kw: (kw["gate"].ungated([np.zeros(9)] * 2), None, None))
+    monkeypatch.setattr(runner.EpisodeRun, "_plan",
+                        lambda self, skill, *a: self.gate.ungated([np.zeros(9)] * 2))
     recorded = []
 
     def record(env, dataset, seg, task_spec, **kw):

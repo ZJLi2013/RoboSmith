@@ -110,7 +110,8 @@ def run_place(ctx: SkillContext) -> VerifiedMotion:
             if ctx.phase == "transport":
                 segments, tail = [], []
             else:
-                result = ctx.executor.run("place", place_actions(place_plan, ctx.params, phase="descend"),
+                result = ctx.executor.run("place", place_actions(ctx.skill.params["actions"], place_plan,
+                                                                 ctx.params, phase="descend"),
                                           ctx.motion_planner, PlanState(start, holding), ctx.params)
                 segments, tail = result.segments, result.trajectory
             spans = ([Span("transport", 0, len(transit), holding=holding is not None)]

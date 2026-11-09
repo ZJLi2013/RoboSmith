@@ -5,6 +5,7 @@ motion produces a valid joint trajectory (with a fake IK solver). Contact-based
 opening needs Genesis and is covered by the GPU end-to-end run.
 """
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -17,14 +18,19 @@ from robotsmith.motion.planner import GenesisBackend
 from robotsmith.execution.gate import ExecutionFailed, Refused
 from robotsmith.grasp.transforms import pose_matrix
 from robotsmith.motion.joint_planner import JointPlanner
-from robotsmith.motion.plan_state import Attach
-from robotsmith.skills import Skill, run_skills
+from robotsmith.motion.plan_state import Attach, Detach
+from robotsmith.scenario.load import actions_to_intents, read_plan_file, steps_to_intents
+from robotsmith.skills import Skill
 from robotsmith.skills.registry import SKILL_DEFS, SkillDef
 from robotsmith.assets.geometry import rotate_vec_wxyz
+from conftest import pick_skill, place_skill, plan_skills
 from robotsmith.skills.frames import (
     _resolve_handle_drag,
     resolve_frame,
 )
+
+
+PLANS = Path(__file__).resolve().parents[1] / "scenarios" / "acceptance" / "plans"
 
 
 def _drawer_asset():
@@ -127,7 +133,7 @@ class _FakePlan:
         self.grasp_quat = np.array([0.0, 1.0, 0.0, 0.0])
         self.pre_grasp_pos = np.array([0.5, 0.0, 0.2])
         self.pre_grasp_quat = self.grasp_quat
-        self.retreat_pos = None
+        self.retreat_pos = self.pre_grasp_pos
         self.retreat_quat = self.grasp_quat
         self.finger_open, self.finger_closed = 0.04, 0.0
         self.metadata = {}
@@ -175,6 +181,25 @@ class _FakeExecutor:
         return [np.full(9, 3.0)]
 
 
+class _WaypointExecutor(_FakeExecutor):
+    """The pick's planned approach, then one point per motion of the list: its position and finger width."""
+
+    @staticmethod
+    def _points(actions):
+        return [np.r_[np.asarray(a.pos, dtype=np.float64), np.zeros(4), a.finger_width, a.finger_width]
+                for a in actions if not isinstance(a, (Attach, Detach))]
+
+    def pick(self, actions, start):
+        approach, points = [np.asarray(q) for q in actions[1].path], self._points(actions)
+        n = len(approach)
+        return SimpleNamespace(trajectory=approach + points, segments=[
+            {"label": "approach", "span": [0, n], "holding": False, "allow": None},
+            {"label": "seg", "span": [n, n + len(points)], "holding": False, "allow": None}])
+
+    def place(self, actions, start):
+        return _chain(self._points(actions), holding=True)
+
+
 def _scene_state():
     return {
         "home_qpos": np.zeros(9),
@@ -189,12 +214,12 @@ class TestRegistryDispatch:
     def test_dispatch_pick_place_open_close(self, gate):
         ex = _FakeExecutor()
         skills = [
-            Skill("pick", "die"),
-            Skill("place", "die"),
+            pick_skill("die"),
+            place_skill("die"),
             Skill("open", "drawer"),
             Skill("close", "drawer"),
         ]
-        motions = run_skills(skills, _FakePlanner(), ex, lambda *a, **k: np.zeros(9),
+        motions = plan_skills(skills, _FakePlanner(), ex, lambda *a, **k: np.zeros(9),
                              _scene_state(), MotionParams(), gate=gate)
         traj = _frames(motions)
         # pick runs its list from the pre-grasp, then whole; the first place is pick's check that the place is
@@ -216,7 +241,7 @@ class TestRegistryDispatch:
 
         ex, state = _FakeExecutor(), _scene_state()
         with pytest.raises(Refused):
-            run_skills([Skill("pick", "die")], EmptyPlanner(), ex, lambda *a, **k: np.zeros(9),
+            plan_skills([pick_skill("die")], EmptyPlanner(), ex, lambda *a, **k: np.zeros(9),
                        state, MotionParams(), gate=gate)
         assert ex.calls == []
         trace = state["skill_traces"][0]
@@ -240,7 +265,7 @@ class TestRegistryDispatch:
         ex, state = _FakeExecutor(), _scene_state()
         state["grasp_trial"], state["grasp_trial_all"] = trial, try_all
         try:
-            motions = run_skills([Skill("pick", "die")], ThreePlans(), ex, lambda *a, **k: np.zeros(9), state,
+            motions = plan_skills([pick_skill("die")], ThreePlans(), ex, lambda *a, **k: np.zeros(9), state,
                                  MotionParams(), gate=gate)
         except (Refused, ExecutionFailed):
             motions = None
@@ -308,7 +333,7 @@ class TestRegistryDispatch:
 
     def _pick_place(self, gate, ex):
         state = {**_scene_state(), "positions": {"die": np.array([0.5, 0.0, 0.0]), "mat": np.array([0.4, -0.2, 0.0])}}
-        return run_skills([Skill("pick", "die"), Skill("place", "mat")], _FakePlanner(), ex,
+        return plan_skills([pick_skill("die"), place_skill("mat")], _FakePlanner(), ex,
                           lambda *a, **k: np.zeros(9), state, MotionParams(), gate=gate), state
 
     def _pick_only(self, gate, plans, ik, trial=None):
@@ -322,7 +347,7 @@ class TestRegistryDispatch:
         ex.pick = lambda actions, start: starts.append(np.array(start.q)) or pick(actions, start)
         state["grasp_trial"] = trial
         try:
-            motions = run_skills([Skill("pick", "die")], Plans(), ex, ik, state, MotionParams(), gate=gate)
+            motions = plan_skills([pick_skill("die")], Plans(), ex, ik, state, MotionParams(), gate=gate)
         except (Refused, ExecutionFailed):
             motions = None
         return motions, state["skill_traces"][0], starts
@@ -335,7 +360,7 @@ class TestRegistryDispatch:
         state = {**_scene_state(), "positions": {"die": np.array([0.5, 0.0, 0.0]), "mat": np.array([0.4, -0.2, 0.0])},
                  "grasp_trial": trial, "target_frames": frames or {}}
         try:
-            motions = run_skills([Skill("pick", "die"), Skill("place", "mat")], Plans(), _FakeExecutor(), self._ik,
+            motions = plan_skills([pick_skill("die"), place_skill("mat")], Plans(), _FakeExecutor(), self._ik,
                                  state, MotionParams(), gate=gate)
         except (Refused, ExecutionFailed):
             motions = None
@@ -486,15 +511,47 @@ class TestRegistryDispatch:
                             lambda q, held=None, placed=None:
                             [(("die", "base"), ("mat", "base"))] if np.allclose(q, 0.3) else [],
                             raising=False)
-        motions = run_skills([Skill("pick", "die"), Skill("place", "mat.top")], _FakePlanner(), _FakeExecutor(),
+        motions = plan_skills([pick_skill("die"), place_skill("mat.top")], _FakePlanner(), _FakeExecutor(),
                              lambda *a, **k: np.zeros(9), {**_scene_state(), "positions": {
                                  "die": np.array([0.5, 0.0, 0.0]), "mat.top": np.array([0.4, -0.2, 0.0])}},
                              MotionParams(), gate=gate)
         assert len(motions) == 2
 
+    @staticmethod
+    def _file_skills(edit=lambda actions: actions):
+        """The public plan's steps and its (edited) actions as skills, placing on a plain ``mat``."""
+        data = read_plan_file(PLANS / "f0_open.yaml")
+        assets = {"die": None, "mat": None}
+        actions = [{"sample": {**a["sample"], "surface": "mat"}} if a.get("sample", {}).get("kind") == "place" else a
+                   for a in edit(data["actions"])]
+        steps = [{"place": {"target": "mat"}} if "place" in s else s for s in data["steps"]]
+        return [[Skill(i.name, i.target, i.category, dict(i.params)) for i in intents.intents]
+                for intents, _ in (steps_to_intents(steps, assets), actions_to_intents(actions, assets))]
+
+    def _waypoint_run(self, gate, skills):
+        state = {**_scene_state(), "positions": {"die": np.array([0.5, 0.0, 0.0]), "mat": np.array([0.4, -0.2, 0.0])}}
+        return plan_skills(skills, _FakePlanner(), _WaypointExecutor(), self._ik, state, MotionParams(), gate=gate)
+
+    def test_actions_and_steps_send_the_same_trajectory_to_the_gate(self, gate):
+        from_steps, from_actions = self._file_skills()
+        a, b = self._waypoint_run(gate, from_steps), self._waypoint_run(gate, from_actions)
+        assert len(a) == len(b) == 2
+        for x, y in zip(a, b):
+            assert np.array_equal(np.array(x.trajectory), np.array(y.trajectory)) and x.spans == y.spans
+
+    def test_a_changed_lift_changes_the_trajectory_sent_to_the_gate(self, gate):
+        def lower_lift(actions):
+            return [{"move_linear": {**a["move_linear"], "dist": 0.05}} if isinstance(a.get("move_linear"), dict)
+                    else a for a in actions]
+
+        from_steps, lowered = self._file_skills(lower_lift)
+        pick_a, pick_b = self._waypoint_run(gate, from_steps)[0], self._waypoint_run(gate, lowered)[0]
+        assert pick_a.trajectory[-1][2] == pytest.approx(0.12 + 0.10)
+        assert pick_b.trajectory[-1][2] == pytest.approx(0.12 + 0.05)
+
     def test_unknown_skill_raises(self, gate):
         with pytest.raises(ValueError):
-            run_skills([Skill("teleport", "die")], _FakePlanner(), _FakeExecutor(),
+            plan_skills([Skill("teleport", "die")], _FakePlanner(), _FakeExecutor(),
                        lambda *a, **k: np.zeros(9), _scene_state(), MotionParams(), gate=gate)
 
 

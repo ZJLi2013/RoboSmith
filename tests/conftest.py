@@ -4,6 +4,10 @@ import numpy as np
 import pytest
 
 from robotsmith.execution.gate import ExecutionGate
+from robotsmith.motion.planner import GenesisBackend
+from robotsmith.scenario.load import pick_part, place_part
+from robotsmith.skills import SKILL_DEFS, Skill, SkillContext
+from robotsmith.skills.base import _resolve_skill_category
 
 
 class ClearEnv:
@@ -42,3 +46,33 @@ class ClearEnv:
 @pytest.fixture
 def gate():
     return ExecutionGate(ClearEnv())
+
+
+def pick_skill(obj):
+    return Skill("pick", obj, params={"actions": pick_part(obj)})
+
+
+def place_skill(surface, obj="die"):
+    return Skill("place", surface, params={"actions": place_part(obj, surface)})
+
+
+def plan_skills(skills, planner, executor, solve_ik, scene_state, params, *, gate):
+    """Each skill's primitive in turn over one static ``scene_state``, as ``EpisodeRun`` calls them, stepping
+    nothing: only the first motion is current against the scene."""
+    motions, qpos = [], scene_state["home_qpos"].copy()
+    held = held_category = held_place_z = None
+    for i, skill in enumerate(skills):
+        skill_def = SKILL_DEFS.get(skill.name)
+        if skill_def is None:
+            raise ValueError(f"Unknown skill: {skill.name!r}")
+        ctx = SkillContext(skill=skill, index=i, skills=skills, planner=planner, executor=executor,
+                           motion_planner=GenesisBackend(solve_ik), params=params, scene_state=scene_state,
+                           qpos=qpos, category=_resolve_skill_category(skill, scene_state.get("assets", {}),
+                                                                       held_category),
+                           gate=gate, held=held, held_category=held_category, held_place_z=held_place_z)
+        motions.append(skill_def.primitive(ctx))
+        held_category, held_place_z = ctx.held_category, ctx.held_place_z
+        if motions[-1].trajectory:
+            qpos = motions[-1].trajectory[-1]
+        held = skill.target if skill.name == "pick" else None if skill.name == "place" else held
+    return motions

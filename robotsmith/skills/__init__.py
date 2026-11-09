@@ -1,7 +1,7 @@
 """Skill (action) layer: pluggable manipulation primitives behind a registry.
 
-A task is an ordered list of :class:`Skill`s. ``run_skills`` / ``plan_segment``
-dispatch each one through the ``SKILL_DEFS`` registry. Adding a new action
+A task is an ordered list of :class:`Skill`s. ``EpisodeRun`` (``scenario_runtime.runner``)
+dispatches each one through the ``SKILL_DEFS`` registry. Adding a new action
 is a new module here whose ``run_*`` function carries an ``@register("name")``
 decorator — the generic loop never grows an if/elif. Importing this package
 imports the action modules so they self-register.
@@ -12,9 +12,7 @@ from robotsmith.skills.registry import (
     SKILL_DEFS,
     SkillDef,
     bound_leaf,
-    plan_segment,
     register,
-    run_skills,
     skill_phases,
 )
 from robotsmith.skills.frames import resolve_frame
@@ -29,8 +27,6 @@ __all__ = [
     "SkillDef",
     "bound_leaf",
     "register",
-    "run_skills",
-    "plan_segment",
     "skill_phases",
     "resolve_frame",
 ]

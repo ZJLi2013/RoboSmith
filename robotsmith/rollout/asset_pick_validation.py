@@ -2,31 +2,31 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 from pathlib import Path
 import random
 import shutil
+from typing import Callable
 
 import numpy as np
 
-from robotsmith.execution.gate import ExecutionFailed, ExecutionGate, Refused, VerifiedMotion
 from robotsmith.scenario.adapters import (
     to_legacy_scene_config,
     to_legacy_skills,
     to_legacy_task_spec,
 )
 from robotsmith.scenario.intents import intent_sequence, pick
+from robotsmith.scenario.load import pick_part
 from robotsmith.scenario.predicates import object_lifted
 from robotsmith.scenario.scene_api import layout, obj, region, scene
 from robotsmith.scenario.task_api import task
-from robotsmith.sim.franka import HOME_QPOS, to_numpy_f32
+from robotsmith.scenario_runtime.runner import EpisodeRun
 from robotsmith.sim.world_state import collect_world_state
 from robotsmith.rollout.episode_layout import (
     build_episode_positions,
     derive_skill_targets,
 )
-from robotsmith.skills import run_skills
 from robotsmith.rollout.video_export import copy_episode_videos
 from robotsmith.scenes.config import SceneConfig, TASK_WORKSPACE_XY
 from robotsmith.tasks import evaluate_success
@@ -60,17 +60,6 @@ class AssetPickValidationConfig:
     diagnose_dir: Path | None = None
 
 
-@dataclass
-class AssetPickEpisodePlan:
-    """Verified motions and state for one asset-pick validation episode; no motions when the pick stopped."""
-
-    initial_positions: dict[str, np.ndarray]
-    scene_state: dict
-    motions: list[VerifiedMotion]
-    gate: ExecutionGate
-    stopped: dict | None = None
-
-
 def _asset_category(asset_name: str) -> str:
     return asset_name.split("_", 1)[0]
 
@@ -91,7 +80,7 @@ def _make_task(asset_name: str) -> TaskSpec:
         instruction=f"Pick up {asset_name}",
         success=object_lifted("object", z_margin=0.02),
     )
-    intents = intent_sequence([pick("object", category=category)])
+    intents = intent_sequence([replace(pick("object", category=category), params={"actions": pick_part("object")})])
     legacy_task = to_legacy_task_spec(cap_task)
     legacy_task.skills = to_legacy_skills(intents, cap_task)
     return legacy_task
@@ -119,24 +108,22 @@ def _make_cap_scene(asset_name: str):
     )
 
 
-def _pick_trace(scene_state: dict) -> dict:
-    for trace in scene_state.get("skill_traces", []):
+def _pick_trace(skill_traces: list[dict]) -> dict:
+    for trace in skill_traces:
         if trace.get("skill") == "pick" and trace.get("target") == "object":
             return trace
     return {}
 
 
-def _prepare_asset_pick_episode(
+def _reset_asset_pick_episode(
     env,
     task_spec: TaskSpec,
     *,
     rng: random.Random,
-    executor,
-    motion_params,
     settle_steps: int,
     object_xy: tuple[float, float] | None = None,
-    grasp_selection: str = "default",
-) -> AssetPickEpisodePlan:
+) -> dict[str, np.ndarray]:
+    """Reset the object to a sampled (or the pinned) workspace point and settle; return the settled positions."""
     pick_names, place_names = derive_skill_targets(task_spec)
     positions = build_episode_positions(
         env,
@@ -156,38 +143,22 @@ def _prepare_asset_pick_episode(
     for name, pos in settled_positions.items():
         positions[name] = pos.copy()
 
-    initial_positions = {
+    return {
         name: pos.copy()
         for name, pos in positions.items()
         if name in env.entity_map
     }
-    scene_state = {
-        "home_qpos": HOME_QPOS.copy(),
-        "positions": positions,
-        "object_heights": env.object_heights,
-        "assets": env.asset_map,
-        "object_quats": env.object_quats,
-        "table_surface_z": env.table_surface_z,
-        "skill_traces": [],
-    }
-    if grasp_selection in ("trial", "trial_all"):
-        scene_state["grasp_trial"] = env.trial_from_here
-        scene_state["grasp_trial_all"] = grasp_selection == "trial_all"
-    gate = ExecutionGate(env)
-    try:
-        motions = run_skills(task_spec.skills, env.planner, executor, env.solve_ik, scene_state, motion_params,
-                             gate=gate)
-        stopped = None
-    except (Refused, ExecutionFailed) as exc:
-        motions = []
-        stopped = {"cause": exc.label, "evidence": exc.evidence, "steps": getattr(exc, "steps", 0)}
-    return AssetPickEpisodePlan(
-        initial_positions=initial_positions,
-        scene_state=scene_state,
-        motions=motions,
-        gate=gate,
-        stopped=stopped,
-    )
+
+
+def _run_pick(env, task_spec: TaskSpec, *, executor, motion_params, dataset, record_fn: Callable, camera_names,
+              grasp_selection: str) -> EpisodeRun:
+    """Run the task's pick from the settled scene and record it into ``dataset``; the run holds the traces and,
+    when the pick stopped with no motion, ``stopped``."""
+    run = EpisodeRun(env, task_spec, executor=executor, motion_params=motion_params, dataset=dataset,
+                     record_fn=record_fn, target_frames={}, camera_names=camera_names, env_state_names=(),
+                     grasp_selection=grasp_selection)
+    run.run_steps(list(task_spec.skills), [])
+    return run
 
 
 def _evaluate_asset_pick_task(
@@ -200,15 +171,13 @@ def _evaluate_asset_pick_task(
     return evaluate_success(task_spec.success, env_state)
 
 
-def _start_state(env, episode_plan: AssetPickEpisodePlan) -> dict:
-    """The settled start the planner saw: object pose, simulator AABB and the candidates it produced."""
+def _start_state(env, initial_positions: dict[str, np.ndarray]) -> dict:
+    """The settled start the planner sees: object pose and simulator AABB."""
     ent = env.entity_map["object"]
     aabb = ent.get_AABB()
     aabb = (aabb.cpu().numpy() if hasattr(aabb, "cpu") else np.asarray(aabb)).reshape(-1, 2, 3)[0]
-    plans = getattr(env.planner, "last_plans", None)
-    return {"pos": [float(v) for v in episode_plan.initial_positions["object"]],
-            "quat": [float(v) for v in env.object_quats["object"]], "aabb": aabb.tolist(),
-            "plans": list(plans) if plans is not None else None}
+    return {"pos": [float(v) for v in initial_positions["object"]],
+            "quat": [float(v) for v in env.object_quats["object"]], "aabb": aabb.tolist()}
 
 
 def _write_diagnosis_request(config: AssetPickValidationConfig, env, asset_name: str, start: dict,
@@ -272,45 +241,36 @@ def run_asset_pick(config: AssetPickValidationConfig, asset_name: str) -> dict:
     episode_diagnostics: list[dict] = []
     episode_frame_counts: dict[int, int] = {}
     frames_per_episode = None
-    primary_entity = env.entity_map.get("object")
 
     for ep in range(config.n_episodes):
-        episode_plan = _prepare_asset_pick_episode(
+        initial_positions = _reset_asset_pick_episode(
             env,
             task_spec,
             rng=rng,
-            executor=executor,
-            motion_params=motion_params,
             settle_steps=config.settle_steps,
             object_xy=config.object_xy,
-            grasp_selection=config.grasp_selection,
         )
         pose_label = _object_pose_label(env, "object")
         if ep == 0:
-            start = _start_state(env, episode_plan)
+            start = _start_state(env, initial_positions)
+        run = _run_pick(env, task_spec, executor=executor, motion_params=motion_params, dataset=dataset,
+                        record_fn=record_episode, camera_names=camera_names, grasp_selection=config.grasp_selection)
+        if ep == 0:
+            plans = getattr(env.planner, "last_plans", None)
+            start["plans"] = list(plans) if plans is not None else None
 
-        n_frames = sum(len(m.trajectory) for m in episode_plan.motions)
-        scene_state = episode_plan.scene_state
-        pick_trace = _pick_trace(scene_state)
+        n_frames = run.frame_count
+        stopped = {k: run.stopped[k] for k in ("cause", "evidence", "steps")} if run.stopped else None
+        pick_trace = _pick_trace(run.skill_traces)
         if frames_per_episode is None:
             frames_per_episode = n_frames
             print(f"[rollout] trajectory: {frames_per_episode} frames/episode")
         episode_frame_counts[ep] = n_frames
 
-        for motion in episode_plan.motions:
-            episode_plan.gate.check_current(motion)
-            record_episode(
-                env,
-                dataset,
-                motion.trajectory,
-                task_spec,
-                primary_entity=primary_entity,
-                camera_names=camera_names,
-            )
         success = _evaluate_asset_pick_task(
             env,
             task_spec,
-            initial_positions=episode_plan.initial_positions,
+            initial_positions=initial_positions,
         )
         label = {
             "episode_index": ep,
@@ -318,14 +278,14 @@ def run_asset_pick(config: AssetPickValidationConfig, asset_name: str) -> dict:
             "asset": asset_name,
             "success": bool(success),
             "frame_count": n_frames,
-            "stopped": episode_plan.stopped,
+            "stopped": stopped,
             "selected_candidate_index": pick_trace.get("selected_candidate_index"),
             "no_candidates": bool(pick_trace.get("no_candidates", False)),
             "no_trial_success": pick_trace.get("no_trial_success"),
             "trials": pick_trace.get("trials"),
             "trial_seconds": pick_trace.get("trial_seconds"),
             "filter_counts": pick_trace.get("filter_counts"),
-            "object_initial_pos": [float(v) for v in episode_plan.initial_positions["object"]],
+            "object_initial_pos": [float(v) for v in initial_positions["object"]],
             "finger_final_qpos": [float(v) for v in to_numpy(env.franka.get_dofs_position(env.finger_dof))],
         }
         label.update(pose_label)
