@@ -74,7 +74,7 @@ plan 类失败重写剩余步骤，`execution_failed` 按 physical 失败上报�
 flowchart TD
     subgraph PK["pick._select：按候选顺序"]
         GEO["grasp/geometric.GeometricGraspPlanner.plan<br/>写回的抓法在前，再按有向包围盒枚举 top_down / side"]
-        PM["pick._pick_request<br/>IK 解首航点（初值 = home 转基座或 ik_seed）；MotionExecutor.run 从那里跑 meta_actions.pick_actions、首航点锁臂<br/>抓取段先单独 verify，再 JointPlanner.connect 规划进场段<br/>plan_state.binding 取候选的抓取位姿，poses 取自航点"]
+        PM["pick._pick_request<br/>当前构型张指；IK 解 pre-grasp（初值 = home 转基座或 ik_seed）<br/>从 pre-grasp 起的 pick 列表先单独 verify，再 JointPlanner.connect 从张指后的构型规划进场段<br/>MotionExecutor.run 从当前构型跑整张 meta_actions.pick_actions，进场段是带路径的 move_to 项<br/>plan_state.binding 取候选的抓取位姿"]
         V1{"ExecutionGate.verify"}
         PRE{"pick._place_check：下一步是单阶段 place 时<br/>在 SimEnv.posed(pick 末点, 目标在手中) 里 plan_segment 这个 place<br/>凭证与 trace 丢弃"}
         TR["sim_env.SimEnv.trial_from_here<br/>重放、恢复快照；物体抬高超过 0.02 m 算抬起"]
@@ -120,10 +120,10 @@ flowchart TD
     style LOW fill:#fff4e0,stroke:#b9770e
 ```
 
-门检查的是会被执行的每一个点：pick 的规划进场段、手指段、段后保持与尾部保持都在 `spans` 里，`spans` 必须铺满整条轨迹。
-pick 的手指闭合段允许手指碰目标（`grip`），其后一段持物且允许离开支撑面（`rest`）；place 的规划搬运段持物，
-下放、松手持物且 `rest`，退回 `grip`。持物段把目标摆在 手 · T，T 由技能以 `Holding` 传入，门在持物开始之前的构型上核对
-手 · T 与目标位姿（≤ 5 mm / 0.05 rad）；松手之后目标留在 手(最后持物点) · T，退回时手掌碰到它会被拒绝。
+门检查的是会被执行的每一个点：pick 的规划进场段、手指段与段后保持（含抬升后的保持）都在 `spans` 里，`spans` 必须铺满整条轨迹。
+pick 的手指闭合段允许手指碰目标（`grip`），其后的直线抬升持物且允许离开支撑面（`rest`）；place 的规划搬运段持物，
+下放持物且 `rest`，下放之后 detach，松指与退回 `grip`。持物段把目标摆在 手 · T，T 由技能以 `Holding` 传入，门在持物开始之前的构型上核对
+手 · T 与目标位姿（≤ 5 mm / 0.05 rad）；detach 之后目标留在 手(最后持物点) · T，松指与退回时手掌碰到它会被拒绝。
 航点到达点带期望手部位姿（`poses`），门判 FK 残差；自由插值的中间点不带。
 
 `trial_all`（试遍全部候选，修复工具用）在最后一次试抓之后再按候选顺序对抬起者的原轨迹重新过门，第一个通过的被选中。
@@ -158,7 +158,7 @@ pick 的手指闭合段允许手指碰目标（`grip`），其后一段持物且
   holding, label)`：关节空间 lazy RRT-Connect，状态与按 `lever_arms` 细分到每步 ≤ 5 mm 的连边点只经 `check_point`，路径由
   `verify(..., budget=)` 签发，返回 `Connection(motion, queries, seconds, nodes, direct)`。搜索与签发共用一个 budget：
   1500 次查询或 30 s，`queries` 是门实际检查的点数；超出抛 `Refused("search_exhausted")`，不签发。`place` 用它规划搬运段，
-  `pick` 用它规划到首航点的进场段。
+  `pick` 用它从张指后的构型规划到 pre-grasp 的进场段。
 - `motion/planner.MotionPlanner` 只有 `solve_ik(pos, quat, finger_pos, *, init_qpos)`；唯一实现 `GenesisBackend` 包装
   `SimEnv.solve_ik`。
 - `motion/move_linear.expand(MoveLinear(start_pos, end_pos, quat, finger_width, on_jump, label), q_start, solve_ik)`
@@ -171,17 +171,21 @@ pick 的手指闭合段允许手指碰目标（`grip`），其后一段持物且
 - `motion/plan_state.PlanState(q, holding)` 是预测构型与持物绑定；`attach(state, Holding)` / `detach(state)` 是改变持物的
   唯一途径，保持 `q`，在动作列表里写成 `Attach(holding)` / `Detach()` 两项。`binding(target, hand_pose, object_pose)` 给出
   `Holding(target, hand⁻¹ · object)`，pick 传候选抓取位姿，place 传实测手位姿。
-- `motion/chain.execute_motion_chain(actions, motion_planner, start: PlanState, params, *, tail_hold_steps)` 逐项执行动作列表：
+- `motion/chain.execute_motion_chain(actions, motion_planner, start: PlanState, params)` 逐项执行动作列表：
   运动段做「航点 → IK（`finger_only` 段交给 `gripper.expand`，`linear` 段交给 `move_linear.expand`）→ 关节插值」，
+  带 `path` 的 `move_to` 段直接取规划器给的点（空路径不动），
   `Attach` / `Detach` 在所在位置改持物、不加轨迹点、不占段号。返回 `MotionChainExecution`，每段带 `span`、`holding`、`allow`、
   航点位姿 `pose` 与到达下标 `reach`；`spans_of` 把它们转成门的 `Span`，`poses_of` 转成 `verify` 的 `poses`。
   每段从 `state.q` 起、段末推进到终点构型，段的 `holding` 读运行时的状态；末态在 `.state`。
-  跳变策略写在航点的 `linear` 上：pick 的最终接近 `refuse`，place 的下放、退回与拖拽各段 `keep`。
-- `execution/meta_actions.pick_actions(plan, home_qpos, params, solve_ik, *, grasp)`（最后一个合指段后一项 `Attach(grasp)`）与
-  `place_actions(place_plan, params, *, phase)`（松指段后一项 `Detach()`）给出 pick / place 的动作列表；
+  跳变策略写在航点的 `linear` 上：pick 的最终接近 `refuse`，pick 的抬升、place 的下放、退回与拖拽各段 `keep`。
+- `execution/meta_actions.pick_actions(plan, start_q, start_hand, approach, params, solve_ik, *, grasp)` 与
+  `place_actions(place_plan, params, *, phase)` 按公开 plan 文件 `actions` 的顺序与含义给出 pick / place 的动作列表：
+  pick 是张指（起点已张开则 0 帧）→ 带规划路径的 `move_to` 到 pre-grasp → `move_linear` 到抓取位姿 → 合指（含 settle）→
+  `Attach(grasp)` → 沿世界 +Z 直线抬升 `LIFT` = 0.10 m；place 是搬运 → 直线下放 → `Detach()` → 松指 → 直线退回。
+  两张表只读候选的位姿与指宽，不读也不分类它的航点；
   `place` 的 `descend` 从当前构型先走一段到 standoff 的关节插值（规划搬运之后几乎不动），再下放、松手、退回。
-- `MotionExecutor.run(name, actions, motion_planner, start: PlanState, params, *, tail_hold_steps)` 是动作列表进运动链的唯一入口，
-  把 trace 记为 `last_motion_trace`；pick 以 `lift_hold_steps` 作尾部保持。`drag_handle(..., action)` 也经它。
+- `MotionExecutor.run(name, actions, motion_planner, start: PlanState, params)` 是动作列表进运动链的唯一入口，
+  把 trace 记为 `last_motion_trace`；pick 的 `lift_hold_steps` 是抬升项自己的 `hold_after_steps`。`drag_handle(..., action)` 也经它。
 - `scenario/relations.rigid_moving_links`：关节子 link 加上与它固定连接的 link，给 `clear_of` 的扫掠占地用。
 - 启动脚本 `scripts/setup/run_scenario.sh` 只挂仓库与 Hugging Face 缓存，不挂 Docker socket。
 
