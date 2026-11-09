@@ -124,12 +124,16 @@ def load_resolved_scene(
         obj_entities.append(entity)
         obj_names.append(po.name)
 
-    # Franka base sits on the table surface (not floating)
+    # Franka base sits on the table surface (not floating). Its links are fully
+    # gravity-compensated, as the real arm's torque controller is, so the PD
+    # holds the commanded configuration instead of sagging below what the gate
+    # checked.
     franka = scene.add_entity(
         gs.morphs.MJCF(
             file="xml/franka_emika_panda/panda.xml",
             pos=(0, 0, table_top_z),
         ),
+        material=gs.materials.Rigid(gravity_compensation=1.0),
     )
 
     return GenesisSceneHandle(

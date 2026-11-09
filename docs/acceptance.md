@@ -184,8 +184,8 @@ transit 之后，20 cm 的墙在转基座时就挡住了 die。所以这一族�
 
 F2 的 episode 不是零物理步：pick 已经执行（试抓与正式回放），停在 place 时 place 自身零物理步。F0 / F1 在 seed 0–1 上
 与 c1 dev 的结果相同，门加固没有让已通过的实例变坏。之后每片与上一片比较，各片结果在
-[manipulation](manipulation.md#下一步)对应的小节；最近一片是 F0 10/10、F1 10/10、F2 7/10，F2 seed 1、3、8 是松手段的已知接触
-（[place 的规划搬运](manipulation.md#place-的规划搬运)）。
+[manipulation](manipulation.md#下一步)对应的小节；最近一片是 F0 10/10、F1 10/10、F2 10/10（公开动作语义，Franka 开满重力补偿，
+见[公开动作语义与重力补偿](manipulation.md#公开动作语义与重力补偿)）。
 
 ### 下一版的认证口径
 

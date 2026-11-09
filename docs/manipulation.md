@@ -44,7 +44,7 @@ agent 写步骤表（pick X、place X on Y…），技能执行，每步判定�
 | Genesis 场景状态：快照、构型、状态指纹 | `SimEnv` |
 | 「这条轨迹能不能执行」、持物生命周期与接触许可规则 | `ExecutionGate`（许可规则只在 `permitted` 一处；读实际物理接触的验收用同模块的 `certified`，见 [certified 读数](acceptance.md#被测链路的-certified-读数)） |
 | 候选及其顺序（抓取）、place 的搬运目标 | 技能层（`run_pick` / `run_place`） |
-| pick / place 的动作列表：航点、允许接触与 `Attach` / `Detach` 的位置 | `execution.meta_actions`（`pick_actions` / `place_actions`） |
+| pick / place 的动作列表：公开动作的顺序、允许接触与 `Attach` / `Detach` 的位置 | `execution.meta_actions`（`pick_actions` / `place_actions`） |
 | 动作列表进运动链的入口 | `MotionExecutor.run`（拖拽的段也经它） |
 | 规划中的预测构型与持物绑定 | `motion.plan_state.PlanState`（只经 `attach` / `detach` 改变持物） |
 | 关键位姿到稠密关节路径与段边界 | `motion.chain.execute_motion_chain` |
@@ -75,7 +75,7 @@ agent 写步骤表（pick X、place X on Y…），技能执行，每步判定�
   （NumPy 2.5 起已弃用）只改调用方手里那份，下一次读取与回放仍是验证时的数值。调用方保留的输入数组与凭证不共享内存。
   另一种做法是签发时记内容哈希、`check_current` 时比对，它只能在执行前发现改动；不可变存储让改动无从发生，所以选它。
   限制：对 frozen dataclass 调 `object.__setattr__`、经 ctypes 按裸指针写内存能绕过 Python 层的保证，门不防这类刻意绕过。
-- 段边界来自运动链：每段带 `span` / `holding` / `allow`，段后保持与尾部保持计入所在段；pick 的规划进场段与 place 的规划搬运段由技能层作为第一段加入。
+- 段边界来自运动链：每段带 `span` / `holding` / `allow`，段后保持计入所在段；pick 的规划进场段是列表里带路径的 `move_to` 项，place 的规划搬运段由技能层作为第一段加入。
   pick 的手指闭合段是 `grip`、其后一段持物且 `rest`；place 的搬运持物，下放与松手持物且 `rest`，退回 `grip`。
 - `SimEnv.contacts_at(qpos, held=None, placed=None)`、`SimEnv.hand_pose(qpos)`、`SimEnv.object_pose(name)` 在一个快照事务里
   摆构型（`held=(name, T)` 把物体放在手 · T，`placed=(name, T_world)` 放在世界位姿）、跑碰撞检测或正运动学，返回前还原快照。
@@ -256,14 +256,15 @@ place 零步 `Refused("search_exhausted")`，证据带 connect 的 reason 与 qu
 | F4 罩住 | 10/10 | 10/10 |
 
 F2 的 10 个搬运全部连通。未 certified 的 3 个（seed 1、3、8）任务谓词成立，但正式回放的松手段里机器人 `link5` 实际碰到
-barrier 5–8 个物理步，而门在签发时判这些点合法。这是已知问题，成因未定位（human 2026-11-06 决定不继续定位，先推进后续切片）。单实例耗时约为对照的两倍（F0 平均 85 s，对照约 50 s）：connect 约 8–10 s，
+barrier 5–8 个物理步，而门在签发时判这些点合法。Franka 开满重力补偿后这类接触不再出现（见「公开动作语义与重力补偿」）。单实例耗时约为对照的两倍（F0 平均 85 s，对照约 50 s）：connect 约 8–10 s，
 规划路径按每 5 mm 一个物理步执行，比原先 40 步的插值搬运长得多。
 
 ### pick 的规划进场
 
-`_pick_request` 用 IK 解候选的首航点（初值取 home 转基座，或候选的 `ik_seed`，手指取当前值），`pick_actions` 从那里起：
-首航点锁臂，只在需要时张指，所以从当前构型到下探起点的手臂运动全部来自 `JointPlanner.connect`。抓取段先单独过门，被拒的
-候选不花规划；connect 被拒记进该候选的试抓记录，换下一个候选。`_pick_seed_transit` 已删除。
+`_pick_request` 先在当前构型张指（已张开则 0 帧），用 IK 解候选的 pre-grasp（初值取 home 转基座，或候选的 `ik_seed`，
+手指取张开后的值），从当前构型到下探起点的手臂运动全部来自 `JointPlanner.connect`（从张指后的构型连到 pre-grasp）。
+从 pre-grasp 起的 pick 列表先单独过门，被拒的候选不花规划；connect 被拒记进该候选的试抓记录，换下一个候选。
+`_pick_seed_transit` 已删除。
 
 在 playground seed 0–9 上逐实例与 place 的规划搬运（S1）相同（[e9 证据](../exps/r1/evidence/e9/README.md)）：F0 10/10、F1 10/10、
 F2 7/10（另 3 个仍是松手段的已知接触）、F4 10/10 零步拒绝；die_01 单资产抓取 3/3，与之前相同。单实例耗时比 S1 长约 45%
@@ -302,14 +303,14 @@ F0 10/10、F1 10/10、F2 7/10（[e11 证据](../exps/r1/evidence/e11/README.md)�
 
 ### gripper 单独展开
 
-只动手指的段（pick 首航点的张指与合指、place 的松指、拖拽的抓握与释放）都由
+只动手指的段（pick 的张指与合指、place 的松指、拖拽的抓握与释放）都由
 `gripper.expand(Gripper(pos, quat, finger_width), q_start, solve_ik)` 给出目标构型：臂关节取 `q_start`，指关节取
 `solve_ik(pos, quat, finger_width)` 解出的指关节，不带 IK 初值，所以和原先的锁臂换指逐元素相同。帧数（`steps` 优先，
 否则 `finger_steps`，显式 0 帧保留）、插值、hold、span 与许可仍由 `motion.chain` 拼接；`RuntimeMotionWaypoint.finger_only`
-仍是路由与 trace 标志。pick 判断首航点是否已张开（已张开则 0 帧）时也调它，IK 调用次数与次序不变。
+仍是路由与 trace 标志。pick 判断起点是否已张开（已张开则 0 帧）时也调它。
 
 删除与替换：`motion.chain` 的 finger-only 分支、`evaluate_motion_chain` 的同位姿分支与 `MotionExecutor.pick` 的张指判断里
-三份锁臂换指的写法换成这一个动作。持物与许可沿用调用方：place 的松指段仍持物且 `rest`，退回时才空手。
+三份锁臂换指的写法换成这一个动作。持物与许可由调用方的动作列表决定。
 
 同一组 CPU 输入（e11 的固定请求，加首航点未张开、显式 0 帧、带 hold 的开合指段）在修改前后的送门轨迹、段字典、错误文本与
 IK 调用序列（每次 `solve_ik` 的参数与次序）完全相同（[e12 证据](../exps/r1/evidence/e12/README.md)）。指目标直接来自
@@ -323,10 +324,10 @@ params)` 从 `start` 出发，每段从 `state.q` 解起，段末把 `q` 推进�
 结束后生效：`attach(state, Holding)` 与 `detach(state)`，二者保持 `q`、不加轨迹点、不解 IK、不步进、不签发凭证；已持物再 attach、
 空手 detach 都报错。
 
-- pick：`pick_actions(..., grasp=Holding)` 在最后一个合指段（含 settle）之后放 `Attach`，合指段仍空手且 `grip`，其后一段持物且 `rest`。
+- pick：`pick_actions(..., grasp=Holding)` 在合指段（含 settle）之后放 `Attach`，合指段仍空手且 `grip`，其后的抬升持物且 `rest`。
   `grasp` 由技能用候选抓取位姿预测，每个候选各算一份，失败的候选不影响下一个。
-- place：`place_actions(place_plan, params, *, phase)` 从持物状态开始，松指段之后放 `Detach`，退回空手且 `grip`；
-  `phase="transport"` 结束时仍持物。技能从实测手位姿重新算绑定再规划与过门，预检凭证不复用。
+- place：`place_actions(place_plan, params, *, phase)` 从持物状态开始，下放段之后放 `Detach`，松指与退回空手且 `grip`，
+  门把物体按 detach 时的位置检查；`phase="transport"` 结束时仍持物。技能从实测手位姿重新算绑定再规划与过门，预检凭证不复用。
 - 拖拽从空手状态开始，仍是 `ungated`。
 
 删除与替换：`RuntimeMotionWaypoint.holding` 标志、pick / place 各自构造 `Holding` 的两段代码，place 搬运段写死的
@@ -337,18 +338,31 @@ e12 的固定 CPU 请求在修改前后的送门轨迹、段字典、错误文�
 
 ### pick / place 是一个执行器跑的动作列表
 
-`execution/meta_actions.py` 的 `pick_actions(plan, home_qpos, params, solve_ik, *, grasp)` 与 `place_actions(place_plan, params, *,
-phase)` 把 pick / place 写成动作列表：运动段是 `RuntimeMotionWaypoint`（`finger_only` 即 `gripper`，`linear` 即 `move_linear`，
-其余是关节插值的 `move_to`），持物变化是 `Attach` / `Detach` 项。列表与原模板的航点、帧数、许可、跳变策略逐项相同，
-pick 判断首航点是否已张开的那次 IK 也在建表时调用，次序不变。`MotionExecutor.run(name, actions, motion_planner, start, params, *,
-tail_hold_steps)` 是动作列表进 `execute_motion_chain` 的唯一入口并记 trace，pick 以 `lift_hold_steps` 作尾部保持，拖拽的段也经它。
-送门仍在技能里：pick 的抓取段单独过门、加上进场段再过门，place 的搬运加下放一次过门，次数与边界不变；候选循环与 place 预检不变。
+`execution/meta_actions.py` 的 `pick_actions` 与 `place_actions` 把 pick / place 写成动作列表：运动段是 `RuntimeMotionWaypoint`
+（`finger_only` 即 `gripper`，`linear` 即 `move_linear`，其余是 `move_to`），持物变化是 `Attach` / `Detach` 项。
+`MotionExecutor.run(name, actions, motion_planner, start, params)` 是动作列表进 `execute_motion_chain` 的唯一入口并记 trace，
+拖拽的段也经它。送门仍在技能里：pick 从 pre-grasp 起的部分单独过门、整条再过门，
+place 的搬运加下放一次过门；候选循环与 place 预检不变。
 
 删除与替换：`MotionExecutor.pick` / `_pick_waypoints` / `place` 删除，`RuntimeMotionWaypoint.attach` / `detach` 字段换成列表项。
-列表仍是现有行为的写法，公开 `actions` 的顺序与参数语义（进场前张指、抓后直线抬升、`detach` 先于松指）是下一片。
 
-同一组 CPU 请求在 e13 合入时的代码与现在的代码上，送门轨迹、段字典、错误文本与 IK 调用序列完全相同；改后 GPU 上 F0 / F1 / F2
-playground seed 0–9 逐实例与 e13 相同：F0 10/10、F1 10/10、F2 7/10（[e14 证据](../exps/r1/evidence/e14/README.md)）。
+列表按原模板写成时，同一组 CPU 请求在 e13 合入时的代码与其后的代码上，送门轨迹、段字典、错误文本与 IK 调用序列完全相同；
+GPU 上 F0 / F1 / F2 playground seed 0–9 逐实例与 e13 相同：F0 10/10、F1 10/10、F2 7/10（[e14 证据](../exps/r1/evidence/e14/README.md)）。
+
+### 公开动作语义与重力补偿
+
+动作列表按公开 plan 文件 `actions` 的顺序与含义执行：pick 在当前构型张指（已张开则 0 帧）→ 带规划路径的 `move_to` 到 pre-grasp →
+直线下探 → 合指（含 settle）→ `Attach` → 沿世界 +Z 直线抬升 `LIFT` = 0.10 m；place 是搬运 → 直线下放 → `Detach` → 松指 → 直线退回。
+门把松指段按物体已放下检查。`tail_hold_steps` 与航点分类删除。
+
+`scenes/genesis_loader` 加载 Franka 时给 `gs.materials.Rigid(gravity_compensation=1.0)`，与真实 Franka 力矩控制器的重力补偿
+一致。Genesis 的前向动力学按实体把重力乘以 `1 − gravity_compensation`，只作用于机器人连杆，持物与其它物体照受重力。
+未补偿时关节 PD 靠位置误差扛重力，静止构型低于命令构型（按模型估计 6–16 mm，主要在关节 2–4），门检查的命令构型与回放的
+实际构型对不上：只改动作语义时 F2 降到 5/10，松手段 `link5` 与搬运段 `hand` 碰 barrier（[e15 证据](../exps/r1/evidence/e15/README.md)）。
+
+开补偿、门仍只判接触，F0 / F1 / F2 playground seed 0–9 全部 certified：F0 10/10、F1 10/10、F2 10/10（e14 为 7/10），
+单实例耗时比 e14 长约 10%（[e19 证据](../exps/r1/evidence/e19/README.md)）。
+门与执行之间仍没有偏差界：回放开环下发、不确认到位，动态跟踪滞后（KV / KP = 0.1 s）未被约束。
 
 ## 下一步
 
@@ -364,7 +378,7 @@ playground seed 0–9 逐实例与 e13 相同：F0 10/10、F1 10/10、F2 7/10（
    4. `move_linear`、`gripper` 从 `MotionExecutor` 模板拆出（都已拆出，见「move_linear 单独展开」「gripper 单独展开」）；
    5. 持物由一份 `PlanState` 上的 `attach` / `detach` 事件改变，预测状态与执行后的实测状态分开（已实现，见「持物由 PlanState 改变」）；
    6. pick / place 写成与现有行为一致的动作列表，由一个执行器展开、拼段、过门，删 `MotionExecutor.pick / place`（已实现，见「pick / place 是一个执行器跑的动作列表」）；
-   7. 动作列表换成 plan 文件 `actions` 的写法（进场前张指、抓后直线抬升、`detach` 先于松指），这一步改变行为；
+   7. 动作列表换成 plan 文件 `actions` 的写法（进场前张指、抓后直线抬升、`detach` 先于松指），这一步改变行为，Franka 同时开满重力补偿（已实现，见「公开动作语义与重力补偿」）；
    8. `EpisodeRun`、单资产验证与 `certify` 走这个执行器，plan 文件的 `actions` 直接执行，删 `run_skills`、`plan_segment`。
 
 本版只服务 pick / place，不做动作注册表与扩展接口。然后在组合式验收场景（含开发期不读的留出族）的 test seed 上读 certified 率。

@@ -69,8 +69,9 @@ def test_pick_place_drag_and_scoring_open_and_close_through_gripper(monkeypatch)
             Waypoint(pos=np.array([0.5, 0.0, 0.3]), quat=QUAT, finger_width=0.0),
         ],
     )
-    q = _ik(plan.waypoints[0].pos, QUAT, 0.0)
-    exe.run("pick", pick_actions(plan, q, params, planner.solve_ik, grasp=Holding("die", np.eye(4))), planner,
+    pre = (plan.pre_grasp_pos, plan.pre_grasp_quat)
+    q = _ik(*pre, 0.0)
+    exe.run("pick", pick_actions(plan, q, pre, (), params, planner.solve_ik, grasp=Holding("die", np.eye(4))), planner,
             PlanState(q), params)
     assert seen == [0.04, 0.04, 0.0]
     seen.clear()

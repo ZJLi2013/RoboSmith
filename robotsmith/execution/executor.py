@@ -160,11 +160,9 @@ class MotionExecutor:
         motion_planner: MotionPlanner,
         start: PlanState,
         params: MotionParams,
-        *,
-        tail_hold_steps: int = 0,
     ) -> MotionChainExecution:
         """Run an action list from ``start``, in order, and keep its trace as ``last_motion_trace``."""
-        result = execute_motion_chain(actions, motion_planner, start, params, tail_hold_steps=tail_hold_steps)
+        result = execute_motion_chain(actions, motion_planner, start, params)
         self.last_motion_trace = execution_trace(name, result)
         return result
 

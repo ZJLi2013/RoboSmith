@@ -130,7 +130,6 @@ class _FakePlan:
         self.retreat_pos = None
         self.retreat_quat = self.grasp_quat
         self.finger_open, self.finger_closed = 0.04, 0.0
-        self.waypoints = [SimpleNamespace(pos=self.pre_grasp_pos, quat=self.grasp_quat, finger_width=0.04)]
         self.metadata = {}
 
 
@@ -161,7 +160,12 @@ class _FakeExecutor:
         return getattr(self, name)(actions, start)
 
     def pick(self, actions, start):
-        return _chain([np.full(9, 1.0)])
+        """The list's planned approach, then the pick's marker point."""
+        approach = [np.asarray(q) for q in actions[1].path]
+        n = len(approach)
+        return SimpleNamespace(trajectory=approach + [np.full(9, 1.0)], segments=[
+            {"label": "approach", "span": [0, n], "holding": False, "allow": None},
+            {"label": "seg", "span": [n, n + 1], "holding": False, "allow": None}])
 
     def place(self, actions, start):
         return _chain([np.full(9, 2.0)], holding=True)
@@ -193,8 +197,9 @@ class TestRegistryDispatch:
         motions = run_skills(skills, _FakePlanner(), ex, lambda *a, **k: np.zeros(9),
                              _scene_state(), MotionParams(), gate=gate)
         traj = _frames(motions)
-        # The first place is pick's check that the place is reachable from where the pick ends.
-        assert ex.calls == ["pick", "place", "place", ("drag", "open"), ("drag", "close")]
+        # pick runs its list from the pre-grasp, then whole; the first place is pick's check that the place is
+        # reachable from where the pick ends.
+        assert ex.calls == ["pick", "pick", "place", "place", ("drag", "open"), ("drag", "close")]
         assert [m.gated for m in motions] == [True, True, False, False]
         # Each fake segment is tagged by a distinct constant qpos (pick=1, place=2,
         # drag=3). pick and place prepend their planned approach and transport, so assert
@@ -355,7 +360,7 @@ class TestRegistryDispatch:
         plans = [_FakePlan() for _ in xs]
         for i, (p, x) in enumerate(zip(plans, xs)):
             p.metadata = {"candidate_index": i}
-            p.waypoints = [SimpleNamespace(pos=np.array([x, 0.0, 0.2]), quat=p.grasp_quat, finger_width=0.04)]
+            p.pre_grasp_pos = np.array([x, 0.0, 0.2])
         return plans
 
     @staticmethod
@@ -417,7 +422,7 @@ class TestRegistryDispatch:
         ex = _FakeExecutor()
         with pytest.raises(Refused) as exc:
             self._pick_place(gate, ex)
-        assert exc.value.label == "search_exhausted" and ex.calls == ["pick"] and gate.env.writes == 0
+        assert exc.value.label == "search_exhausted" and ex.calls == ["pick", "pick"] and gate.env.writes == 0
         (trial,) = exc.value.evidence["trials"]
         place = trial["place"]
         assert not place["ok"] and place["label"] == "search_exhausted" and "steps" not in trial
@@ -446,13 +451,13 @@ class TestRegistryDispatch:
                             starts.append(start) or _chain([np.full(9, 2.0)], holding=True))
         plans = self._plans(0.2, 0.3)
         plans[1].grasp_pos = np.array([0.5, 0.0, 0.15])
-        for p in plans:
-            p.waypoints.append(SimpleNamespace(pos=p.waypoints[0].pos, quat=p.grasp_quat, finger_width=0.0))
         lifted = iter([False, True])
         motions, _ = self._pick_then_place(gate, plans, trial=lambda traj, target:
                                            {"lifted": next(lifted), "lift_m": 0.1, "seconds": 0.5})
-        assert len(motions) == 2 and len(grasps) == 2 and len(starts) == 3
-        for plan, grasp in zip(plans, grasps):
+        # Each candidate's list runs twice, from the pre-grasp and whole, with the same grasp.
+        assert len(motions) == 2 and len(grasps) == 4 and len(starts) == 3
+        assert grasps[0] is grasps[1] and grasps[2] is grasps[3]
+        for plan, grasp in zip(plans, grasps[::2]):
             np.testing.assert_allclose(pose_matrix(plan.grasp_pos, plan.grasp_quat) @ grasp.t_hand_object,
                                        pose_matrix(*gate.env.object_pose("die")))
         # ClearEnv's hand and object both sit at the origin, so a measured binding is the identity.

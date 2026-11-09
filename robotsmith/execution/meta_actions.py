@@ -1,4 +1,5 @@
-"""The pick and place action lists, run by ``MotionExecutor.run``.
+"""The pick and place action lists, run by ``MotionExecutor.run``, in the order and with the meaning of the public
+plans' actions (``scenarios/acceptance/plans``).
 
 An action is a motion segment (``RuntimeMotionWaypoint``: ``finger_only`` is a ``gripper``, ``linear`` a
 ``move_linear``, otherwise a ``move_to``) or an ``Attach`` / ``Detach`` of the plan state, which moves nothing.
@@ -6,90 +7,63 @@ An action is a motion segment (``RuntimeMotionWaypoint``: ``finger_only`` is a `
 
 from __future__ import annotations
 
-from typing import Callable
+from typing import Callable, Sequence
 
 import numpy as np
 
 from robotsmith.execution.gate import Holding
 from robotsmith.grasp.planner import GraspPlan
 from robotsmith.motion import gripper
-from robotsmith.motion.chain import RuntimeMotionWaypoint, classify_segments
+from robotsmith.motion.chain import RuntimeMotionWaypoint
 from robotsmith.motion.params import MotionParams
 from robotsmith.motion.plan_state import Attach, Detach
 
 Action = RuntimeMotionWaypoint | Attach | Detach
 
+LIFT = np.array([0.0, 0.0, 0.10])
+
 
 def pick_actions(
     plan: GraspPlan,
-    home_qpos: np.ndarray,
+    start_q: np.ndarray,
+    start_hand: tuple[np.ndarray, np.ndarray],
+    approach: Sequence[np.ndarray],
     params: MotionParams,
     solve_ik: Callable,
     *,
     grasp: Holding,
 ) -> list[Action]:
-    """The plan's waypoints with velocity-adaptive step counts; the final approach segment is Cartesian.
-    ``home_qpos`` is the arm already at the first waypoint, so that segment only opens the fingers, in zero
-    steps when they already are. ``grasp`` is attached once the last finger segment and its settle end.
+    """gripper open → move_to pre-grasp → move_linear to the grasp → gripper close → attach → move_linear ``LIFT``.
 
-    Segment classification (determines velocity):
-      **finger** — consecutive waypoints with same Cartesian pose but
-                   different finger_width.  Arm joints are locked to the
-                   previous solution; uses fixed ``finger_steps``.
-      **fine**   — the last arm-movement segment *before* the first finger
-                   segment (i.e. the final approach to the grasp point).
-                   Uses ``fine_joint_vel``.
-      **normal** — all other arm-movement segments (approach, retreat).
-                   Uses ``max_joint_vel``.
-
-    Finger segments may touch the target (``allow="grip"``); after the last one the target is
-    held, and the first segment after it may still touch the support it leaves (``allow="rest"``).
+    The fingers open where the arm is at ``start_q`` (``start_hand`` is its hand pose there), in zero steps when they
+    already are. ``approach`` is the planned joint path from there to the pre-grasp configuration, empty when
+    ``start_q`` already is it. The close may touch the target (``allow="grip"``) and settles; ``grasp`` is held from
+    then on, and the lift may still touch the support it leaves (``allow="rest"``) and holds for ``lift_hold_steps``.
     """
-    wps = plan.waypoints
-    if not wps:
-        raise ValueError("GraspPlan.pick requires a non-empty waypoint sequence")
-    is_finger, fine_idx = classify_segments(wps)
-    last_finger = max((i for i, f in enumerate(is_finger) if f), default=-1)
-    opened = gripper.expand(gripper.Gripper(wps[0].pos, wps[0].quat, wps[0].finger_width), home_qpos,
-                            solve_ik).q_target
-    open_steps = 0 if np.allclose(opened[7:], np.asarray(home_qpos, dtype=np.float64)[7:]) else None
-
-    actions: list[Action] = []
-    for i in range(len(wps)):
-        if is_finger[i]:
-            segment_type = "finger"
-        elif i == fine_idx:
-            segment_type = "fine"
-        else:
-            segment_type = "normal"
-        actions.append(
-            RuntimeMotionWaypoint(
-                pos=wps[i].pos,
-                quat=wps[i].quat,
-                finger_width=wps[i].finger_width,
-                label=f"wp{i}",
-                segment_type=segment_type,
-                steps=open_steps if i == 0 else None,
-                finger_only=is_finger[i] or i == 0,
-                linear="refuse" if i == fine_idx else None,
-                hold_after_steps=(
-                    params.grasp_settle_steps if i == last_finger else 0
-                ),
-                allow=("grip" if is_finger[i]
-                       else "rest" if last_finger >= 0 and i == last_finger + 1 else None),
-            )
-        )
-        if i == last_finger:
-            actions.append(Attach(grasp))
-    return actions
+    opened = gripper.expand(gripper.Gripper(*start_hand, plan.finger_open), start_q, solve_ik).q_target
+    already_open = np.allclose(opened[7:], np.asarray(start_q, dtype=np.float64)[7:])
+    return [
+        RuntimeMotionWaypoint(pos=start_hand[0], quat=start_hand[1], finger_width=plan.finger_open, label="open",
+                              segment_type="finger", steps=0 if already_open else None, finger_only=True),
+        RuntimeMotionWaypoint(pos=plan.pre_grasp_pos, quat=plan.pre_grasp_quat, finger_width=plan.finger_open,
+                              label="approach", path=tuple(approach)),
+        RuntimeMotionWaypoint(pos=plan.grasp_pos, quat=plan.grasp_quat, finger_width=plan.finger_open,
+                              label="descend", linear="refuse"),
+        RuntimeMotionWaypoint(pos=plan.grasp_pos, quat=plan.grasp_quat, finger_width=plan.finger_closed,
+                              label="close", segment_type="finger", finger_only=True,
+                              hold_after_steps=params.grasp_settle_steps, allow="grip"),
+        Attach(grasp),
+        RuntimeMotionWaypoint(pos=np.asarray(plan.grasp_pos, dtype=np.float64) + LIFT, quat=plan.grasp_quat,
+                              finger_width=plan.finger_closed, label="lift", linear="keep",
+                              hold_after_steps=params.lift_hold_steps, allow="rest"),
+    ]
 
 
 def place_actions(place_plan: GraspPlan, params: MotionParams, *, phase: str = "all") -> list[Action]:
-    """transport → pre_place → place (open fingers) → retreat.
+    """transport → move_linear to the drop point → detach → gripper open → move_linear back to the standoff.
 
-    The start state holds the object (fingers closed); it is detached once the release ends.
-    Finger widths come from place_plan: finger_closed while transporting,
-    finger_open on release.
+    The start state holds the object (fingers closed). Finger widths come from place_plan: finger_closed while
+    transporting, finger_open on release.
 
     ``transport`` (to the standoff = one clearance back along the approach axis
     from the drop point) is a joint-space move. ``descend`` (insert standoff→drop)
@@ -116,8 +90,8 @@ def place_actions(place_plan: GraspPlan, params: MotionParams, *, phase: str = "
       one open-loop pass (legacy behavior; static anchors, tests).
 
     The ``place`` skill plans the free move to the standoff itself and runs this with
-    ``"descend"`` from there. The object is held until the release; descend and release may rest it on the target, and the
-    retreat may touch it with the fingers.
+    ``"descend"`` from there. The object is held until the descend ends, and the descend may rest it on the target;
+    the release and the retreat are checked with it placed, and may touch it with the fingers.
     """
     transport: list[Action] = [RuntimeMotionWaypoint(
         pos=place_plan.pre_grasp_pos,
@@ -140,6 +114,7 @@ def place_actions(place_plan: GraspPlan, params: MotionParams, *, phase: str = "
             steps=params.place_descend_steps,
             allow="rest",
         ),
+        Detach(),
         RuntimeMotionWaypoint(
             pos=place_plan.grasp_pos,
             quat=place_plan.grasp_quat,
@@ -148,9 +123,8 @@ def place_actions(place_plan: GraspPlan, params: MotionParams, *, phase: str = "
             segment_type="finger",
             steps=params.release_steps,
             finger_only=True,
-            allow="rest",
+            allow="grip",
         ),
-        Detach(),
         RuntimeMotionWaypoint(
             pos=place_plan.retreat_pos,
             quat=place_plan.retreat_quat,
