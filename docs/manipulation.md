@@ -100,6 +100,30 @@ descend 前重读目标位置；这种 place 不在 pick 里预检。
 pick 已走过物理步之后组合即提交：place 被拒时 `EpisodeRun` 记 `execution_failed`，`evidence.refused` 保留原标签。
 `EpisodeRun` 把停下的原因记进 `stopped`（`cause`、`evidence`、`steps`），不做正式回放，停在这一步。
 
+### 抓取候选与诊断请求
+
+`GeometricGraspPlanner.candidates(world_points, category, com=None)`（`grasp/geometric.py`）按闭合宽度从窄到宽，对每个
+开口放得下的水平轴给顶抓，再给侧抓。`plan()` 把资产点云平移到惯性原点后传入 `com=object_pos`（Genesis 报告的位置就是质心）；
+不传时用有向包围盒中心与中高。
+
+- 顶抓的高度：TCP 先在质心高度，再在指垫能整体放进物体的最浅处，两档都夹在
+  `[z_lo + pad_below_tcp, z_hi − pad_above_tcp]`（Panda 主指垫从 TCP 朝手 9 mm 到超出 TCP 8 mm）；物体矮于 17 mm 时取下界。
+- 顶抓的水平中心：先质心投影，再有向包围盒中心；两者在 0.1 mm 内相同时只留一个。
+- 高度上不留余量，手指碰支撑面由执行门在闭合段拒绝。开口仍留 `width_margin`（0.01 m）：闭合宽度不超过
+  `2 × finger_open − width_margin`，即 70 mm。侧抓的高度与中心仍是有向包围盒中高与中心。
+
+全部候选失败时，修复环的证据包（`grasp/diagnostics/request.evidence`）逐候选写 `outcome`，并带对应的详情：
+
+| `outcome` | 带的详情 |
+|---|---|
+| `gate_rejected` | 门的 `segment`、`index`、`reason`、`pair` |
+| `approach_refused` | 进场规划的拒绝原因与预算 |
+| `place_refused` | place 预检的标签 |
+| `motion_error` | IK / 规划的原文 |
+| `tried` | `lift_m` |
+
+`question` 按这几类分别计数。playbook 里「手指对支撑面被门拒绝」的签名指向 `add_candidate`：由资产补一个更高的候选。
+
 ## 执行门的接口与契约
 
 门在 `robotsmith/execution/gate.py`。每个概念一个 owner：
@@ -261,9 +285,9 @@ plan 只写 `pick` / `place`），playground seed 0–9 在当前链路（`12ae6
 | `block_01` | 64×32×24 mm，30 g | 0.5（未标，取默认） | 9/10 |
 | `mug_02` | 43×68×64 mm，77 g | 0.6 | 10/10 |
 
-- 顶抓候选只由夹爪与物体的几何事实导出（`robotsmith/grasp/geometric.py`）。TCP 先放在质心高度，限制在 Panda 主指垫
-  （TCP 朝手 9 mm 到超出 TCP 8 mm）整体落在物体高度内的范围；第二档是指垫能放下的最浅处。水平中心先取质心投影，
-  再取有向包围盒中心。没有余量常数：手指碰到支撑面由执行门拒绝。
+- 顶抓候选的高度与水平中心只由夹爪与物体的几何事实导出：TCP 在质心高度或指垫能放下的最浅处，中心先质心投影
+  （规则见[抓取候选与诊断请求](#抓取候选与诊断请求)）。高度上的余量（固定夹深、离支撑面 10 mm 的下限）已删除，手指碰到
+  支撑面由执行门拒绝；开口余量 `width_margin` 保留，block、mug 的闭合宽度（32 / 64 mm、43 mm）都在它定下的 70 mm 上限内。
 - 在资产的碰撞几何上对指垫矩形投射射线对照，新的首个候选：
   - block：TCP 距底 12 mm（旧 18 mm），两侧指垫被物体挡住的占比 0.965（旧 0.737），接触重心离质心 0.2 mm（旧 4.3 mm）；
   - mug：中心在杯身轴线上（旧中心含把手，偏 7.8 mm），接触法向与闭合轴夹 7.7°（旧 25.7° / 29.8°，摩擦锥 31°），
