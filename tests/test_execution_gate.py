@@ -205,6 +205,8 @@ def test_gate_rejects_a_violation_in_any_span_including_holds(where):
     ((("robot", "left_finger"), ("die", "base")), Span("lift", 0, 1, holding=True), True),
     ((("robot", "right_finger"), ("die", "base")), Span("approach", 0, 1), False),
     ((("robot", "hand"), ("die", "base")), Span("close", 0, 1, allow="grip"), False),
+    ((("robot", "left_finger"), ("env", "table")), Span("close", 0, 1, allow="grip"), False),
+    ((("mat", "base"), ("robot", "right_finger")), Span("close", 0, 1, allow="grip"), False),
     ((("die", "base"), ("env", "table")), Span("descend", 0, 1, holding=True, allow="rest"), True),
     ((("die", "base"), ("mat", "base")), Span("descend", 0, 1, holding=True, allow="rest"), True),
     ((("die", "base"), ("env", "table")), Span("transport", 0, 1, holding=True), False),

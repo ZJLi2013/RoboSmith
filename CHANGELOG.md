@@ -190,9 +190,11 @@ All notable user-facing changes are documented here. This project follows Semant
   finger, and the check used half of it, so grasps whose lower pad enters the support surface passed P0.
 - Geometric grasp candidates close along the Panda hand's local Y axis, the axis its finger joints move on. They
   put the closing direction in X, so the fingers closed across the other side of the object.
-- Top-down geometric candidates keep the TCP at least `GripperSpec.pad_below_tcp + support_clearance` (8 + 10 mm)
-  above the object's bottom. The pads reach 8 mm below the TCP, and on low objects they dragged on the table while
-  closing.
+- Top-down geometric candidates hold the finger pads inside the object's height, at the centre-of-mass height and
+  then as shallow as they fit (`GripperSpec.pad_below_tcp` / `pad_above_tcp`, from the Panda pad geometry), over the
+  centre of mass and then the box centre. They used fixed depths below the top over the box centre; on low objects the
+  pads dragged on the table while closing, and a box centre pulled off by a handle put both contacts at a pad edge.
+  A finger that still meets the support is rejected by the execution gate, so no clearance margin is added.
 
 ## [0.1.0] - 2026-10-20
 

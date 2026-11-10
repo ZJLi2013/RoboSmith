@@ -2,7 +2,9 @@
 
 The planner reads the asset's visual geometry, takes its yaw-oriented bounding box in the world
 frame, and emits top-down and side grasps for every horizontal box axis the gripper can close
-across. Grasps written back to the asset by a verified repair (``annotations``) come first.
+across. Top-down grasps sit over the centre of mass first, then over the box centre, with the
+finger pads inside the object's height: at the centre-of-mass height, then as shallow as the pads
+allow. Grasps written back to the asset by a verified repair (``annotations``) come first.
 Candidates are not scored or screened beyond that width check: which one works is decided
 by trying them in simulation (``grasp_trial`` in the pick skill).
 """
@@ -29,14 +31,14 @@ UP = np.array([0.0, 0.0, 1.0])
 class GripperSpec:
     """Franka hand: each finger opens ``finger_open`` from the centre (``SimEnv.solve_ik`` sets both
     finger joints to it) along the hand's local Y; IK targets the ``hand`` link, ``tcp_offset`` behind
-    the fingertip centre. The finger pads reach ``pad_below_tcp`` below the TCP."""
+    the fingertip centre. The main finger pads span from ``pad_above_tcp`` towards the hand to
+    ``pad_below_tcp`` beyond the TCP (Genesis ``franka_emika_panda/panda.xml``)."""
 
     finger_open: float = 0.04
     finger_closed: float = 0.01
-    finger_length: float = 0.04
     tcp_offset: float = 0.1034
     pad_below_tcp: float = 0.008
-    support_clearance: float = 0.01
+    pad_above_tcp: float = 0.009
     width_margin: float = 0.01
     approach_clearance: float = 0.12
     lift: float = 0.17
@@ -73,25 +75,29 @@ class GeometricGraspPlanner(GraspPlanner):
         world = local * scale @ rot.T + np.asarray(object_pos, dtype=np.float64)
         written = [self._plan("annotation", *annotations.to_world(c, object_pos, object_quat), 0.0, category)
                    for c in annotations.current_grasps(asset.root_dir)]
-        plans = written + self.candidates(world, category)
+        plans = written + self.candidates(world, category, com=object_pos)
         for k, p in enumerate(plans):
             p.metadata["candidate_index"] = k
         self.last_filter_counts = {"raw": len(plans), "accepted": len(plans)}
         self.last_plans = plans
         return plans
 
-    def candidates(self, world_points: np.ndarray, category: str = "") -> list[GraspPlan]:
+    def candidates(self, world_points: np.ndarray, category: str = "", com=None) -> list[GraspPlan]:
+        """``com`` is the object's centre of mass in the world frame; without it, the box centre."""
         g = self.gripper
         centre, axes, extents, z_lo, z_hi = yaw_box(world_points)
         half = (z_hi - z_lo) / 2.0
+        com = np.r_[centre, z_lo + half] if com is None else np.asarray(com, dtype=np.float64)
         closable = sorted((w, i) for i, w in enumerate(extents) if w <= g.max_width)
         out = []
-        depths = sorted({round(min(0.015, half), 4), round(min(half, g.finger_length), 4)})
-        floor = z_lo + g.pad_below_tcp + g.support_clearance
+        lowest, highest = z_lo + g.pad_below_tcp, z_hi - g.pad_above_tcp
+        heights = list({round(h, 4): h for h in (max(lowest, min(z, highest)) for z in (com[2], highest))}.values())
+        centres = list({tuple(np.round(c, 4)): c for c in (com[:2], centre)}.values())
         for width, i in closable:
-            for d in depths:
-                out.append(self._plan("top_down", np.r_[centre, max(z_hi - d, floor)], DOWN,
-                                      _canonical(np.r_[axes[i], 0.0]), width, category))
+            for c in centres:
+                for z in heights:
+                    out.append(self._plan("top_down", np.r_[c, z], DOWN, _canonical(np.r_[axes[i], 0.0]), width,
+                                          category))
         for width, i in closable:
             other = np.r_[axes[1 - i], 0.0]
             for sign in (1.0, -1.0):
