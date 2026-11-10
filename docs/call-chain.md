@@ -76,7 +76,7 @@ plan 类失败重写剩余步骤，`execution_failed` 按 physical 失败上报�
 flowchart TD
     subgraph PK["pick._select：按候选顺序"]
         GEO["grasp/geometric.GeometricGraspPlanner.plan<br/>写回的抓法在前，再按有向包围盒枚举 top_down / side"]
-        PM["pick._pick_request<br/>当前构型张指；IK 解 pre-grasp（初值 = home 转基座或 ik_seed）<br/>从 pre-grasp 起的 pick 列表先单独 verify，再 JointPlanner.connect 从张指后的构型规划进场段<br/>MotionExecutor.run 从当前构型跑 meta_actions.pick_actions 译出的整张列表，进场段是带路径的 move_to 项<br/>plan_state.binding 取候选的抓取位姿"]
+        PM["pick._pick_request<br/>当前构型张指；IK 解 pre-grasp（初值 = home 构型、基座关节转向抓取方位，或 ik_seed）<br/>从 pre-grasp 起的 pick 列表先单独 verify，再 JointPlanner.connect 从张指后的构型规划进场段<br/>MotionExecutor.run 从当前构型跑 meta_actions.pick_actions 译出的整张列表，进场段是带路径的 move_to 项<br/>plan_state.binding 取候选的抓取位姿"]
         V1{"ExecutionGate.verify"}
         PRE{"pick._place_check：下一步是单阶段 place 时<br/>在 SimEnv.posed(pick 末点, 目标在手中) 里以复制的 SkillContext 调 place 原语<br/>凭证与 trace 丢弃"}
         TR["sim_env.SimEnv.trial_from_here<br/>重放、恢复快照；物体抬高超过 0.02 m 算抬起"]
@@ -192,7 +192,7 @@ pick 的手指闭合段允许手指碰目标（`grip`），其后的直线抬升
 - `scenario/relations.rigid_moving_links`：关节子 link 加上与它固定连接的 link，给 `clear_of` 的扫掠占地用。
 - `scenes/genesis_loader` 加载 Franka 时给 `gs.materials.Rigid(gravity_compensation=1.0)`：机器人连杆的重力被完全抵消，
   持物与其它物体照受重力，关节 PD 停在门检查过的命令构型上，不靠位置误差扛重力。门仍只判接触，回放仍是每点一次下发、
-  一步物理、不确认到位。结果见[公开动作语义与重力补偿](manipulation.md#公开动作语义与重力补偿)
+  一步物理、不确认到位。原因与限制见[机器人控制与回放](manipulation.md#机器人控制与回放)
   （[e15](../exps/r1/evidence/e15/README.md)、[e19](../exps/r1/evidence/e19/README.md)）。
 - 启动脚本 `scripts/setup/run_scenario.sh` 只挂仓库与 Hugging Face 缓存，不挂 Docker socket。
 

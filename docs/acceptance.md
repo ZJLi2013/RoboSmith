@@ -34,7 +34,7 @@ split：`playground` 0–9，`test` 100–119。
 
 ### plan 文件的 `actions`：六动作组合
 
-`actions` 是[下一版](manipulation.md#下一版设计规划给出的-meta-action-组合未实现)交给运行时的组合，五族逐字相同：
+`actions` 是运行时执行的[六动作组合](manipulation.md#六个-meta-action-与-pick--place-组合)，五族逐字相同：
 候选由场景几何决定，组合里没有场景名、见证轨迹或搬运高度。`robotsmith/scenario/load.py` 的 `load_plan` /
 `check_plan` 校验它，六动作以外的请求（如 `push`）报 `PlanInvalid`。`load_scenario` 按 `sample` 把它切成 pick / place
 两段交给 `EpisodeRun` 执行，段内顺序与公开组合不同也报 `PlanInvalid`；只有 `steps` 的文件展开成同样的两段。
@@ -184,16 +184,15 @@ transit 之后，20 cm 的墙在转基座时就挡住了 die。所以这一族�
 | F4 罩住 | 10/10 | — | 都在 pick 零步 `search_exhausted` |
 
 F2 的 episode 不是零物理步：pick 已经执行（试抓与正式回放），停在 place 时 place 自身零物理步。F0 / F1 在 seed 0–1 上
-与 c1 dev 的结果相同，门加固没有让已通过的实例变坏。之后每片与上一片比较，各片结果在
-[manipulation](manipulation.md#下一步)对应的小节；最近一片是 F0 10/10、F1 10/10、F2 10/10（公开动作语义，Franka 开满重力补偿，
-见[公开动作语义与重力补偿](manipulation.md#公开动作语义与重力补偿)）。
+与 c1 dev 的结果相同，门加固没有让已通过的实例变坏。之后每片与上一片比较，各片结果见
+[manipulation 的结果](manipulation.md#结果)；最近一片是 F0 10/10、F1 10/10、F2 10/10（plan 文件的 `actions` 直接执行，Franka 开满重力补偿）。
 
-### 下一版的认证口径
+### 认证口径
 
-[下一版](manipulation.md#下一版设计规划给出的-meta-action-组合未实现)的 certified：正例为任务谓词成立且实际执行零违规接触；
+六动作组合链路的 certified：正例为任务谓词成立且实际执行零违规接触；
 负例为支持的动作域内候选与预算搜完后零步拒绝 `search_exhausted`。`unsupported` 与环境错误不计成功。试抓、回放、保持与
-settle 都计真实物理步，恢复快照不清除计数；第一次试抓之后的失败记 `execution_failed`。上表是现有链路的读数，
-不当作新版的 certified。
+settle 都计真实物理步，恢复快照不清除计数；第一次试抓之后的失败记 `execution_failed`。上面 test seed 的表是模板链路的读数，
+不当作现在链路的 certified。
 
 最终读数在新版实现与参数都提交、冻结之后读一次：F0 / F1 / F2 与留出族各 20 个 test seed（100–119），F1、F2 按难度参数报告。
 F4 不进最终读数，负例零执行由 CPU 测试覆盖；留出族里若有负例照常计入。
