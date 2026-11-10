@@ -109,13 +109,16 @@ F2 只跑了 2 个实例：穿透接触让求解器变慢，批次在第 3 个�
 
 - **位置**：族定义、plan 文件、见证参数（`witness.json`）与约束和选择理由（`README.md`，封存）在
   `scenarios/acceptance/heldout/`，逐实例结果只放在实验记录的封存目录里。公共 `witness.py` 只有
-  `--heldout` 机制，不含任何留出族名或参数；`certify.py` 只解析 `scenarios/acceptance/<family>.yaml`，解析不到留出族。
+  `--heldout` 机制，不含任何留出族名或参数；`certify.py` 按 `--family` 解析 `scenarios/acceptance/<family>.yaml`，
+  留出族只在解封读数时以 `--family heldout/<name>` 显式给出。
 - **冻结**：只有构造它的 task 写这些文件；test 批次在已提交的输入上运行，manifest 记下 commit 与各文件的 sha256，
   之后只读。批次失败或输入未提交时不写 manifest，修正后整批重跑。
 - **路径迁移**：留出 plan 文件从改名前的 `teacher` 目录（manifest 里沿用这个旧键名）移到 `heldout/plans/`，只改路径，sha256 不变。
 - **读者**：解封前只有 `witness.py --heldout` 与该 task 的 verifier；实现与调参不读它的布局、plan 文件、见证或逐实例结果。
 - **解封**：只在最终评测，且新版实现与参数都已提交；解封时记下这个 commit，评测前对照 manifest 的 sha256。
 - **烧毁**：解封前被实现或调参读取或使用，这批留出作废，记录保留，另建一个未用于调参的留出族。
+- **已解封**：F5 于 2026-11-10 在 `464edf4` 上解封、读了 test seed 100–109（manifest 核对一致）。之后改动链路再要泛化读数，
+  另建一个未读过的留出族，不再用 F5。
 
 ## 被测链路的 certified 读数
 
@@ -128,6 +131,10 @@ python scripts/acceptance/certify.py --family f1_wall_gap --split test --out out
 - **每个物理步都判**：`SimEnv.step()` 每步回调一次，读该步解出的接触，按正在执行的 span 用
   `robotsmith.execution.gate.certified` 判。试抓、正式回放用已验证轨迹的 span，步骤与任务判定的 settle 用末个
   已回放的 span；reset 及其静止计步不判；不属于任何阶段的物理步算违规。试抓的快照恢复不抹掉它的接触计数。
+- **每组 seed 一个场景**：实例之间 certify 只把 die 移到本 seed 的起点。`scene_groups` 按「除 die 起点外场景相同」（物体、资产、
+  yaw、关节初值、其余物体位置、桌面）把 seed 分组，每组在第一次运行时建一次场景；换组前 `gs.destroy()`，因为 Genesis 一个进程
+  只允许一次 `gs.init`。公开族的固定件不随 seed 变，只建一次场景；固定件随 seed 变化的族按组各建一次
+  （mat 随 seed 移动的 F0 副本，两组各一例，在 GPU 上验证过）。
 - **规则**是执行门的 `permitted` 再加一条：die 没被抓着时只能碰桌面、放置目标与机器人手指。门判的是静态位姿，
   认证判的是实际物理，没被抓的 die 碰到墙说明它被推了。和见证的差别：搬运中 die 擦到桌面也算违规。
 - **certified**：正例要任务谓词成立且零违规；负例要第一步以 `Refused` 的标签（`search_exhausted` 等）停下且 reset 之后
@@ -180,8 +187,9 @@ F2 的 episode 不是零物理步：pick 已经执行（试抓与正式回放）
 settle 都计真实物理步，恢复快照不清除计数；第一次试抓之后的失败记 `execution_failed`。上面 test seed 的表是模板链路的读数，
 不当作现在链路的 certified。
 
-最终读数在新版实现与参数都提交、冻结之后读一次：F0 / F1 / F2 与留出族各 20 个 test seed（100–119），F1、F2 按难度参数报告。
-F4 不进最终读数，负例零执行由 CPU 测试覆盖；留出族里若有负例照常计入。
+公开 F0 / F1 / F2 是开发用的实验台，以 playground 0–9 的结果收口（[结果](manipulation.md#结果)），不跑 test seed；
+F4 不再测，负例零执行由 CPU 测试覆盖。泛化读数只在新版实现与参数都提交、冻结之后读一次留出族，只报不判：
+2026-11-10 在 `464edf4` 上读了 F5 的 test seed 100–109，10/10 certified。
 
 ## 不在这一版
 
