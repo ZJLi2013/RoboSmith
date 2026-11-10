@@ -48,6 +48,14 @@ held-out family F5, sealed throughout development and read once on the frozen im
 F5 10/10 certified ([acceptance](docs/acceptance.md), [results](docs/manipulation.md#结果)). The other scenarios in
 [`scenarios/`](scenarios/) load on this chain but have no readings on it.
 
+One recorded episode per family on the current chain (click for the mp4). A recording runs without the per-step contact
+monitor, so it is not a certified reading; the numbers in the table come from `certify`. F2 has no clip: from this
+camera the 20 cm wall hides the die and the grasp.
+
+| F0 open table · playground seed 0 | F1 wall gap · playground seed 0 | F5 two low walls (held out) · test seed 100 |
+|---|---|---|
+| [![F0 open table, playground seed 0](videos/f0_open_seed0.gif)](videos/f0_open_seed0.mp4) | [![F1 wall gap, playground seed 0](videos/f1_wall_gap_seed0.gif)](videos/f1_wall_gap_seed0.mp4) | [![F5 two low walls, test seed 100](videos/f5_clutter_seed100.gif)](videos/f5_clutter_seed100.mp4) |
+
 What the MVP needs, in order:
 
 1. **Basic agentic manipulation.** An agent writes the step list, the existing skills execute it, each step is judged;

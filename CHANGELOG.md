@@ -6,6 +6,9 @@ All notable user-facing changes are documented here. This project follows Semant
 
 ### Added
 
+- The README shows one recorded episode of acceptance families F0, F1 and F5 as a GIF linking to its mp4 in
+  `videos/`, each from `scripts/datagen/run_generated_scenario.py --smoke`; F2 has none because its wall hides the
+  grasp from the recording camera.
 - `robotsmith.motion.joint_planner.JointPlanner`: a lazy RRT-Connect in joint space whose every state and edge point
   is an `ExecutionGate.check_point` and whose path is issued by `verify`. Edges are subdivided by
   `SimEnv.lever_arms` so no point of the robot or held object moves more than 5 mm per step. One budget of 1500
