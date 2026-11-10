@@ -11,7 +11,15 @@ All notable user-facing changes are documented here. This project follows Semant
   `SimEnv.lever_arms` so no point of the robot or held object moves more than 5 mm per step. One budget of 1500
   state checks or 30 s covers the search and the final `verify` (`verify(..., budget=)`); past it the connect
   issues nothing and raises `Refused("search_exhausted")`. `SimEnv.hold(qpos, name, T)` poses a held object without
-  stepping. Skills do not call the planner yet.
+  stepping. Pick and place plan their free segments with it.
+- Six meta actions (`sample`, `move_to`, `move_linear`, `gripper`, `attach`, `detach`): a plan file's `actions` drive
+  pick and place through `EpisodeRun`, the only entry. Their bindings are checked at load, so a composition whose
+  steps do not bind (a place referring to the grasp's pre-pose, a close aimed at the mat) is rejected before any
+  physics step.
+- Acceptance families under `scenarios/acceptance/`, each varying one constraint: F0 open table, F1 wall gap,
+  F2 over barrier, F4 caged (unsolvable), and the held-out F5. `scripts/acceptance/witness.py` shows each positive
+  instance solvable independently of the chain under test; `scripts/acceptance/certify.py` runs the chain and judges
+  every physics step, writing `instances.jsonl` and `summary.json`.
 - `scripts/acceptance/batch.supervise`: the witness and certify batches run in a worker process; an attempt past
   600 s has its process group killed from outside, gets an `error` row, and the batch resumes. This replaces the
   in-process timer, which a simulator step holding the GIL could block.
@@ -21,14 +29,15 @@ All notable user-facing changes are documented here. This project follows Semant
   preceding `pick` took. A relation whose parent or target disagrees with the place fails at load. Trees with
   `any_of` / `not`, an object placed twice, or several candidate relations stay `unchecked`, as do steps not yet
   migrated. Lowered `on` / `inside` params keep the place-target name, so two shelves of one fixture stay distinct.
-  The runtime `TaskSpec` carries `step_bindings`, and `scenario_run_summary.json` records them. Nothing judges them yet.
+  The runtime `TaskSpec` carries `step_bindings`, and `scenario_run_summary.json` records them; a `place` step is
+  judged by its binding.
 
 - `robotsmith.scenario_runtime.handoff`: every skill of a scenario episode reports whether it left the world the way
   the next skill needs it (drawer opened, object lifted, object carried until release and resting on the target,
   drawer closed). `scenario_run_summary.json` lists the handoffs and, for a failed episode, the first unfinished step
   with a candidate cause (`motion?`, `grip?`, `release?`), or `unknown` when every handoff passed.
-- `robotsmith.assets.producers`: asset generation (TRELLIS.2 and Hunyuan3D backends, `generate_asset`) and
-  `mesh_to_urdf`, moved from RocRecon.
+- `robotsmith.assets.producers`: assets written as Blender programs by an agent (`blender_item`) and imported from
+  an AHa-3D room snapshot (`aha3d_snapshot`).
 - `robotsmith.scenario.relations`: a relation solver that places scenario objects per seed from asset geometry
   (`on`, `near: robot`, `clear_of`, `facing: robot`, fixture `anchor_xy`), and the `object_in_box` predicate behind
   `inside` / `on`, which tests an object against a place target's collision box.
@@ -38,9 +47,6 @@ All notable user-facing changes are documented here. This project follows Semant
 - `AssetLibrary.search_assets(query, category=, size_cm=)`: admitted assets of a category, nearest size first, or
   sharing a query word when no category is given. `list_assets.py` shows each asset's category and takes
   `--category`, `--size` and `--query`.
-
-### Added
-
 - Grasp repair loop for geometric candidates (`robotsmith.grasp.diagnostics`). `validate_asset_picks --diagnose-dir`
   writes, when every episode fails, a request for a diagnosis agent: the evidence of that run (settled pose, simulator
   AABB, horizontal sections, candidates and trials, table height and gripper limits) plus a playbook of known failure
@@ -52,6 +58,11 @@ All notable user-facing changes are documented here. This project follows Semant
 
 ### Changed
 
+- Pick and place pass the execution gate as a whole before any physics step: free segments are planned by
+  `JointPlanner`, the rest is `move_linear` and `gripper`, and what cannot pass is refused with a reason and zero
+  steps. Pick opens the fingers before approaching and lifts straight up 0.10 m; place detaches before releasing.
+- The Franka loads fully gravity-compensated (`gravity_compensation=1.0`), so it holds the configuration the gate
+  checked instead of sagging under gravity.
 - `ExecutionGate.check_point` is the one point check: joint limits, FK residual where a pose is asked for,
   self-collision between links that are not joined, and contacts the gate does not permit; `verify` runs it on every
   point. A motion that holds an object takes an explicit `Holding(target, t_hand_object)`, checked where it attaches.
@@ -61,8 +72,7 @@ All notable user-facing changes are documented here. This project follows Semant
   and lifted nothing raises `ExecutionFailed`; both replace `Infeasible`. The episode result field `infeasible` is now
   `stopped`, with `cause`, `evidence` and `steps`.
 - Plan files live in `plans/<same name>.yaml` beside the scenario, with the keys `name`, `steps` and `actions` (the
-  meta actions `load_plan` checks); `--planner file` runs their steps (was `teacher`). Files with the keys `teacher` /
-  `plan` still load, read as `name` / `actions`; a file mixing an old key with its new one is rejected.
+  meta actions `load_plan` checks); `--planner file` runs their steps (was `teacher`).
 - Scenario `pick` steps are judged by the new `grasped` predicate: two different finger links touch the target and
   it rose at least 2 cm from the step's own start, read before the step is planned (`step_start_positions` in the
   judged state, separate from the episode start). `collect_world_state` adds `finger_contacts`, the finger links
@@ -138,11 +148,18 @@ All notable user-facing changes are documented here. This project follows Semant
 - `assets/objects/` keeps only the assets the scenarios load: `apple_02`, `block_01`, `die_01`, `mug_02`, `plane`,
   `table_simple`. `apple_02` and `block_01` are built in Blender by GPT-5.6 Sol and admitted on an agent review; they
   replace the Objaverse `apple_01` (lying on its side) and `lego_02` (a minifigure, not a block).
-- `README.md` is in English, with the Chinese version in `README.zh-CN.md`; the demo videos render as GIFs. The code
-  layout and the upstream projects moved to `docs/design.md`.
+- `README.md` is in English, with the Chinese version in `README.zh-CN.md`. The code layout and the upstream projects
+  moved to `docs/design.md`. Its old-chain demo videos are removed: they showed hard-coded waypoints that no longer run.
 
 ### Removed
 
+- The rocRobo motion sidecar and its collision-blind straight-line fallback: it planned in its own simplified world,
+  which disagreed with the simulator's geometry. `run_skills`, `plan_segment`, `LIFT` and
+  `MotionExecutor.pick` / `place` went with the hard-coded motion templates.
+- Image-to-3D asset generation (the TRELLIS.2 and Hunyuan3D backends, `generate_asset`), `mesh_to_urdf`, and the
+  `robotsmith.assets.catalog` helpers only they called; `scripts/train_smolvla.py` and the `viz` extra. Opaque meshes
+  have no parts or joints to build a simulation asset from, and policy training is out of scope.
+- The plan-file keys `teacher` / `plan`; plan files take only `name`, `steps` and `actions`.
 - GraspGen and everything built around it: the learned planner and model wrapper, the support-clearance screen,
   feasibility gate and 9-bucket policy, policy onboarding and the metadata-guided rollout orchestrator, the spconv
   checkpoint converter, and the `grasp_policy_bucket` asset field with its `assets/grasp_policy_buckets.json` sidecar.
@@ -163,8 +180,6 @@ All notable user-facing changes are documented here. This project follows Semant
 - The gfx942 image pins `tensordict==0.7.2`. Unpinned, the GraspGen layer pulled a release that requires
   `torch>=2.11`, which replaced the ROCm torch 2.6 with a CUDA wheel and broke startup
   (`operator torchvision::nms does not exist`).
-- `docs/quick-start.md` clones rocRobo with its `pyroki` submodule and builds the `rocrobo/pyroki` sidecar image,
-  which is not published.
 - The grasp support-band check spans each finger pad `finger_open` from the grasp centre. `finger_open` is per
   finger, and the check used half of it, so grasps whose lower pad enters the support surface passed P0.
 - Geometric grasp candidates close along the Panda hand's local Y axis, the axis its finger joints move on. They

@@ -35,6 +35,6 @@ python -m pytest tests -q
 - [ ] The replaced path was removed.
 - [ ] CHANGELOG is updated for user-facing changes.
 - [ ] New assets have a `provenance.json` with a redistributable license.
-- [ ] No credentials, hostnames, personal paths, GraspGen weights, generated assets, rollout output, or local agent state.
+- [ ] No credentials, hostnames, personal paths, generated assets, rollout output, or local agent state.
 - [ ] AI use is disclosed according to `AI_POLICY.md`.
 - [ ] I can explain and maintain this change without relying on an AI transcript.

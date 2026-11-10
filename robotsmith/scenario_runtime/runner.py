@@ -63,7 +63,7 @@ def run_scenario_episode(
     """Drive one episode as a segment-level closed loop into ``dataset``.
 
     ``record_fn`` steps the sim and appends a segment's frames to the episode
-    (the real one is ``gen.recorder.record_episode``; injected so this driver
+    (the real one is ``sim.recorder.record_episode``; injected so this driver
     stays free of the Genesis/torch stack and unit-testable). The caller
     evaluates success and calls ``dataset.save_episode()`` once after this
     returns, so a task records as a single continuous episode/video.

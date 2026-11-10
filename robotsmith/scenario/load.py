@@ -180,8 +180,6 @@ PLAN_SCHEMA = {
             **_ONE, "additionalProperties": False, "properties": PLAN_ACTIONS}},
     },
 }
-# Plan files frozen before the rename (the sealed held-out family) keep these keys.
-OLD_KEYS = {"teacher": "name", "plan": "actions"}
 
 
 class PlanInvalid(ValueError):
@@ -255,13 +253,8 @@ def load_scenario(
 
 
 def read_plan_file(path: Path) -> dict:
-    """The plan file with the current keys; the only reader of plan files. Old keys are renamed, a file that mixes
-    an old key with its new one is rejected. Reads only."""
-    data = _read(Path(path))
-    mixed = [k for k, new in OLD_KEYS.items() if k in data and new in data]
-    if mixed:
-        raise PlanInvalid(f"{path}: both {mixed[0]!r} and {OLD_KEYS[mixed[0]]!r}")
-    return {OLD_KEYS.get(k, k): v for k, v in data.items()}
+    """The plan file; the only reader of plan files. Reads only."""
+    return _read(Path(path))
 
 
 def _plan_file(path: Path, assets: dict) -> tuple[SkillIntentSequenceSpec, dict[str, TargetPositionSpec]]:

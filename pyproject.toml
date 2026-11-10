@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "robotsmith"
 version = "0.1.0"
-description = "Manipulation data infrastructure for sim-ready assets, expert rollouts, and VLA adapter contracts"
+description = "Evaluate agentic robots and VLAs in a simulated twin of a real scene, on AMD ROCm"
 requires-python = ">=3.10"
 dependencies = [
     "trimesh>=4.0",
@@ -17,7 +17,6 @@ dependencies = [
 
 [project.optional-dependencies]
 sim = ["torch>=2.0"]
-viz = ["viser>=1.0"]
 genesis = ["genesis-world>=0.2"]
 lerobot = ["lerobot"]
 dev = ["pytest>=8.0"]

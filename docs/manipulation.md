@@ -192,8 +192,7 @@ holding=None, label="move_to")` 是仓库内的 lazy RRT-Connect（双树、固�
 - 起态装配：`SimEnv.hold(qpos, name, T)` 把机器人放到 qpos、物体放到手 · T，算一次真实写入，不步进。
 
 F2 布局的固定持物请求（retreat 位姿 → mat 正上方同高）在 Genesis 上一次连通：直连以左手指碰 barrier 被拒，
-connect 全程 548 次查询、10.9 s，签发 247 点，最大每步位移 4.995 mm（[e3](../exps/r1/evidence/e3/README.md)、
-[e4](../exps/r1/evidence/e4/README.md)）。
+connect 全程 548 次查询、10.9 s，签发 247 点，最大每步位移 4.995 mm。
 
 限制：均匀采样的 7 维路径会绕远，CPU 受控样例里绕一道 0.2 rad 宽的墙要 0.6k–4k 次查询；比扩展步长（0.1 rad）还薄的
 障碍会让两树隔着它反复相遇、剪枝，同类薄墙要 7k–160k 次，超出预算。OMPL 算法更成熟，但 Python 绑定未在 ROCm 镜像上
@@ -216,39 +215,39 @@ connect 全程 548 次查询、10.9 s，签发 247 点，最大每步位移 4.99
 
 | 修法 | 停在哪 | 理由 | 适用边界 |
 |---|---|---|---|
-| 门对固定件留一个由空场景执行偏差标定的间隙 | 标定度量 | 度量 `lever_arms(held) @ \|q_actual − q_cmd\|` 按同一步比较、逐关节相加，把沿已验证路径的跟踪滞后和被物体挡住的手指都算成偏差：持物直线段读到 0.194 m（空手自由段 0.018 m），与 F0 / F1 10/10 零违规矛盾。照它导出的间隙不小于 0.197 m，会拒掉 F0 的接近段，所以 pilot 与 dev 都没跑（[停片决定](../exps/r1/evidence/e17/reviews/stop_decision.json)） | 否定的是这个度量与标定协议；间隙修法本身未被检验，执行偏差是不是回放接触的成因也没被证伪 |
-| 执行器逐点到位、越界中止，门留同一个 5 mm 偏差界 | 动态包络的三条前提，只读模型量 | 逐关节解耦的过阻尼成立（\(\zeta\) 最小 1.69）；重力下垂不成立：40 个构型（20 个位姿 × 空手 / 持物）的模型估计全部超过 2.5 mm，6.1–16.2 mm，主要在关节 2–4；饱和不成立：腕关节 5–7 在 7.5 mm 误差下的力矩需求是上限 12 N·m 的 3.4–4.5 倍，只开重力补偿也过不了（[envelope.json](../exps/r1/evidence/e18/envelope.json)） | 下垂与饱和是模型估计（杠杆上界换算、解耦近似），不是实测；到位推进与偏差界的实现没写，没有 GPU 读数 |
+| 门对固定件留一个由空场景执行偏差标定的间隙 | 标定度量 | 度量 `lever_arms(held) @ \|q_actual − q_cmd\|` 按同一步比较、逐关节相加，把沿已验证路径的跟踪滞后和被物体挡住的手指都算成偏差：持物直线段读到 0.194 m（空手自由段 0.018 m），与 F0 / F1 10/10 零违规矛盾。照它导出的间隙不小于 0.197 m，会拒掉 F0 的接近段，所以 pilot 与 dev 都没跑 | 否定的是这个度量与标定协议；间隙修法本身未被检验，执行偏差是不是回放接触的成因也没被证伪 |
+| 执行器逐点到位、越界中止，门留同一个 5 mm 偏差界 | 动态包络的三条前提，只读模型量 | 逐关节解耦的过阻尼成立（\(\zeta\) 最小 1.69）；重力下垂不成立：40 个构型（20 个位姿 × 空手 / 持物）的模型估计全部超过 2.5 mm，6.1–16.2 mm，主要在关节 2–4；饱和不成立：腕关节 5–7 在 7.5 mm 误差下的力矩需求是上限 12 N·m 的 3.4–4.5 倍，只开重力补偿也过不了 | 下垂与饱和是模型估计（杠杆上界换算、解耦近似），不是实测；到位推进与偏差界的实现没写，没有 GPU 读数 |
 
 ## 结果
 
 模板链路（写死的航点、转基座的固定 transit 搬运）的 test 读数是 F0 19/20、F1 19/20、F2 0/20，F2 全部卡在写死的搬运路线
 （[读数](acceptance.md#被测链路的-certified-读数)）。之后逐片替换，每片只改一件事，在 playground seed 0–9 上与上一片比：
 
-| 片 | 改了什么 | F0 | F1 | F2 | 证据 |
-|---|---|---|---|---|---|
-| 基线 | 门加固（`check_point`、只读凭证、`Refused`、显式 `Holding`），链路未改 | 10/10 | 10/10 | 0/10 | [e6](../exps/r1/evidence/e6/README.md) |
-| place 搬运走规划器 | 删转基座与搬运高度 | 10/10 | 10/10 | 7/10 | [e7](../exps/r1/evidence/e7/README.md) |
-| pick 进场走规划器 | 删 `_pick_seed_transit` | 10/10 | 10/10 | 7/10 | [e9](../exps/r1/evidence/e9/README.md) |
-| pick 先确认 place 可达 | 整组在第一个物理步前过门 | 10/10 | 10/10 | 7/10 | [e10](../exps/r1/evidence/e10/README.md) |
-| `move_linear`、`gripper` 拆出 | 纯重构，送门轨迹逐项相同 | 10/10 | 10/10 | 7/10 | [e11](../exps/r1/evidence/e11/README.md)、[e12](../exps/r1/evidence/e12/README.md) |
-| `PlanState` 持物 | 纯重构 | 10/10 | 10/10 | 7/10 | [e13](../exps/r1/evidence/e13/README.md) |
-| 一个执行器跑动作列表 | 删 `MotionExecutor.pick / place` | 10/10 | 10/10 | 7/10 | [e14](../exps/r1/evidence/e14/README.md) |
-| 公开动作语义 | 进场前张指、+Z 0.10 m 直线抬升、`detach` 先于松指 | 10/10 | 10/10 | 5/10 | [e15](../exps/r1/evidence/e15/README.md) |
-| 重力补偿 | Franka `gravity_compensation=1.0` | 10/10 | 10/10 | 10/10 | [e19](../exps/r1/evidence/e19/README.md) |
-| `actions` 直接执行 | 入口合一，删 `run_skills`、`plan_segment`、`LIFT` | 10/10 | 10/10 | 10/10 | [e16](../exps/r1/evidence/e16/README.md) |
+| 片 | 改了什么 | F0 | F1 | F2 |
+|---|---|---|---|---|
+| 基线 | 门加固（`check_point`、只读凭证、`Refused`、显式 `Holding`），链路未改 | 10/10 | 10/10 | 0/10 |
+| place 搬运走规划器 | 删转基座与搬运高度 | 10/10 | 10/10 | 7/10 |
+| pick 进场走规划器 | 删 `_pick_seed_transit` | 10/10 | 10/10 | 7/10 |
+| pick 先确认 place 可达 | 整组在第一个物理步前过门 | 10/10 | 10/10 | 7/10 |
+| `move_linear`、`gripper` 拆出 | 纯重构，送门轨迹逐项相同 | 10/10 | 10/10 | 7/10 |
+| `PlanState` 持物 | 纯重构 | 10/10 | 10/10 | 7/10 |
+| 一个执行器跑动作列表 | 删 `MotionExecutor.pick / place` | 10/10 | 10/10 | 7/10 |
+| 公开动作语义 | 进场前张指、+Z 0.10 m 直线抬升、`detach` 先于松指 | 10/10 | 10/10 | 5/10 |
+| 重力补偿 | Franka `gravity_compensation=1.0` | 10/10 | 10/10 | 10/10 |
+| `actions` 直接执行 | 入口合一，删 `run_skills`、`plan_segment`、`LIFT` | 10/10 | 10/10 | 10/10 |
 
 - 重力补偿之前 F2 的 3–5 个失败都是任务成立、但回放中 `link5` 或 `hand` 实际碰到 barrier，门签发时判这些点合法。
 - F4（罩住）到「pick 先确认 place 可达」为止每片都是 10/10 零步拒绝，之后不再测，负例零执行由 CPU 测试覆盖。
 - `actions` 直接执行那一片上，同一份公开 plan 的 `steps` 与 `actions` 送门的轨迹与段完全相同，改段里的抬升距离就改变送门轨迹；
   die_01 单资产抓取 3/3。
-- 加载期绑定核对（[e20](../exps/r1/evidence/e20/README.md)，CPU）：place 段引用 `g.pre`、close 的 target 写成 `mat`、place 的 object
+- 加载期绑定核对（CPU）：place 段引用 `g.pre`、close 的 target 写成 `mat`、place 的 object
   写成 `mat` 三种请求都在 `load_scenario` 交出技能前 `PlanInvalid`；把绑定 `g` / `p` 一致改名为 `hold` / `drop` 后，
   送门的轨迹与段同公开组合逐项相同。
 - 单实例耗时从模板链路的约 50 s 涨到约 150–170 s：每次 connect 约 8–10 s，规划路径每 5 mm 一个物理步，
   place 在 standoff 处还有一段几乎不动的插值。
 
 公开三族是开发用的实验台，以上表的 playground 结果收口、不跑 test seed。冻结实现（`464edf4`）后读了一次开发期没读过的
-留出族：F5 test seed 100–109 为 10/10 certified，一次重试也没有，单实例约 170–190 s（[e21](../exps/r1/evidence/e21/README.md)）；
+留出族：F5 test seed 100–109 为 10/10 certified，一次重试也没有，单实例约 170–190 s；
 只报不判，口径见[认证口径](acceptance.md#认证口径)。
 
 ## 已定 / 不做 / 限制
@@ -279,5 +278,5 @@ connect 全程 548 次查询、10.9 s，签发 247 点，最大每步位移 4.99
 - 执行门在同一环境的真实场景上满足所列预期，测试在 `tests/test_gate_gpu.py`：两端合法、中途碰墙的轨迹在中间点被拒；
   持物进墙以被抓物–墙被拒、越过墙上方可过门，手 · T 摆出的被抓物与预期位置相差不到 1 mm；松手后手掌下到被抓物处以
   机器人–被抓物被拒、向上退回可过门；真实步进后旧凭证失效。
-- `check_point` 的关节限位、FK 残差、非邻接自碰撞与 attach 核对在 CPU 受控样例上验证过（[e1](../exps/r1/evidence/e1/README.md)）；
+- `check_point` 的关节限位、FK 残差、非邻接自碰撞与 attach 核对在 CPU 受控样例上验证过；
   IK 残差超过 5 mm 的抓取候选会以 `fk_residual` 或 `binding_mismatch` 被拒。

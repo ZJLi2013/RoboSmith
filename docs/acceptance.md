@@ -16,7 +16,8 @@
    （负例应零步拒绝：现有链路记 `search_exhausted`，表示声明的候选与预算内无解，不声称已证明不可解；
    见[步骤结果](manipulation.md#执行门的接口与契约)）。
 6. **不被其他层污染**：被抓物是已准入的简单刚体（`die_01`，5 cm），障碍是 URDF 图元固定件，场景先过静止检查，不渲染。
-7. **单个 episode 便宜**：一次抓放，十几秒仿真。
+7. **单个 episode 便宜**：一次抓放，不渲染。当前链路上单实例墙钟约 150–190 s（含规划，每 5 mm 一个物理步），
+   一个族的 10 个 playground 实例一张卡约半小时。
 
 ## 场景族
 
@@ -26,7 +27,7 @@
 | F1 贴墙抓取 | `f1_wall_gap.yaml` | 物体一侧有一道比它高 1 cm 的矮墙（`wall_01`），手指垂直于墙会撞墙 | 物体到墙的间隙，5–40 mm | 可解：手指平行于墙 |
 | F2 越障搬运 | `f2_over_barrier.yaml` | 物体与放置垫之间有一道 20 cm 高墙（`wall_02`） | 物体到墙的距离，30–150 mm | 可解：抬过墙再放 |
 | F4 罩住 | `f4_caged.yaml` | 物体被无开口的罩子（`cage_01`）罩住 | — | 不可解 |
-| F5 留出 | `heldout/f5_clutter.yaml` | 解封前不在本文写 | 解封前不在本文写 | 可解 |
+| F5 留出（已解封） | `heldout/f5_clutter.yaml` | 两道矮墙（`wall_01`，一道转 45°、一道转 90°）围着转 45° 的 die，手指垂直于近墙会在下探时撞墙 | die 到近墙的间隙，test 100–119 为 5.7–38.9 mm | 可解：手指平行于近墙 |
 
 五族的任务相同：把 die 放到垫子（`mat_01.top`）上；plan 文件在 `plans/`（留出族在 `heldout/plans/`），
 `steps` 是技能步骤，`actions` 是六动作组合，文件有 `actions` 时运行时执行它。被测的是技能层以下，所以不让 LLM 写步骤。
@@ -38,9 +39,9 @@ split：`playground` 0–9，`test` 100–119。
 候选由场景几何决定，组合里没有场景名、见证轨迹或搬运高度。写法、参数、绑定规则与 `PlanInvalid` 报错见
 [plan 文件用法](../scenarios/AGENT_PROMPT.md#plan-file-optional)；只有 `steps` 的文件展开成同样的两段。
 
-`read_plan_file` 是读 plan 文件的唯一入口（`load_scenario` 与 `load_plan` 都经它）。留出族的 plan 文件在改名前冻结，保留旧键 `teacher` / `plan`，
-读时映射为 `name` / `actions`；同一文件新旧键混用报 `PlanInvalid`。它只读文件，不回写、不跨调用缓存，YAML 与 schema
-错误原样抛出。这样留出文件只迁路径、字节与 a2 的 sha256 不变。
+`read_plan_file` 是读 plan 文件的唯一入口（`load_scenario` 与 `load_plan` 都经它），只认 `name` / `steps` / `actions` 三个键。
+它只读文件，不回写、不跨调用缓存，YAML 与 schema 错误原样抛出。F5 的 plan 文件解封后从旧键 `teacher` / `plan` 迁到新键，
+seed 100–119 加载出的技能与动作逐个不变；它的 sha256 因此不再等于封存 manifest 里的值。
 
 ### `offset_from`
 
@@ -113,12 +114,12 @@ F2 只跑了 2 个实例：穿透接触让求解器变慢，批次在第 3 个�
   留出族只在解封读数时以 `--family heldout/<name>` 显式给出。
 - **冻结**：只有构造它的 task 写这些文件；test 批次在已提交的输入上运行，manifest 记下 commit 与各文件的 sha256，
   之后只读。批次失败或输入未提交时不写 manifest，修正后整批重跑。
-- **路径迁移**：留出 plan 文件从改名前的 `teacher` 目录（manifest 里沿用这个旧键名）移到 `heldout/plans/`，只改路径，sha256 不变。
+- **改动留出文件**：封存期间只允许不改字节的迁移（如移动路径），sha256 保持与 manifest 一致；改内容等于烧毁。
 - **读者**：解封前只有 `witness.py --heldout` 与该 task 的 verifier；实现与调参不读它的布局、plan 文件、见证或逐实例结果。
 - **解封**：只在最终评测，且新版实现与参数都已提交；解封时记下这个 commit，评测前对照 manifest 的 sha256。
 - **烧毁**：解封前被实现或调参读取或使用，这批留出作废，记录保留，另建一个未用于调参的留出族。
-- **已解封**：F5 于 2026-11-10 在 `464edf4` 上解封、读了 test seed 100–109（manifest 核对一致）。之后改动链路再要泛化读数，
-  另建一个未读过的留出族，不再用 F5。
+- **已解封**：F5 于 2026-11-10 在 `464edf4` 上解封、读了 test seed 100–109（manifest 核对一致），之后它的 plan 文件改用新键。
+  之后改动链路再要泛化读数，另建一个未读过的留出族，不再用 F5。
 
 ## 被测链路的 certified 读数
 

@@ -1,7 +1,7 @@
 # Quick start
 
-From a fresh AMD GPU node to a recorded supporter episode (`pick → place`, the left clip in the README). For what each
-piece does, see [design.md](design.md).
+From a fresh AMD GPU node to one certified acceptance instance: the die on an open table picked and placed on the mat
+through the gated six-action chain, judged at every physics step. For what each piece does, see [design.md](design.md).
 
 ## 0. Without a GPU
 
@@ -15,14 +15,7 @@ python -m pytest tests -q
 
 Everything below needs an AMD GPU node with ROCm and Docker.
 
-## 1. Layout on the host
-
-`scripts/setup/run_scenario.sh` expects these directories under `$HOME` (override with `REPO`, `HF_CACHE`):
-
-```text
-$HOME/RoboSmith         this repository
-$HOME/.cache/huggingface  LeRobot datasets are written here
-```
+## 1. Get the repository
 
 ```bash
 cd $HOME
@@ -39,27 +32,49 @@ Build from the repository root (`cd $HOME/RoboSmith`) with the image for your GP
 | MI350 (gfx950) | `docker build -f docker/Dockerfile.gfx950 -t robotsmith:rocm-headless .` |
 
 gfx942 needs its own older stack (ROCm 6.4.3, Genesis 0.4.5) because newer Genesis crashes while compiling collision
-kernels on that architecture.
+kernels on that architecture. The commands below use the gfx942 tag; on MI350 use `robotsmith:rocm-headless`.
 
-## 3. Run the supporter scenario
+## 3. Certify one acceptance instance
+
+```bash
+docker run --rm --device=/dev/kfd --device=/dev/dri --group-add video \
+  -v $HOME/RoboSmith:/workspace/robotsmith robotsmith:gfx942-rocm6.4.3-genesis0.4.5 \
+  bash -lc 'cd /workspace/robotsmith && python -m robotsmith.assets.fetch && \
+            python scripts/acceptance/certify.py --family f0_open --split playground --limit 1 --out output/f0'
+```
+
+On a shared node, pick a free GPU with `-e HIP_VISIBLE_DEVICES=<n>`. The first run takes about 6 minutes on one
+MI300X, kernel compilation included. It ends with `f0_open playground: 1/1 certified`, and writes to `output/f0/`:
+
+- `instances.jsonl`: one row per instance, with `"certified": true` when the task holds and no physics step made an
+  illegal contact; otherwise the label it stopped on and the first violation;
+- `summary.json`, and copies of the family and plan files it ran.
+
+Drop `--limit 1` for all ten playground seeds, or pass another family: `f1_wall_gap`, `f2_over_barrier`, `f4_caged`
+(the negative one: certified means refused with zero steps). What each family varies and its readings:
+[acceptance.md](acceptance.md).
+
+## 4. Run your own scenario
+
+`scripts/setup/run_scenario.sh` runs a scenario through the same chain in a detached container and records a LeRobot
+dataset. The curated scenarios in [`scenarios/`](../scenarios/) load on this chain but have no readings on it.
 
 ```bash
 cd $HOME/RoboSmith
 bash scripts/setup/run_scenario.sh                                     # MI300
-IMAGE=robotsmith:rocm-headless bash scripts/setup/run_scenario.sh            # MI350
+IMAGE=robotsmith:rocm-headless bash scripts/setup/run_scenario.sh      # MI350
 docker logs -f f1_m1
 ```
 
-The launcher starts a detached container (default name `f1_m1`; set `NAME`, `SCENARIO`, `SEED`, `EPISODES` to
-change the run).
-
+It runs `scenarios/pick_place_onto_supporter.yaml` by default (container `f1_m1`); set `NAME`, `SCENARIO`, `SEED`,
+`EPISODES` to change the run, and `HF_CACHE` if the Hugging Face cache is not `$HOME/.cache/huggingface`. It uses GPU 0.
 Outputs:
 
 - `output/<NAME>/scenario_run_summary.json`: per-episode success and diagnostics;
 - `output/<NAME>/videos/*.mp4`;
 - the LeRobot dataset under `$HOME/.cache/huggingface/lerobot/local/robotsmith-scenario-<task>/`.
 
-To render a layout without rolling out (inside the same image, which provides Genesis):
+To render a layout without rolling out:
 
 ```bash
 docker run --rm --device=/dev/kfd --device=/dev/dri --group-add video \
@@ -67,10 +82,8 @@ docker run --rm --device=/dev/kfd --device=/dev/dri --group-add video \
   bash -lc 'cd /workspace/robotsmith && python scripts/datagen/snapshot_scenario.py --scenario scenarios/pick_place_onto_supporter.yaml'
 ```
 
-## 4. Write your own scenario
-
-Copy a scenario YAML from [`scenarios/`](../scenarios/) and its plan file from `scenarios/plans/` (same file
-name), change the objects, relations, success tree, and steps, and pass it with
+To write one, copy a scenario YAML from [`scenarios/`](../scenarios/) and its plan file from `scenarios/plans/` (same
+file name), change the objects, relations, success tree, and steps, and pass it with
 `SCENARIO=scenarios/<your_file>.yaml`. To have an agent draft one, give it
 [`scenarios/AGENT_PROMPT.md`](../scenarios/AGENT_PROMPT.md) explicitly. To validate a single asset's picks, use
 `scripts/datagen/validate_asset_picks.py --assets <name>`.
