@@ -25,8 +25,9 @@
 ## 顺序
 
 1. 场景检查（其余两块都依赖它）：已实现。
-2. 操作的执行门：已实现，在[验收场景](acceptance.md)上有 certified 读数。技能正在逐片改为规划给出的 meta action
-   组合（[下一版设计](manipulation.md#下一版设计规划给出的-meta-action-组合未实现)，进度见[下一步](manipulation.md#下一步)），完成后在组合式验收场景上验收。
+2. 操作：已实现。技能是规划给出的 meta action 组合，plan 文件的 `actions` 直接执行，每个执行点过同一道执行门
+   （[设计](manipulation.md#设计一览)），公开 dev 场景全部 certified（[结果](manipulation.md#结果)）；冻结后在组合式验收场景的
+   test seed 与留出族上读最终读数。
 3. 评测接口与报告
 4. 真实视频导入
 
