@@ -40,6 +40,13 @@ certified = 任务成立，且逐物理步监测的实际执行零违规接触�
 F5 10/10 certified（[验收](docs/acceptance.md)、[结果](docs/manipulation.md#结果)）。[`scenarios/`](scenarios/) 里的其他
 scenario 能在这条链路上加载，但在它上面没有读数。
 
+每个场景族在当前链路上录了一个 episode（点图看 mp4）。录制不做逐步接触监测，不是 certified 读数，表里的数字来自 `certify`。
+F2 没放录像：这个机位下 20 cm 高墙挡住了 die 和抓取。
+
+| F0 空桌面 · playground seed 0 | F1 贴墙抓取 · playground seed 0 | F5 双矮墙（留出族） · test seed 100 |
+|---|---|---|
+| [![F0 空桌面，playground seed 0](videos/f0_open_seed0.gif)](videos/f0_open_seed0.mp4) | [![F1 贴墙抓取，playground seed 0](videos/f1_wall_gap_seed0.gif)](videos/f1_wall_gap_seed0.mp4) | [![F5 双矮墙，test seed 100](videos/f5_clutter_seed100.gif)](videos/f5_clutter_seed100.mp4) |
+
 MVP 还要做的，按顺序：
 
 1. **基本 agentic 操作。** agent 写步骤表，现有技能执行，每步判定；计划层失败交回 agent，物理层失败走修复环。不做跨 episode
