@@ -19,7 +19,7 @@ from robotsmith.execution.gate import ExecutionFailed, Refused
 from robotsmith.grasp.transforms import pose_matrix
 from robotsmith.motion.joint_planner import JointPlanner
 from robotsmith.motion.plan_state import Attach, Detach
-from robotsmith.scenario.load import actions_to_intents, read_plan_file, steps_to_intents
+from robotsmith.scenario.load import actions_to_intents, check_plan, read_plan_file, steps_to_intents
 from robotsmith.skills import Skill
 from robotsmith.skills.registry import SKILL_DEFS, SkillDef
 from robotsmith.assets.geometry import rotate_vec_wxyz
@@ -535,6 +535,28 @@ class TestRegistryDispatch:
     def test_actions_and_steps_send_the_same_trajectory_to_the_gate(self, gate):
         from_steps, from_actions = self._file_skills()
         a, b = self._waypoint_run(gate, from_steps), self._waypoint_run(gate, from_actions)
+        assert len(a) == len(b) == 2
+        for x, y in zip(a, b):
+            assert np.array_equal(np.array(x.trajectory), np.array(y.trajectory)) and x.spans == y.spans
+
+    def test_renamed_bindings_send_the_same_trajectory_to_the_gate(self, gate):
+        names = {"g": "hold", "p": "drop"}
+
+        def rename(actions):
+            out = []
+            for a in actions:
+                (name, arg), = a.items()
+                if name == "sample":
+                    arg = {**arg, "as": names[arg["as"]], **({"grasp": names[arg["grasp"]]} if "grasp" in arg else {})}
+                elif isinstance(arg, str):
+                    key, dot, pose = arg.partition(".")
+                    arg = names[key] + dot + pose
+                out.append({name: arg})
+            return check_plan(out)
+
+        from_steps, renamed = self._file_skills(rename)
+        assert renamed[1].params["actions"][0]["sample"]["as"] == "drop"
+        a, b = self._waypoint_run(gate, from_steps), self._waypoint_run(gate, renamed)
         assert len(a) == len(b) == 2
         for x, y in zip(a, b):
             assert np.array_equal(np.array(x.trajectory), np.array(y.trajectory)) and x.spans == y.spans

@@ -35,26 +35,12 @@ split：`playground` 0–9，`test` 100–119。
 ### plan 文件的 `actions`：六动作组合
 
 `actions` 是运行时执行的[六动作组合](manipulation.md#六个-meta-action-与-pick--place-组合)，五族逐字相同：
-候选由场景几何决定，组合里没有场景名、见证轨迹或搬运高度。`robotsmith/scenario/load.py` 的 `load_plan` /
-`check_plan` 校验它，六动作以外的请求（如 `push`）报 `PlanInvalid`。`load_scenario` 按 `sample` 把它切成 pick / place
-两段交给 `EpisodeRun` 执行，段内顺序与公开组合不同也报 `PlanInvalid`；只有 `steps` 的文件展开成同样的两段。
+候选由场景几何决定，组合里没有场景名、见证轨迹或搬运高度。写法、参数、绑定规则与 `PlanInvalid` 报错见
+[plan 文件用法](../scenarios/AGENT_PROMPT.md#plan-file-optional)；只有 `steps` 的文件展开成同样的两段。
 
 `read_plan_file` 是读 plan 文件的唯一入口（`load_scenario` 与 `load_plan` 都经它）。留出族的 plan 文件在改名前冻结，保留旧键 `teacher` / `plan`，
 读时映射为 `name` / `actions`；同一文件新旧键混用报 `PlanInvalid`。它只读文件，不回写、不跨调用缓存，YAML 与 schema
 错误原样抛出。这样留出文件只迁路径、字节与 a2 的 sha256 不变。
-
-| 动作 | 参数 | 含义 |
-|---|---|---|
-| `sample` | `kind: grasp, object, as` 或 `kind: place, object, surface, grasp, as` | 绑定一组候选；grasp 绑定给出 `pre` / `grasp` 位姿，place 绑定给出 `pre` / `place` / `retreat` |
-| `move_to` | `<绑定>.<位姿>` | 自由段到该位姿 |
-| `move_linear` | `<绑定>.<位姿>`，或 `{direction: [x, y, z], dist}`（世界系，m） | 直线段 |
-| `gripper` | `{width: open \| close, target}` | 开合；`close` 的 `target` 是被抓物 |
-| `attach` | `<grasp 绑定>` | 此后物体随手移动，起止支撑由 grasp 绑定决定 |
-| `detach` | `<place 绑定>` | 物体落到 place 绑定的支撑面 |
-
-绑定语义：引用必须指向更早的 `sample` 且位姿名合法；place 绑定必须带一个 grasp 绑定；一次只 `attach` 一个物体；
-`detach` 只放手里的物体；组合结束时手里不能有物体。同一目标的 pick + place 是一个组合，第一步物理执行前整体验证，
-第一次试抓即提交。
 
 ### `offset_from`
 

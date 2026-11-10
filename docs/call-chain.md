@@ -67,7 +67,7 @@ flowchart TD
 技能内部见下一张图。file 与 agent 两条路径共用 `EpisodeRun`，只是步骤表的来源不同。plan 文件有 `actions`（六动作组合）时，
 `scenario/load.actions_to_intents` 按 `sample` 把它切成 pick / place 两段，每个技能带着自己那段（`Skill.params["actions"]`）；
 只有 `steps` 时（agent 写的步骤也是）`steps_to_intents` 把每步展开成公开组合的同一段（`pick_part` / `place_part`）。
-段内顺序与公开组合不同即加载时 `PlanInvalid`。pick 已走过物理步之后组合即提交，place 仍从实测状态重新规划，这时它被拒就记 `execution_failed`。agent 路径上零步拒绝（`Refused` 的标签）按
+段内顺序与公开组合不同、引用或物体不属于本段（`check_plan`）即加载时 `PlanInvalid`（[写法与报错](../scenarios/AGENT_PROMPT.md#plan-file-optional)）。pick 已走过物理步之后组合即提交，place 仍从实测状态重新规划，这时它被拒就记 `execution_failed`。agent 路径上零步拒绝（`Refused` 的标签）按
 plan 类失败重写剩余步骤，`execution_failed` 按 physical 失败上报；重写后的步骤全部执行完，episode 就不再算被拒。
 
 ## 一个技能：候选、整条轨迹、过门
