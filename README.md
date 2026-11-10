@@ -74,8 +74,8 @@ What the MVP needs, in order:
 1. **Basic agentic manipulation.** An agent writes the step list, the existing skills execute it, each step is judged;
    plan-level failures go back to the agent, physical ones to the repair loop. No cross-episode memory (use an
    external framework such as RPent for that). Pick and place are now gated six-action compositions with no
-   collision-blind segments; what remains is the final reading after the freeze, and reliable grasps of regular objects
-   in clutter.
+   collision-blind segments, and the held-out reading after the freeze is F5 10/10; what remains is reliable grasps of
+   regular objects in clutter.
 2. **Primitive coverage** for about 80% of indoor tabletop tasks: press, push, rotate, revolute open / close.
 3. **A real scene:** a real video reconstructed into a twin that rests, with openings and handles annotated by an
    agent and verified in simulation.
