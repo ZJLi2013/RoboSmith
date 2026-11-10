@@ -39,13 +39,12 @@ class GripperSpec:
     tcp_offset: float = 0.1034
     pad_below_tcp: float = 0.008
     pad_above_tcp: float = 0.009
-    width_margin: float = 0.01
     approach_clearance: float = 0.12
     lift: float = 0.17
 
     @property
     def max_width(self) -> float:
-        return 2 * self.finger_open - self.width_margin
+        return 2 * self.finger_open
 
 
 def yaw_box(points: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, float, float]:

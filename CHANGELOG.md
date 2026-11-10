@@ -180,6 +180,9 @@ All notable user-facing changes are documented here. This project follows Semant
   frames the solved scene).
 - The `metric_scale` and `upright` annotations, `AssetMetadata.task_poses`, `scene_state["object_scales"]`, and
   `robotsmith.scenes.pose_utils`.
+- `GripperSpec.width_margin`: geometric candidates close across any horizontal axis up to the full opening
+  (`2 × finger_open`, 80 mm). The pick's descent already rejects any finger touching the object, and the grasp trial
+  replays it in physics.
 
 ### Fixed
 

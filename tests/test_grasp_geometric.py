@@ -69,6 +69,12 @@ def test_geometric_skips_axes_wider_than_the_gripper_and_follows_yaw():
     assert abs(abs(finger @ [-np.sin(np.pi / 6), np.cos(np.pi / 6), 0]) - 1) < 1e-6
 
 
+def test_geometric_closes_across_any_axis_within_the_full_opening():
+    plans = GeometricGraspPlanner().candidates(_box([0.079, 0.081, 0.05]))
+    assert {round(p.metadata["closing_width"], 4) for p in plans} == {0.079}
+    assert GripperSpec().max_width == pytest.approx(2 * GripperSpec().finger_open)
+
+
 def test_geometric_plan_reads_the_urdf_and_the_object_pose(tmp_path):
     urdf = tmp_path / "model.urdf"
     urdf.write_text('<robot name="t"><link name="base"><visual><origin xyz="0 0 0.025"/>'
