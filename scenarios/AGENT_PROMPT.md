@@ -64,7 +64,16 @@ not complete the task are false.
 
 ## Plan file (optional)
 
-`--planner file` runs the steps in `scenarios/plans/<same name>.yaml`:
+`--planner file` runs the plan file `plans/<same file name>` beside the scenario. This section is the one
+reference for writing it.
+
+`name` and `steps` are required; `actions` is optional, and when present it is what runs.
+
+- `steps` is a skill list: `pick: <id>`, `place: {target: <id>.<target>}`, `open: <id>`, `close: <id>`. Each
+  pick / place step runs the public composition below; `open` / `close` drag the asset's handle.
+- `actions` is a list of meta actions, one pick part and one place part per object moved. Only pick and place
+  have meta actions, so a file with `actions` runs no `open` / `close`: write a task that opens a drawer as
+  `steps` alone.
 
 ```yaml
 name: apple_into_drawer
@@ -75,11 +84,84 @@ steps:
   - close: drawer
 ```
 
+### The six meta actions
+
+| Action | Arguments | Effect |
+|---|---|---|
+| `sample` | `{kind: grasp, object, as}` or `{kind: place, object, surface, grasp, as}` | binds candidates under the name `as`: a grasp binding has poses `pre` / `grasp`, a place binding `pre` / `place` / `retreat` |
+| `move_to` | `<binding>.<pose>` | a planned joint-space move to that pose |
+| `move_linear` | `<binding>.<pose>`, or `{direction: [x, y, z], dist}` (world frame, m) | a straight line |
+| `gripper` | `{width: open \| close, target}` | opens or closes the fingers; `target` is the object operated on |
+| `attach` | `<grasp binding>` | the object moves with the hand from here on |
+| `detach` | `<place binding>` | the object stays on the place binding's surface |
+
+Each part runs in one order; another order is rejected:
+
+```text
+pick:  sample(grasp) · gripper(open) · move_to(<g>.pre) · move_linear(<g>.grasp) · gripper(close, target) · attach(<g>) · move_linear({direction, dist})
+place: sample(place, grasp: <g>) · move_to(<p>.pre) · move_linear(<p>.place) · detach(<p>) · gripper(open, target) · move_linear(<p>.retreat)
+```
+
+What can vary: the object, the place surface, the binding names, and the direction and distance of the lift.
+The candidates come from the scene's geometry, so a plan holds no positions or heights.
+
+Binding rules, checked when the file loads:
+
+- The actions start with a `sample`, and each part's references name the binding its own `sample` made.
+- A place `sample` names the grasp binding it puts down (`grasp:`) and that grasp's `object`.
+- A `gripper` with a `target` names the part's object; a close always names it.
+- One object is held at a time: attach once, detach only what is held, and end holding nothing.
+
+A pick and its place are one composition: both are checked before the first physics step, and the first grasp
+that passes is committed.
+
+### Example: the die onto the mat
+
+The acceptance families' plan file (`scenarios/acceptance/plans/f0_open.yaml`):
+
+<!-- example: f0_open -->
+```yaml
+name: acc_f0_open
+steps:
+  - pick: die
+  - place: {target: mat.top}
+actions:
+  - sample: {kind: grasp, object: die, as: g}
+  - gripper: {width: open}
+  - move_to: g.pre
+  - move_linear: g.grasp
+  - gripper: {width: close, target: die}
+  - attach: g
+  - move_linear: {direction: [0, 0, 1], dist: 0.10}
+  - sample: {kind: place, object: die, surface: mat.top, grasp: g, as: p}
+  - move_to: p.pre
+  - move_linear: p.place
+  - detach: p
+  - gripper: {width: open, target: die}
+  - move_linear: p.retreat
+```
+
+Its `steps` alone run the same two parts; the `actions` decide the lift (here 0.10 m up).
+
+### `PlanInvalid` messages and fixes
+
+| Message contains | Fix |
+|---|---|
+| `the actions must start with a sample` | begin with the pick part's `sample` |
+| `names no candidate sampled earlier` | sample the binding before referring to it, or fix the name's spelling |
+| `names candidate 'g', not this part's 'p'` | refer to the current part's binding (`p.pre`, not `g.pre`) |
+| `is not a pose of a place candidate` | use that binding's poses: grasp `pre` / `grasp`, place `pre` / `place` / `retreat` |
+| `gripper target ... is not this part's object` / `close names no target` | name the object being picked or placed |
+| `puts down 'mat', but its grasp 'g' holds 'die'` | set the place `sample`'s `object` to the grasped object |
+| `a pick part runs ...; the first version runs ...` | put the part's actions in the order above |
+| `must place what is held` / `ends holding` / `one grasp candidate` | one attach per pick, one detach per place |
+| a schema message naming an unknown key (e.g. `push`) | only the six actions exist |
+
 ## Validate
 
 ```bash
 python scripts/datagen/run_generated_scenario.py --scenario output/<exp>/<name>.yaml --materialize-only
 ```
 
-This validates the schema, solves the relations for `--seed` and lowers the
-scenario. Promote it into `scenarios/` only after it validates and passes a smoke run.
+This validates the schema, solves the relations for `--seed`, loads the plan file
+(a `PlanInvalid` names the first bad action) and lowers the scenario; it needs no GPU. Promote it into `scenarios/` only after it validates and passes a smoke run.

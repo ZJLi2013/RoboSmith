@@ -185,7 +185,8 @@ OLD_KEYS = {"teacher": "name", "plan": "actions"}
 
 
 class PlanInvalid(ValueError):
-    """A plan the first version cannot run: an unknown action, an unbound reference, or holding twice."""
+    """A plan the first version cannot run: an unknown action, a reference or object of another part, or holding
+    twice."""
 
 
 def load_scenario(
@@ -280,29 +281,47 @@ def load_plan(path: Path) -> list[dict]:
 
 
 def check_plan(plan: list[dict]) -> list[dict]:
-    """``plan`` unchanged when every action is a first-version meta action, every ``<binding>.<pose>`` names a
-    pose of a candidate sampled earlier, and the plan attaches at most once and detaches what it holds."""
+    """``plan`` unchanged when every action is a first-version meta action, the plan starts with a ``sample``, every
+    reference names a pose of the candidate its own part sampled, a place puts down the object its grasp holds, a
+    gripper ``target`` is the part's object (a close names it), and the plan attaches at most once and detaches what
+    it holds."""
     try:
         jsonschema.validate(plan, PLAN_SCHEMA["properties"]["actions"])
     except jsonschema.ValidationError as e:
         raise PlanInvalid(e.message) from None
+    if "sample" not in plan[0]:
+        raise PlanInvalid("the actions must start with a sample")
     bound: dict[str, dict] = {}
+    part: dict = {}
     held = None
     attached = False
     for i, step in enumerate(plan):
         (name, arg), = step.items()
         refs = [arg] if isinstance(arg, str) else []
         if name == "sample":
-            if arg["kind"] == "place" and bound.get(arg.get("grasp"), {}).get("kind") != "grasp":
-                raise PlanInvalid(f"step {i}: place sample needs a bound grasp, got {arg.get('grasp')!r}")
-            bound[arg["as"]] = arg
+            if arg["kind"] == "place":
+                grasp = bound.get(arg.get("grasp"), {})
+                if grasp.get("kind") != "grasp":
+                    raise PlanInvalid(f"step {i}: place sample needs a bound grasp, got {arg.get('grasp')!r}")
+                if arg["object"] != grasp["object"]:
+                    raise PlanInvalid(f"step {i}: place sample {arg['as']!r} puts down {arg['object']!r}, "
+                                      f"but its grasp {arg['grasp']!r} holds {grasp['object']!r}")
+            bound[arg["as"]] = part = arg
         for ref in refs:
             key, _, pose = ref.partition(".")
             spec = bound.get(key)
             if spec is None:
                 raise PlanInvalid(f"step {i}: {name} {ref!r} names no candidate sampled earlier")
+            if spec is not part:
+                raise PlanInvalid(f"step {i}: {name} {ref!r} names candidate {key!r}, not this part's {part['as']!r}")
             if pose and pose not in BINDING_POSES[spec["kind"]]:
                 raise PlanInvalid(f"step {i}: {ref!r} is not a pose of a {spec['kind']} candidate")
+        if name == "gripper":
+            target = arg.get("target")
+            if target is None and arg["width"] == "close":
+                raise PlanInvalid(f"step {i}: gripper close names no target")
+            if target is not None and target != part["object"]:
+                raise PlanInvalid(f"step {i}: gripper target {target!r} is not this part's object {part['object']!r}")
         if name == "attach":
             if attached or bound[arg]["kind"] != "grasp":
                 raise PlanInvalid(f"step {i}: attach {arg!r} must be the plan's one grasp candidate")
@@ -357,8 +376,6 @@ def actions_to_intents(actions: list[dict], assets: dict) -> tuple[SkillIntentSe
     """``check_plan``-checked actions -> one pick or place intent per part (a ``sample`` and the actions up to the
     next one), each carrying its part as ``actions``, plus a frame for every place target they use."""
     starts = [i for i, item in enumerate(actions) if "sample" in item] + [len(actions)]
-    if starts[0] != 0:
-        raise PlanInvalid("the actions must start with a sample")
     intents, targets = [], {}
     for start, end in zip(starts, starts[1:]):
         part = actions[start:end]

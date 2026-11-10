@@ -23,7 +23,7 @@ ModifyPlanningScene（`attach` / `detach`）。
 
 ```mermaid
 flowchart LR
-    PF["plan 文件 actions<br/>或步骤表 steps"] --> LD["scenario.load<br/>按 sample 切成 pick / place 段<br/>steps 展开成公开组合的段<br/>check_part：顺序不对即 PlanInvalid"]
+    PF["plan 文件 actions<br/>或步骤表 steps"] --> LD["scenario.load<br/>按 sample 切成 pick / place 段<br/>steps 展开成公开组合的段<br/>check_plan / check_part：绑定或顺序不对即 PlanInvalid"]
     LD --> ER["EpisodeRun._plan<br/>按 SKILL_DEFS 分派技能"]
     ER --> SK["pick / place 原语<br/>候选顺序、试抓、place 预检"]
     SK --> MA["meta_actions<br/>段 → 动作列表"]
@@ -51,14 +51,16 @@ flowchart LR
 | `attach` | `PlanState` 事件，零运动 | 持物 = 刚体，`T_hand_object` 取自抓取绑定 |
 | `detach` | `PlanState` 事件，零运动 | 持物为空，物体留在放置位姿 |
 
-参数写法见[六动作 schema](acceptance.md#plan-文件的-actions六动作组合)。本版只接受一种组合顺序，可变的是物体、放置面与直线抬升的向量：
+参数、绑定规则与示例见 [plan 文件用法](../scenarios/AGENT_PROMPT.md#plan-file-optional)。本版只接受一种组合顺序，可变的是物体、放置面、绑定名与直线抬升的向量：
 
 ```text
 pick:  sample(grasp) · gripper(open) · move_to(g.pre) · move_linear(g.grasp) · gripper(close, target) · attach(g) · move_linear({direction, dist})
 place: sample(place | g) · move_to(p.pre) · move_linear(p.place) · detach(p) · gripper(open, target) · move_linear(p.retreat)
 ```
 
-公开组合的抬升是世界 +Z 0.10 m。`execution/meta_actions.py` 的 `check_part` 在加载时确认段内顺序，`pick_actions` / `place_actions`
+公开组合的抬升是世界 +Z 0.10 m。加载时 `scenario/load.py` 的 `check_plan` 核对绑定：每段的位姿与 attach / detach 引用自己那段
+`sample` 的绑定，place 放下的是它的 grasp 抓着的物体，`gripper.target` 是该段的物体（close 必须写出），不一致即 `PlanInvalid`、零物理步；
+`execution/meta_actions.py` 的 `check_part` 确认段内顺序，`pick_actions` / `place_actions`
 把段译成动作列表：运动段是 `RuntimeMotionWaypoint`（`finger_only` 即 `gripper`，`linear` 即 `move_linear`，其余是 `move_to`），
 持物变化是 `Attach` / `Detach` 项。`MotionExecutor.run` 是动作列表进运动链的唯一入口。
 
@@ -107,6 +109,7 @@ pick 已走过物理步之后组合即提交：place 被拒时 `EpisodeRun` 记 
 | Genesis 场景状态：快照、构型、状态指纹 | `SimEnv` |
 | 「这条轨迹能不能执行」、持物生命周期与接触许可规则 | `ExecutionGate`（许可规则只在 `permitted` 一处；读实际物理接触的验收用同模块的 `certified`，见 [certified 读数](acceptance.md#被测链路的-certified-读数)） |
 | 候选及其顺序（抓取）、place 的搬运目标 | 技能层（`run_pick` / `run_place`） |
+| plan 文件 `actions` 的引用与物体绑定 | `scenario.load.check_plan` |
 | plan 文件的 `actions` 切成 pick / place 段；只有 `steps` 时展开成公开组合的段 | `scenario.load`（`actions_to_intents`；`pick_part` / `place_part`） |
 | 把一段逐项译成动作列表：段的顺序、允许接触与 `Attach` / `Detach` 的位置 | `execution.meta_actions`（`check_part` / `pick_actions` / `place_actions`） |
 | 动作列表进运动链的入口 | `MotionExecutor.run`（拖拽的段也经它） |
@@ -228,10 +231,14 @@ connect 全程 548 次查询、10.9 s，签发 247 点，最大每步位移 4.99
 - F4（罩住）到「pick 先确认 place 可达」为止每片都是 10/10 零步拒绝，之后不再测，负例零执行由 CPU 测试覆盖。
 - `actions` 直接执行那一片上，同一份公开 plan 的 `steps` 与 `actions` 送门的轨迹与段完全相同，改段里的抬升距离就改变送门轨迹；
   die_01 单资产抓取 3/3。
+- 加载期绑定核对（[e20](../exps/r1/evidence/e20/README.md)，CPU）：place 段引用 `g.pre`、close 的 target 写成 `mat`、place 的 object
+  写成 `mat` 三种请求都在 `load_scenario` 交出技能前 `PlanInvalid`；把绑定 `g` / `p` 一致改名为 `hold` / `drop` 后，
+  送门的轨迹与段同公开组合逐项相同。
 - 单实例耗时从模板链路的约 50 s 涨到约 150–170 s：每次 connect 约 8–10 s，规划路径每 5 mm 一个物理步，
   place 在 standoff 处还有一段几乎不动的插值。
 
-冻结实现后的最终读数（F0 / F1 / F2 与留出族的 test seed）还没有读，口径见[认证口径](acceptance.md#认证口径)。
+公开三族是开发用的实验台，以上表的 playground 结果收口、不跑 test seed；冻结实现后只读一次留出族 F5 的 10 个 test seed，
+只报不判，还没有读，口径见[认证口径](acceptance.md#认证口径)。
 
 ## 已定 / 不做 / 限制
 
@@ -241,8 +248,6 @@ connect 全程 548 次查询、10.9 s，签发 247 点，最大每步位移 4.99
 - 本版只服务 pick / place：不做动作注册表与扩展接口，不做 `push`、`articulate`；关节体操作（开合抽屉）沿用 `drag_handle`，
   不过门、标 `ungated`，验收族里没有抽屉。
 - 不做组合内回溯与超出「抓法 × 放置」的组合搜索：pick 的候选循环加 place 预检就是全部搜索；多次 connect 之间不共享预算。
-- 加载期只核对段内动作顺序与引用是否指向更早的 `sample`、位姿名是否合法；不核对 place 段的位姿引用是否属于 place 绑定、
-  `gripper.target` 与 `place.object` 是否就是被操作的物体，执行时按段的默认候选执行。
 - 门与执行之间没有偏差界（见[机器人控制与回放](#机器人控制与回放)）；门判的是命令构型。
 - 抓取不用学习模型；夹爪为位置控制，约 0.2 kg 以上的物体会滑脱。
 

@@ -30,9 +30,11 @@ def test_each_development_family_has_the_same_composition(family):
 
 @pytest.mark.parametrize("edit, why", [
     (lambda p: [{"push": {"object": "die"}}] + p, "push"),
-    (lambda p: [{"move_to": "g.pre"}] + p, "names no candidate"),
+    (lambda p: [{"move_to": "g.pre"}] + p, "must start with a sample"),
+    (lambda p: [{"move_to": "q.pre"} if s == {"move_to": "g.pre"} else s for s in p], "names no candidate"),
     (lambda p: [{"move_to": "g.retreat"} if s == {"move_to": "g.pre"} else s for s in p], "not a pose"),
-    (lambda p: p + [{"attach": "g"}], "one grasp candidate"),
+    (lambda p: p + [{"sample": {"kind": "grasp", "object": "die", "as": "h"}}, {"attach": "h"}],
+     "one grasp candidate"),
     (lambda p: [s for s in p if "detach" not in s], "ends holding"),
     (lambda p: [s for s in p if "attach" not in s], "must place what is held"),
 ])
@@ -103,6 +105,39 @@ def test_a_composition_in_another_order_is_refused_at_load(tmp_path):
     scenario = _pair(tmp_path, attach_first)
     with pytest.raises(PlanInvalid, match="the first version runs"):
         load_scenario(scenario, seed=100)
+
+
+@pytest.mark.parametrize("old, new, why", [
+    ("  - move_to: p.pre\n", "  - move_to: g.pre\n", "names candidate 'g', not this part's 'p'"),
+    ("{width: close, target: die}", "{width: close, target: mat}", "target 'mat' is not this part's object 'die'"),
+    ("{width: close, target: die}", "{width: close}", "close names no target"),
+    ("{kind: place, object: die,", "{kind: place, object: mat,", "puts down 'mat', but its grasp 'g' holds 'die'"),
+])
+def test_a_reference_or_object_of_another_part_is_refused_at_load(tmp_path, old, new, why):
+    text = (PLANS / "f0_open.yaml").read_text(encoding="utf-8")
+    assert old in text
+    with pytest.raises(PlanInvalid, match=re.escape(why)):
+        load_scenario(_pair(tmp_path, text.replace(old, new, 1)), seed=100)
+
+
+def test_bindings_renamed_consistently_load_the_same_parts(tmp_path):
+    text = (PLANS / "f0_open.yaml").read_text(encoding="utf-8")
+    renamed = re.sub(r"\bg\b", "hold", re.sub(r"\bp\b", "drop", text[text.index("\nactions:"):]))
+    intents = _intents(_pair(tmp_path, text[:text.index("\nactions:")] + renamed))
+    default = _intents(ACCEPTANCE / "f0_open.yaml")
+    assert [(i.name, i.target) for i in intents] == [(i.name, i.target) for i in default]
+    assert intents[1].params["actions"][0]["sample"] == {**default[1].params["actions"][0]["sample"],
+                                                         "grasp": "hold", "as": "drop"}
+
+
+def _usage_example() -> str:
+    doc = (ACCEPTANCE.parents[0] / "AGENT_PROMPT.md").read_text(encoding="utf-8")
+    return re.search(r"<!-- example: f0_open -->\n```yaml\n(.*?)```", doc, re.S)[1]
+
+
+def test_the_usage_example_loads_as_the_public_composition(tmp_path):
+    example = _intents(_pair(tmp_path, _usage_example()))
+    assert [i.params["actions"] for i in example] == [i.params["actions"] for i in _intents(ACCEPTANCE / "f0_open.yaml")]
 
 
 def test_a_file_mixing_an_old_key_with_its_new_one_is_rejected(tmp_path):
