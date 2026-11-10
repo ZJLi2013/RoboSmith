@@ -5,6 +5,8 @@ import json
 import sys
 from pathlib import Path
 
+import numpy as np
+
 from robotsmith.execution.gate import Span
 
 _spec = importlib.util.spec_from_file_location(
@@ -84,6 +86,36 @@ def test_a_trial_restore_does_not_undo_its_steps():
     mon.enter("replay", PICK)
     env.step()
     assert mon.steps == {"trial": 3, "replay": 1} and mon.violating["trial"] == 1
+
+
+ACCEPTANCE = Path(__file__).resolve().parents[1] / "scenarios" / "acceptance"
+
+
+def _packages(path, seeds):
+    from robotsmith.scenario_runtime import materialize_candidate
+    return {s: materialize_candidate(path, seed=s) for s in seeds}
+
+
+def test_a_family_whose_fixtures_stay_put_builds_one_scene():
+    assert certify.scene_groups(_packages(ACCEPTANCE / "f0_open.yaml", range(10))) == [list(range(10))]
+
+
+def test_a_fixture_that_moves_between_seeds_gets_a_scene_of_its_own(tmp_path):
+    (tmp_path / "plans").mkdir()
+    (tmp_path / "plans" / "moving.yaml").write_bytes((ACCEPTANCE / "plans" / "f0_open.yaml").read_bytes())
+    text = (ACCEPTANCE / "f0_open.yaml").read_text(encoding="utf-8")
+    (tmp_path / "moving.yaml").write_text(
+        text + "variations: {mat.anchor_xy: [[0.45, -0.22], [0.45, 0.22]]}\n", encoding="utf-8")
+    packages = _packages(tmp_path / "moving.yaml", range(8))
+    groups = certify.scene_groups(packages)
+
+    def mat(seed):
+        return next(o.fixed_position for o in packages[seed].legacy_scene.objects if o.name_override == "mat")
+
+    assert len(groups) == 2 and sorted(s for g in groups for s in g) == list(range(8))
+    for group in groups:
+        assert all(np.allclose(mat(s), mat(group[0])) for s in group)
+    assert not np.allclose(mat(groups[0][0]), mat(groups[1][0]))
 
 
 def test_a_crashed_instance_is_retried_once_and_both_rows_are_kept(tmp_path):

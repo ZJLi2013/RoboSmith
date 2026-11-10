@@ -3,7 +3,8 @@
   python scripts/acceptance/certify.py --family f0_open --split test --out out/f0_open_test
 
 Each instance runs the family's plan file (its ``actions`` when present) once through ``EpisodeRun``
-(skills, execution gate, executor) on the seed's layout. Every physics step after the reset is read for the contacts it resolved and judged by
+(skills, execution gate, executor) on the seed's layout: one scene is built per group of seeds whose scenes differ
+only in where the die starts (``scene_groups``), and each instance moves the die to its seed's start. Every physics step after the reset is read for the contacts it resolved and judged by
 ``gate.certified`` for the span being executed: trial and replay steps by the verified motion's spans, step
 and task settles by the last replayed span. A positive instance is certified when the task predicate holds
 and no step of any stage broke the rule; a negative one when its first step is refused and nothing ran
@@ -189,6 +190,18 @@ class _NoDataset:
         pass
 
 
+def scene_groups(packages: dict) -> list[list[int]]:
+    """The seeds in groups one built scene serves: within a group the scene differs only in where the die starts,
+    the one thing ``run_instance`` changes between instances."""
+    groups: dict[str, list[int]] = {}
+    for seed, pkg in packages.items():
+        scene = pkg.legacy_scene
+        objects = [(o.name_override, o.asset_query, o.yaw_deg, sorted((o.joint_init or {}).items()),
+                    None if o.name_override == "die" else _tolist(o.fixed_position)) for o in scene.objects]
+        groups.setdefault(repr((objects, _tolist(scene.table_size), scene.table_height)), []).append(seed)
+    return list(groups.values())
+
+
 def seeds_for(path: Path, split: str, limit: int | None) -> list[int]:
     lo, hi = yaml.safe_load(path.read_text(encoding="utf-8"))["split"][split]
     return list(range(lo, hi + 1))[:limit]
@@ -219,21 +232,25 @@ def main() -> None:
     shutil.copy(path, args.out / path.name)
     shutil.copy(plan_file, args.out / f"plan_{path.name}")
     packages = {s: materialize_candidate(path, seed=s) for s in seeds}
-    first = packages[seeds[0]].legacy_scene
-    env = SimEnv.build(first, seed=seeds[0])
-    fixed = {o.name_override: o.fixed_position for o in first.objects if o.name_override != "die"}
-    for pkg in packages.values():
-        assert all(np.allclose(o.fixed_position, fixed[o.name_override])
-                   for o in pkg.legacy_scene.objects if o.name_override != "die"), "fixtures move between seeds"
-    mon = Monitor(env)
+    groups = scene_groups(packages)
+    built = {}
 
     def one(seed):
-        mon.start()
-        return {"split": args.split, **run_instance(env, packages[seed], args.family, mon, record_episode)}
+        group = next(g for g in groups if seed in g)
+        if built.get("group") is not group:
+            if built:
+                import genesis as gs  # one Genesis session per process: a new scene needs the old one torn down
+                gs.destroy()
+                built.clear()
+            env = SimEnv.build(packages[group[0]].legacy_scene, seed=group[0])
+            built.update(group=group, env=env, mon=Monitor(env))
+        built["mon"].start()
+        return {"split": args.split,
+                **run_instance(built["env"], packages[seed], args.family, built["mon"], record_episode)}
 
     prior = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()] if args.resume else []
     with log.open("a" if args.resume else "w", encoding="utf-8") as fh:
-        rows = run_batch(seeds, one, fh, prior=prior, failed={"certified": False},
+        rows = run_batch([s for g in groups for s in g], one, fh, prior=prior, failed={"certified": False},
                          show=("seed", "attempt", "outcome", "first_violation", "seconds"),
                          running=log.with_suffix(".running"))
     outcomes = Counter(r["outcome"] for r in rows)
