@@ -43,9 +43,9 @@ acceptance families, `main`, playground seeds 0–9, one MI300X:
 | F1 wall gap | a low wall 1 cm taller than the object on one side | 10/10 |
 | F2 over barrier | a 20 cm wall between the object and the mat | 10/10 |
 
-Certified = the task holds and the executed motion, monitored at every physics step, makes no illegal contact. The final
-reading on test seeds and the sealed held-out family comes after the implementation is frozen
-([acceptance](docs/acceptance.md)).
+Certified = the task holds and the executed motion, monitored at every physics step, makes no illegal contact. On the
+held-out family F5, sealed throughout development and read once on the frozen implementation: test seeds 100–109,
+F5 10/10 certified ([acceptance](docs/acceptance.md), [results](docs/manipulation.md#结果)).
 
 The clips and table below are the old chain (hard-coded waypoints, collision-blind free segments) on curated scenarios,
 2026-10-30. Those scenarios load on the current chain but have not been rerun; inserting into the lower shelf is a side

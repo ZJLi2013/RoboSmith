@@ -237,8 +237,9 @@ connect 全程 548 次查询、10.9 s，签发 247 点，最大每步位移 4.99
 - 单实例耗时从模板链路的约 50 s 涨到约 150–170 s：每次 connect 约 8–10 s，规划路径每 5 mm 一个物理步，
   place 在 standoff 处还有一段几乎不动的插值。
 
-公开三族是开发用的实验台，以上表的 playground 结果收口、不跑 test seed；冻结实现后只读一次留出族 F5 的 10 个 test seed，
-只报不判，还没有读，口径见[认证口径](acceptance.md#认证口径)。
+公开三族是开发用的实验台，以上表的 playground 结果收口、不跑 test seed。冻结实现（`464edf4`）后读了一次开发期没读过的
+留出族：F5 test seed 100–109 为 10/10 certified，一次重试也没有，单实例约 170–190 s（[e21](../exps/r1/evidence/e21/README.md)）；
+只报不判，口径见[认证口径](acceptance.md#认证口径)。
 
 ## 已定 / 不做 / 限制
 
