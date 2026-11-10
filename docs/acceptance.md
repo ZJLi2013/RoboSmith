@@ -134,12 +134,12 @@ python scripts/acceptance/certify.py --scenario scenarios/acceptance/f1_wall_gap
 - **每个物理步都判**：`SimEnv.step()` 每步回调一次，读该步解出的接触，按正在执行的 span 用
   `robotsmith.execution.gate.certified` 判。试抓、正式回放用已验证轨迹的 span，步骤与任务判定的 settle 用末个
   已回放的 span；reset 及其静止计步不判；不属于任何阶段的物理步算违规。试抓的快照恢复不抹掉它的接触计数。
-- **每组 seed 一个场景**：实例之间 certify 只把 die 移到本 seed 的起点。`scene_groups` 按「除 die 起点外场景相同」（物体、资产、
+- **每组 seed 一个场景**：实例之间 certify 只把 plan 里 pick 的物体移到本 seed 的起点。`scene_groups` 按「除这些物体的起点外场景相同」（物体、资产、
   yaw、关节初值、其余物体位置、桌面）把 seed 分组，每组在第一次运行时建一次场景；换组前 `gs.destroy()`，因为 Genesis 一个进程
   只允许一次 `gs.init`。公开族的固定件不随 seed 变，只建一次场景；固定件随 seed 变化的族按组各建一次
   （mat 随 seed 移动的 F0 副本，两组各一例，在 GPU 上验证过）。
-- **规则**是执行门的 `permitted` 再加一条：die 没被抓着时只能碰桌面、放置目标与机器人手指。门判的是静态位姿，
-  认证判的是实际物理，没被抓的 die 碰到墙说明它被推了。和见证的差别：搬运中 die 擦到桌面也算违规。
+- **规则**是执行门的 `permitted` 再加一条：被操作的物体没被抓着时只能碰桌面、放置目标与机器人手指。门判的是静态位姿，
+  认证判的是实际物理，没被抓的物体碰到墙说明它被推了。和见证的差别：搬运中物体擦到桌面也算违规。
 - **certified**：正例要任务谓词成立且零违规；负例要第一步以 `Refused` 的标签（`search_exhausted` 等）停下且 reset 之后
   零物理步。其余结果分别记停下的标签（`search_exhausted`、`execution_failed`）、`violation`、`task_failed`、`init_failed`（静止检查不过）与 `error`（抛异常，重试一次，
   两次尝试都留在 `instances.jsonl`，取后一次）。Genesis 偶尔在某个物理步上挂住，进程内中断不了它，所以超时在进程外：
