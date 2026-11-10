@@ -124,6 +124,34 @@ pick 已走过物理步之后组合即提交：place 被拒时 `EpisodeRun` 记 
 
 `question` 按这几类分别计数。playbook 里「手指对支撑面被门拒绝」的签名指向 `add_candidate`：由资产补一个更高的候选。
 
+### 公开方法怎样去掉候选余量
+
+推荐删掉 `width_margin`：闭合宽度不超过 `2 × finger_open`（80 mm）即生成候选，下探时手指蹭到物体交给执行门与试抓判。
+三项公开方法都只用夹爪的硬开口与碰撞模型筛候选，不设开口余量；本项目的 pick 下探段不开放任何接触（`allow` 为空，
+`execution/meta_actions.py` 只在闭合段给 `grip`），试抓再按物理步回放 pick 段。
+
+| 方法 | 候选怎么来 | 开口与夹深 | 碰撞与筛选 | 可迁移 | 限制 |
+|---|---|---|---|---|---|
+| GPD（[ten Pas 等，IJRR 2017](https://arxiv.org/abs/1706.09911)，[实现](https://github.com/atenpas/gpd)） | 点云采样点的局部坐标系上，网格搜手指位置与绕轴转角 | 开口取夹爪规格（默认配置 `max_aperture` 0.085）；手沿接近方向推进到手指或手掌碰到点云为止，夹深由接触定 | 手的碰撞模型不碰点云，且两指之间有点；再由 CNN 打分 | 碰撞判据替代余量；夹深由几何接触定 | 输入是点云；真机把开口限在 Baxter 行程 3–7 cm，「抓前手指碰物体」的失败归于标定与点云误差 |
+| Dex-Net 2.0 antipodal 采样（[Mahler 等，RSS 2017](https://arxiv.org/abs/1703.09312)，[`grasp_sampler.py`](https://github.com/BerkeleyAutomation/dex-net/blob/master/src/dexnet/grasping/grasp_sampler.py)） | 表面点加摩擦锥内的方向，沿轴在 SDF 上合拢手指求第二接触 | 只受 `gripper.min_width` / `max_width` 限制 | 两接触都在摩擦锥内（force closure） | 摩擦锥判据（p4 的离线 `quality.py` 已用） | 需要 SDF；分析指标，不是仿真结果 |
+| ACRONYM（[Eppner 等，ICRA 2021](https://arxiv.org/abs/2011.09584)） | 网格上 antipodal 采样 | 闭合到力阈值或完全合拢 | 手碰物体或两指间不含物体即丢；FleX 里闭合后摇晃，两指仍接触算成功 | 仿真筛选即本项目的试抓 | 摇晃时无重力；1774.4 万次仿真抓取 59.21% 成功是数据集标签，与 certified 不同口径 |
+
+GPD 的 93%（主动点云，密集杂物清理，真机 Baxter）同样是另一任务与口径，不与本项目读数比较。
+
+当前候选里的常数：
+
+| 常数 | 值 | 类别 | 去向 |
+|---|---|---|---|
+| `finger_open`、`tcp_offset`、`pad_below_tcp`、`pad_above_tcp` | 0.04、0.1034、0.008、0.009 m | 夹爪尺寸（Genesis `panda.xml`） | 保留 |
+| `width_margin` | 0.01 m | 经验余量 | 删 |
+| 侧抓的中心与高度 | 有向包围盒中心、中高 | 由物体几何导出，没有常数 | 不改 |
+| `approach_clearance`、`lift` | 0.12、0.17 m | pre-grasp 与抬升的运动距离，不是候选几何 | 不在本推荐内 |
+| `finger_closed` | 0.01 m | 闭合目标（控制量）；p2 改为 0.0 没有消除离手 | 不在本推荐内；窄于 20 mm 的物体夹不紧时再改 |
+
+删掉余量后，`block_01`、`mug_02`、`die_01` 的候选与现在逐个相同（各 8 个，水平宽度最大 64 mm）；`assets/` 里 23 个资产没有
+一个水平宽度落在 70–80 mm，现有读数都不变。门不留跟踪间隙（见[机器人控制与回放](#机器人控制与回放)），贴边候选在回放里
+可能蹭到物体，这类候选靠试抓失败；这一点要等有 70–80 mm 的资产才能在仿真里核对。
+
 ## 执行门的接口与契约
 
 门在 `robotsmith/execution/gate.py`。每个概念一个 owner：
