@@ -10,7 +10,7 @@
 #   ROCm 6.4.3 + PyTorch 2.6 + Genesis 0.4.5 (Quadrants 0.5.2)
 #   + HSA_OVERRIDE_GFX_VERSION=9.4.2 (kept set, NOT unset)
 #
-# The current rocm7.2/Genesis-1.0.0 image (robotsmith:rocm-headless-graspgen)
+# The rocm7.2/Genesis-1.0.0 image (docker/Dockerfile.gfx950, robotsmith:rocm-headless)
 # stays the gfx950 runtime; this image is gfx942-only.
 #
 # Build from the repository root:
@@ -68,8 +68,7 @@ COPY tests ./tests
 
 # Install the package WITHOUT the [genesis] extra so Genesis stays at the
 # gfx942-safe 0.4.5 pinned above (the extra would pull genesis-world>=0.2 ->
-# 1.0.0 and reintroduce the crash). lerobot is added below; GraspGen (learned
-# grasp) is enabled via the spconv_rocm layer further down.
+# 1.0.0 and reintroduce the crash). lerobot is added below.
 RUN python -m pip install -e ".[dev]" \
     && python -m pip install \
       addict einops h5py hydra-core imageio meshcat networkx>=3.0 \

@@ -1,8 +1,8 @@
 """sim — simulation + recording substrate for RoboSmith.
 
-The lower layer of the data-generation stack: run one episode in the simulator
-and record it. The rollout pipeline (``robotsmith.rollout``) drives this to
-produce datasets.
+Runs one episode in the simulator: the scenario runtime and the acceptance
+scripts step it through ``SimEnv``, and ``recorder`` optionally writes the
+frames to a LeRobot dataset.
 
 Submodules:
   franka    — Franka Panda constants and EE utilities

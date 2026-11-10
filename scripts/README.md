@@ -21,10 +21,6 @@ Not product logic — ROCm environment plumbing:
 - `_install_scatter_shim.py`: `torch_scatter` shim installed by the Docker build.
 - `run_scenario.sh`: canonical env-driven e2e launcher; defaults to the MI300 / gfx942 image; override `NAME`/`SCENARIO`/`IMAGE`, and the host mounts `REPO`/`HF_CACHE`.
 
-## Top-Level
-
-- `train_smolvla.py`: policy training entry.
-
 ## Local-only diagnostics (gitignored, not shipped)
 
 - `scripts/ablation_study/` (grasp ablation harness) 
