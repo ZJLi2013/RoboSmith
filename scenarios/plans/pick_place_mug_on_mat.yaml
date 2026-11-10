@@ -1,0 +1,4 @@
+name: pick_place_mug_on_mat
+steps:
+  - pick: mug
+  - place: {target: mat.top}

@@ -40,7 +40,8 @@ kernels on that architecture. The commands below use the gfx942 tag; on MI350 us
 docker run --rm --device=/dev/kfd --device=/dev/dri --group-add video \
   -v $HOME/RoboSmith:/workspace/robotsmith robotsmith:gfx942-rocm6.4.3-genesis0.4.5 \
   bash -lc 'cd /workspace/robotsmith && python -m robotsmith.assets.fetch && \
-            python scripts/acceptance/certify.py --family f0_open --split playground --limit 1 --out output/f0'
+            python scripts/acceptance/certify.py --scenario scenarios/acceptance/f0_open.yaml --split playground \
+              --limit 1 --out output/f0'
 ```
 
 On a shared node, pick a free GPU with `-e HIP_VISIBLE_DEVICES=<n>`. The first run takes about 6 minutes on one
@@ -50,9 +51,10 @@ MI300X, kernel compilation included. It ends with `f0_open playground: 1/1 certi
   illegal contact; otherwise the label it stopped on and the first violation;
 - `summary.json`, and copies of the family and plan files it ran.
 
-Drop `--limit 1` for all ten playground seeds, or pass another family: `f1_wall_gap`, `f2_over_barrier`, `f4_caged`
-(the negative one: certified means refused with zero steps). What each family varies and its readings:
-[acceptance.md](acceptance.md).
+Drop `--limit 1` for all ten playground seeds, or pass another family in `scenarios/acceptance/`: `f1_wall_gap`,
+`f2_over_barrier`, `f4_caged` (the negative one: certified means refused with zero steps). What each family varies and
+its readings: [acceptance.md](acceptance.md). Any scenario with a `split` and a plan file in its `plans/` directory
+certifies the same way, e.g. `--scenario scenarios/pick_place_block_on_mat.yaml`.
 
 ## 4. Run your own scenario
 

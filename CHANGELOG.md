@@ -21,8 +21,11 @@ All notable user-facing changes are documented here. This project follows Semant
   physics step.
 - Acceptance families under `scenarios/acceptance/`, each varying one constraint: F0 open table, F1 wall gap,
   F2 over barrier, F4 caged (unsolvable), and the held-out F5. `scripts/acceptance/witness.py` shows each positive
-  instance solvable independently of the chain under test; `scripts/acceptance/certify.py` runs the chain and judges
-  every physics step, writing `instances.jsonl` and `summary.json`.
+  instance solvable independently of the chain under test; `scripts/acceptance/certify.py --scenario <yaml>` runs the
+  chain on any scenario with a `split` and judges every physics step, writing `instances.jsonl` and `summary.json`.
+  The objects each instance moves are the plan's pick targets, not a fixed name.
+- `scenarios/pick_place_block_on_mat.yaml` and `scenarios/pick_place_mug_on_mat.yaml`: the F0 layout with `block_01`
+  and `mug_02` in place of the die.
 - `scripts/acceptance/batch.supervise`: the witness and certify batches run in a worker process; an attempt past
   600 s has its process group killed from outside, gets an `error` row, and the batch resumes. This replaces the
   in-process timer, which a simulator step holding the GIL could block.

@@ -110,8 +110,8 @@ F2 只跑了 2 个实例：穿透接触让求解器变慢，批次在第 3 个�
 
 - **位置**：族定义、plan 文件、见证参数（`witness.json`）与约束和选择理由（`README.md`，封存）在
   `scenarios/acceptance/heldout/`，逐实例结果只放在实验记录的封存目录里。公共 `witness.py` 只有
-  `--heldout` 机制，不含任何留出族名或参数；`certify.py` 按 `--family` 解析 `scenarios/acceptance/<family>.yaml`，
-  留出族只在解封读数时以 `--family heldout/<name>` 显式给出。
+  `--heldout` 机制，不含任何留出族名或参数；`certify.py` 读 `--scenario` 给出的场景文件，留出族只在解封读数时以
+  `--scenario scenarios/acceptance/heldout/<name>.yaml` 显式给出。
 - **冻结**：只有构造它的 task 写这些文件；test 批次在已提交的输入上运行，manifest 记下 commit 与各文件的 sha256，
   之后只读。批次失败或输入未提交时不写 manifest，修正后整批重跑。
 - **改动留出文件**：封存期间只允许不改字节的迁移（如移动路径），sha256 保持与 manifest 一致；改内容等于烧毁。
@@ -126,8 +126,10 @@ F2 只跑了 2 个实例：穿透接触让求解器变慢，批次在第 3 个�
 `scripts/acceptance/certify.py` 对每个实例用 plan 文件加载出的技能（有 `actions` 时按它）跑一次 `EpisodeRun`（技能、执行门、执行器），不渲染：
 
 ```text
-python scripts/acceptance/certify.py --family f1_wall_gap --split test --out out/f1_test
+python scripts/acceptance/certify.py --scenario scenarios/acceptance/f1_wall_gap.yaml --split test --out out/f1_test
 ```
+
+它读任意带 `split` 的 scenario：每个实例要挪的是 plan 里 pick 的物体，不认物体名；难度读数只对 `witness.py` 里的族给出。
 
 - **每个物理步都判**：`SimEnv.step()` 每步回调一次，读该步解出的接触，按正在执行的 span 用
   `robotsmith.execution.gate.certified` 判。试抓、正式回放用已验证轨迹的 span，步骤与任务判定的 settle 用末个

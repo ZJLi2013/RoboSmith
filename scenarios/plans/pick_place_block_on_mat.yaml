@@ -1,0 +1,4 @@
+name: pick_place_block_on_mat
+steps:
+  - pick: block
+  - place: {target: mat.top}
