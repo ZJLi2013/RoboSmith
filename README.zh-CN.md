@@ -4,7 +4,7 @@
 
 **在真实场景的仿真孪生里，评测 agentic 机器人与 VLA；运行在 AMD ROCm 上。**
 
-v0.1.0（2026-10-20）是合成数据管线；此后的主线是评测，数据生成原样保留。
+v0.1.0（2026-10-20）是合成数据管线；此后的主线是评测。跑 scenario 仍会写 LeRobot 数据集。
 
 ## Goal
 
@@ -37,28 +37,8 @@ RoboSmith 自带的操作是六动作组合：plan 文件的 `actions` 直接执
 | F2 越障搬运 | 物体与放置垫之间有 20 cm 高墙 | 10/10 |
 
 certified = 任务成立，且逐物理步监测的实际执行零违规接触。开发期全程封存的留出族在冻结实现上读了一次：test seed 100–109，
-F5 10/10 certified（[验收](docs/acceptance.md)、[结果](docs/manipulation.md#结果)）。
-
-下面的视频与表是 2026-10-30 旧链路（写死的航点、不查碰撞的自由段）在精选 scenario 上的结果。这些 scenario 在当前链路上能加载，
-还没有重跑；放进下层搁板是侧插，不在本版范围。
-
-<table align="center">
-  <tr>
-    <td width="50%"><a href="videos/pick_place_onto_supporter_ep000_up.mp4"><img src="videos/pick_place_onto_supporter_ep000_up.gif" width="100%"></a></td>
-    <td width="50%"><a href="videos/pick_place_table_to_lower_shelf_ep000_up.mp4"><img src="videos/pick_place_table_to_lower_shelf_ep000_up.gif" width="100%"></a></td>
-  </tr>
-  <tr>
-    <td align="center">从上层取骰子，插入下层</td>
-    <td align="center">从桌上取骰子，插入下层搁板</td>
-  </tr>
-</table>
-
-| Scenario（seed 0，旧链路） | 结果 |
-|---|---|
-| `pick_place_onto_supporter`、`pick_place_table_to_lower_shelf` | ✅ |
-| `pick_place_into_drawer` | ❌ 规划服务在放置时出错，搬运不检查碰撞，物体脱手 |
-| `pick_one_of_three` | ❌ 抓取失败（IK 跳支或苹果滑脱） |
-| `behavior_living_radio`、`office48_desk`、`office48_phone`（导入场景） | ❌ 物体一放下就被顶开或顶高；导入当时是能静止的 |
+F5 10/10 certified（[验收](docs/acceptance.md)、[结果](docs/manipulation.md#结果)）。[`scenarios/`](scenarios/) 里的其他
+scenario 能在这条链路上加载，但在它上面没有读数。
 
 MVP 还要做的，按顺序：
 

@@ -1,7 +1,8 @@
 # Contributing
 
-Thanks for improving RoboSmith. Read the [README](README.md) first: RoboSmith turns sim-ready assets into
-scenes, expert trajectories, and LeRobot datasets, and each layer below has one owner in the code.
+Thanks for improving RoboSmith. Read the [README](README.md) first: RoboSmith evaluates agentic robots and VLAs in
+a simulated twin of a real scene, its own manipulation is a gated composition of six meta actions, and each layer
+below has one owner in the code.
 Participation is governed by [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
 
 ## All changes go through pull requests
@@ -25,9 +26,12 @@ Name the layer that owns the change:
 |---|---|
 | Assets | `robotsmith/assets/`, `assets/` |
 | Scenario authoring | `robotsmith/scenario/`, `robotsmith/scenes/`, `scenarios/` |
+| Tasks and success predicates | `robotsmith/tasks/` |
+| Scenario runtime (load, materialize, run, hand off between skills) | `robotsmith/scenario_runtime/` |
 | Grasp | `robotsmith/grasp/` |
 | Motion and execution | `robotsmith/motion/`, `robotsmith/execution/`, `robotsmith/skills/` |
-| Rollout and data export | `robotsmith/rollout/`, `robotsmith/sim/`, `scripts/datagen/` |
+| Rollout and recording | `robotsmith/rollout/`, `robotsmith/sim/`, `scripts/datagen/` |
+| Acceptance | `scenarios/acceptance/`, `scripts/acceptance/` |
 | Runtime images | `docker/`, `scripts/setup/` |
 
 Explain why the current owner cannot absorb the change before adding a new module.
@@ -88,8 +92,8 @@ A pull request contains:
 - compatibility notes for API, file-format, or dependency changes;
 - the AI disclosure required by [`AI_POLICY.md`](AI_POLICY.md).
 
-New behavior removes the path it replaces. Commit subjects follow the existing `type(scope): summary` style and
-state the resulting behavior. Keep unrelated changes in separate commits. User-facing changes get a line in
+New behavior removes the path it replaces. Commit subjects are a lowercase `area:` prefix and one sentence that
+states the resulting behavior (`execution: pick and place pass the execution gate before any physics step`). Keep unrelated changes in separate commits. User-facing changes get a line in
 [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Reporting security issues

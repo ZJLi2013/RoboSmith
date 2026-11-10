@@ -4,8 +4,8 @@ English | [中文](README.zh-CN.md)
 
 **Evaluate agentic robots and VLAs in a simulated twin of a real scene, on AMD ROCm.**
 
-v0.1.0 (2026-10-20) was a synthetic-data pipeline; development now targets evaluation, and data generation stays as
-it is.
+v0.1.0 (2026-10-20) was a synthetic-data pipeline; development now targets evaluation. A scenario run still records a
+LeRobot dataset.
 
 ## Goal
 
@@ -45,29 +45,8 @@ acceptance families, `main`, playground seeds 0–9, one MI300X:
 
 Certified = the task holds and the executed motion, monitored at every physics step, makes no illegal contact. On the
 held-out family F5, sealed throughout development and read once on the frozen implementation: test seeds 100–109,
-F5 10/10 certified ([acceptance](docs/acceptance.md), [results](docs/manipulation.md#结果)).
-
-The clips and table below are the old chain (hard-coded waypoints, collision-blind free segments) on curated scenarios,
-2026-10-30. Those scenarios load on the current chain but have not been rerun; inserting into the lower shelf is a side
-insertion, outside this version.
-
-<table align="center">
-  <tr>
-    <td width="50%"><a href="videos/pick_place_onto_supporter_ep000_up.mp4"><img src="videos/pick_place_onto_supporter_ep000_up.gif" width="100%"></a></td>
-    <td width="50%"><a href="videos/pick_place_table_to_lower_shelf_ep000_up.mp4"><img src="videos/pick_place_table_to_lower_shelf_ep000_up.gif" width="100%"></a></td>
-  </tr>
-  <tr>
-    <td align="center">pick the die off the upper shelf, insert it into the lower one</td>
-    <td align="center">pick the die off the table, insert it into the lower shelf</td>
-  </tr>
-</table>
-
-| Scenario (seed 0, old chain) | Result |
-|---|---|
-| `pick_place_onto_supporter`, `pick_place_table_to_lower_shelf` | ✅ |
-| `pick_place_into_drawer` | ❌ the planning service faults on the place; the transport runs without collision checks and drops the object |
-| `pick_one_of_three` | ❌ grasp fails (IK branch jumps, or the apple slips) |
-| `behavior_living_radio`, `office48_desk`, `office48_phone` (imported) | ❌ objects are pushed or lifted when placed; they rested when first imported |
+F5 10/10 certified ([acceptance](docs/acceptance.md), [results](docs/manipulation.md#结果)). The other scenarios in
+[`scenarios/`](scenarios/) load on this chain but have no readings on it.
 
 What the MVP needs, in order:
 
