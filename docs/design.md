@@ -33,7 +33,8 @@
 
 顺序：场景检查与操作先行（评测依赖它们），然后评测接口与报告，最后真实视频导入。数据生成时代的图像转 3D 后端、网格转 URDF、
 只被它们调用的资产命名目录（`assets/catalog.py`）与训练脚本已删除；资产生产只剩 agent 写的 Blender 程序与 AHa-3D 快照导入，
-其中 Blender 脚本（`blender/render.py`、`aha3d/export_roots.py`）与评审校准用例的 build 文件按路径运行，不被 import。还留着的是录制：scenario 运行时每个控制步写 LeRobot 数据集（见评测一节的问题）。
+不被 import、按路径或名字运行的模块：Blender 脚本（`blender/render.py`、`aha3d/export_roots.py`）、评审校准用例的 build 文件、
+`python -m robotsmith.assets.fetch`，以及评审 agent 按 `REVIEW.md` 运行的 `assets/review/probe.py`。还留着的是录制：scenario 运行时每个控制步写 LeRobot 数据集（见评测一节的问题）。
 
 ## 场景：真实场景变成可交互的孪生
 

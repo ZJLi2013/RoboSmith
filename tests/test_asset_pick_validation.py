@@ -1,5 +1,6 @@
-"""Rollout wiring for asset-pick validation in _make_scene / _make_task: the
-fixed "object" name and the name-derived grasp category.
+"""Asset-pick validation rollout: _make_scene / _make_task (the fixed "object"
+name, the name-derived grasp category), the object pinned at object_xy before
+settling, and the pick run through an EpisodeRun.
 """
 
 import random

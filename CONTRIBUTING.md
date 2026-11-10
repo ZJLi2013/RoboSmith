@@ -46,6 +46,27 @@ git diff --check
 grasp, or rollout behavior also need a GPU end-to-end run in the ROCm image (`docker/README.md`); report the
 scenario, seed count, success rate, and image tag in the pull request.
 
+### What the tests cover
+
+- **Only code production reaches.** A module that loses its last production caller is deleted with its tests:
+  `tests/test_catalog.py` went with `robotsmith/assets/catalog.py` once the image-to-3D producers that called it were removed.
+- **Similar assertions stay when each tests its own owner.** Each meta action's `expand` has its own file
+  (`test_gripper.py`, `test_move_linear.py`); zero-frame and zero-settle cases appear both at the gate
+  (`test_execution_gate.py`) and in the runner (`test_place_completion.py`, `test_world_state.py`).
+- **Span labels are the ones production emits** (`approach`, `close`, `lift`, `transport`, ...). The gate judges a span by
+  `holding` and `allow` and uses the label only in its rejection message, so `test_execution_gate.py` may call a free
+  span `transit`.
+- **`to_legacy_*` in `robotsmith/scenario/adapters.py` is the current runtime path**, not a compatibility layer; its tests stay.
+- **GPU tests** (`test_gate_gpu.py`, `test_sim_queries_gpu.py`, `test_certify_gpu.py`) drive the gate, `SimEnv`'s scene
+  queries and the certify contact monitor on a real Genesis scene. They run when `ROBOSMITH_GPU_TESTS` is set; add `-s`
+  for the readings.
+- **Shared helpers live in `tests/conftest.py`**: `ClearEnv` (`test_asset_pick_validation.py`), the `gate` fixture,
+  and `pick_skill` / `place_skill` / `plan_skills` (`test_execution_gate.py`, `test_scenario_runtime.py`,
+  `test_skill_primitives.py`).
+- **A test module's docstring lists what that file covers, and names no other test file.** `test_asset_pick_validation.py`
+  covers the asset-pick rollout: `_make_scene` / `_make_task`, the object pinned at `object_xy` before settling, and the
+  pick run through an `EpisodeRun`; its docstring no longer points to a `test_cap_authoring` file that does not exist.
+
 ## Assets
 
 Every asset's `asset.json` names its license (`source.license`, SPDX). An asset without a redistributable license
