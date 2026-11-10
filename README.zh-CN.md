@@ -27,7 +27,19 @@ task                 certified  success  failures
 
 ## 现状
 
-RoboSmith 自带的操作在精选场景上，`main` 上 seed 0、单卡 MI300X：
+RoboSmith 自带的操作是六动作组合：plan 文件的 `actions` 直接执行，自由段由关节空间 RRT-Connect 规划，每个执行点在物理执行前
+过同一道执行门，不可行就带原因零步拒绝（[设计](docs/manipulation.md)）。公开验收场景族上，`main`、playground seed 0–9、单卡 MI300X：
+
+| 场景族 | 约束 | certified |
+|---|---|---|
+| F0 空桌面 | — | 10/10 |
+| F1 贴墙抓取 | 物体一侧有比它高 1 cm 的矮墙 | 10/10 |
+| F2 越障搬运 | 物体与放置垫之间有 20 cm 高墙 | 10/10 |
+
+certified = 任务成立，且逐物理步监测的实际执行零违规接触。实现冻结后在 test seed 与封存留出族上读最终读数（[验收](docs/acceptance.md)）。
+
+下面的视频与表是 2026-10-30 旧链路（写死的航点、不查碰撞的自由段）在精选 scenario 上的结果。这些 scenario 在当前链路上能加载，
+还没有重跑；放进下层搁板是侧插，不在本版范围。
 
 <table align="center">
   <tr>
@@ -40,7 +52,7 @@ RoboSmith 自带的操作在精选场景上，`main` 上 seed 0、单卡 MI300X�
   </tr>
 </table>
 
-| Scenario（seed 0） | 结果 |
+| Scenario（seed 0，旧链路） | 结果 |
 |---|---|
 | `pick_place_onto_supporter`、`pick_place_table_to_lower_shelf` | ✅ |
 | `pick_place_into_drawer` | ❌ 规划服务在放置时出错，搬运不检查碰撞，物体脱手 |
@@ -50,7 +62,8 @@ RoboSmith 自带的操作在精选场景上，`main` 上 seed 0、单卡 MI300X�
 MVP 还要做的，按顺序：
 
 1. **基本 agentic 操作。** agent 写步骤表，现有技能执行，每步判定；计划层失败交回 agent，物理层失败走修复环。不做跨 episode
-   记忆（需要时用 RPent 这类外部框架）。技能先要加固：不再有碰撞盲段，规则物体在杂乱桌面上抓得稳。
+   记忆（需要时用 RPent 这类外部框架）。pick / place 已改为过执行门的六动作组合，没有碰撞盲段；还差冻结后的最终读数，
+   以及规则物体在杂乱桌面上抓得稳。
 2. **原语覆盖**常见室内桌面任务约八成：press、push、rotate、转动关节开合。
 3. **真实场景：** 真实视频重建成能静止的孪生，开口、把手由 agent 标注、仿真验证。
 4. **评测层：** 任务包、接口、never / lost 归因、报告。
@@ -61,18 +74,19 @@ MVP 还要做的，按顺序：
 
 - **资产：** 由 agent 生成（默认写 Blender 脚本），LLM 评审在仿真里取证后准入，按哈希发布到 Hugging Face。
 - **Scenario：** YAML，写物体、关系、对执行方隐藏的成功判定树，以及 playground / test 两段 seed。
-- **操作：** pick 用几何候选在仿真里试抓，全失败时 agent 修复环介入；place 支持台面、搁板、抽屉；棱柱关节开合；
-  自由段在关节空间插值，不查碰撞。
+- **操作：** pick / place 是六个 meta action（`sample`、`move_to`、`move_linear`、`gripper`、`attach`、`detach`）的组合，
+  由 plan 文件的 `actions` 给出；自由段由关节空间 RRT-Connect 规划，整条轨迹逐点过执行门，过了才执行。pick 用几何候选在仿真里试抓，
+  全失败时 agent 修复环介入；抽屉开合沿用拖拽、不过门。
 - **验证：** 每一步和整个任务用同一组谓词读仿真状态判定，可离线复判。
 
 主要限制：单台 Franka、一张桌子；手指位置控制（约 0.2 kg 以上会滑脱）；MI300X 上是软件渲染，还不适合评测 VLA；一个进程一个场景。
-细节见 [`docs/system-design.md`](docs/system-design.md)。
+细节见 [`docs/design.md`](docs/design.md)（含文档地图）。
 
 MVP 之后：房间尺度场景与移动操作、外观保真度与 VLA、外部 agent 框架适配器、有真机时做一次孪生与真机对照、其他具身。
 
 ## 上手
 
-[Quick start](docs/quick-start.md) · [设计](docs/system-design.md) · [编写 scenario](scenarios/README.md) ·
+[Quick start](docs/quick-start.md) · [设计](docs/design.md) · [调用链](docs/call-chain.md) · [编写 scenario](scenarios/README.md) ·
 [技术博客](https://andyluo7.github.io/rocm/amd/mi300x/robotics/embodiedai/sdg/2026/07/01/robosmith-rocm-native-synthetic-data-pipeline/)（写于数据管线时期）
 
 改动经 pull request 合入：[CONTRIBUTING.md](CONTRIBUTING.md)、[AI_POLICY.md](AI_POLICY.md)、[SECURITY.md](SECURITY.md)。License：Apache-2.0。

@@ -1,6 +1,6 @@
 # 调用链：一次 scenario episode 怎么跑
 
-开发文档，画 `main` 上的现状，粒度到函数；设计（要保证什么）在 [system-design](system-design.md) 与 [manipulation](manipulation.md)。改了这条链的 PR 同时改这里。
+开发文档，画 `main` 上的现状，粒度到函数；设计（要保证什么）在 [design](design.md) 与 [manipulation](manipulation.md)。改了这条链的 PR 同时改这里。
 
 **每个被执行的关节目标都先经同一道执行门**：技能生成整条稠密轨迹，`ExecutionGate.verify` 对每个点调用
 `check_point`（数值、关节限位、要到达的位姿、自碰撞与接触，接触在 Genesis 快照里查），`EpisodeRun` 回放前核对凭证是这道门

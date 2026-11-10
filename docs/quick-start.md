@@ -1,7 +1,7 @@
 # Quick start
 
 From a fresh AMD GPU node to a recorded supporter episode (`pick → place`, the left clip in the README). For what each
-piece does, see [system-design.md](system-design.md).
+piece does, see [design.md](design.md).
 
 ## 0. Without a GPU
 
