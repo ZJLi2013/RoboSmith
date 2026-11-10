@@ -323,6 +323,21 @@ plan 只写 `pick` / `place`），playground seed 0–9 在当前链路（`12ae6
 - 换物体用已准入的资产：`apple_02`（150 g、曲面、沉降会滚）、`bottle_01`（578 g）、`radio_01`（3.2 kg）、`phone_01`（宽 130 mm）
   超出夹持质量或开口，换它们测的是夹爪，不是链路对 die 的依赖。
 
+### 货架：抬高带挑檐的放置面与货架上起抓
+
+`scenarios/pick_place_table_to_lower_shelf.yaml`（die 从桌面放到 `two_layer_supporter` 下层）与
+`scenarios/pick_place_onto_supporter.yaml`（从上层起抓放到下层，资产按 seed 取 `die_01` 或 `block_01`）在当前链路上
+不能 certified。playground 读到 1 GPU·h 截止：前者 seed 0–2，后者 7 个 seed；完成的实例全部停在 pick、`search_exhausted`，
+没有候选进入试抓（前者 seed 2 在 600 s 单例上限被杀）。
+
+- pick 下探段（从 pre-grasp 到抓取位姿，进场规划之前）被门或 IK 拒绝：货架旁的顶抓手臂 link6 / link7 碰货架；侧抓 IK 不连续，
+  或手指、手碰到货架层板与桌面。
+- 进场规划用完 1500 次查询预算：上层 `block_01` 的 32 mm 顶抓，以及桌面起抓的部分顶抓。
+- 其余顶抓过了 pick 的门，但 place 预检找不到到下层 standoff 的搬运（预算用完）。没有候选走到沿下层 `approach`
+  [-1, 0, 0] 的水平插入。
+
+`search_exhausted` 只说明声明的候选与预算内没有过门的运动，不证明不可解。
+
 ## 已定 / 不做 / 限制
 
 - rocRobo 与碰撞盲退回已删除，不保留为可选后端：它在自己的简化世界里规划，与仿真几何不一致，所测的一个可行位姿它也判失败，
