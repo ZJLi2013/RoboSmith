@@ -2,8 +2,8 @@
 
   python scripts/acceptance/certify.py --family f0_open --split test --out out/f0_open_test
 
-Each instance runs the family's plan-file steps once through ``EpisodeRun`` (skills, execution gate, executor)
-on the seed's layout. Every physics step after the reset is read for the contacts it resolved and judged by
+Each instance runs the family's plan file (its ``actions`` when present) once through ``EpisodeRun``
+(skills, execution gate, executor) on the seed's layout. Every physics step after the reset is read for the contacts it resolved and judged by
 ``gate.certified`` for the span being executed: trial and replay steps by the verified motion's spans, step
 and task settles by the last replayed span. A positive instance is certified when the task predicate holds
 and no step of any stage broke the rule; a negative one when its first step is refused and nothing ran

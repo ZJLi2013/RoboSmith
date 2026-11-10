@@ -133,7 +133,7 @@ F2 只跑了 2 个实例：穿透接触让求解器变慢，批次在第 3 个�
 
 ## 被测链路的 certified 读数
 
-`scripts/acceptance/certify.py` 对每个实例用 plan 文件的 `steps` 跑一次 `EpisodeRun`（技能、执行门、执行器），不渲染：
+`scripts/acceptance/certify.py` 对每个实例用 plan 文件加载出的技能（有 `actions` 时按它）跑一次 `EpisodeRun`（技能、执行门、执行器），不渲染：
 
 ```text
 python scripts/acceptance/certify.py --family f1_wall_gap --split test --out out/f1_test
