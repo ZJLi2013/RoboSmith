@@ -27,7 +27,7 @@ task                 certified  success  failures
 
 ## 现状
 
-RoboSmith 自带的操作是六动作组合：plan 文件的 `actions` 直接执行，自由段由关节空间 RRT-Connect 规划，每个执行点在物理执行前
+RoboSmith 自带的操作是六动作组合：每个 pick / place 步骤执行一种固定组合，自由段由关节空间 RRT-Connect 规划，每个执行点在物理执行前
 过同一道执行门，不可行就带原因零步拒绝（[设计](docs/manipulation.md)）。公开验收场景族上，`main`、playground seed 0–9、单卡 MI300X：
 
 | 场景族 | 约束 | certified |
@@ -63,7 +63,7 @@ MVP 还要做的，按顺序：
 - **资产：** 由 agent 生成（默认写 Blender 脚本），LLM 评审在仿真里取证后准入，按哈希发布到 Hugging Face。
 - **Scenario：** YAML，写物体、关系、对执行方隐藏的成功判定树，以及 playground / test 两段 seed。
 - **操作：** pick / place 是六个 meta action（`sample`、`move_to`、`move_linear`、`gripper`、`attach`、`detach`）的组合，
-  由 plan 文件的 `actions` 给出；自由段由关节空间 RRT-Connect 规划，整条轨迹逐点过执行门，过了才执行。抓法与放法由固定规则给出，
+  顺序固定，步骤只选物体、放置目标与抬升；自由段由关节空间 RRT-Connect 规划，整条轨迹逐点过执行门，过了才执行。抓法与放法由固定规则给出，
   pick 用几何候选在仿真里试抓，episode 里没有 agent 修正（agent 修复环只在离线资产准入里）；抽屉开合沿用拖拽、不过门。
 - **验证：** 每一步和整个任务用同一组谓词读仿真状态判定，可离线复判。
 

@@ -15,10 +15,10 @@ All notable user-facing changes are documented here. This project follows Semant
   state checks or 30 s covers the search and the final `verify` (`verify(..., budget=)`); past it the connect
   issues nothing and raises `Refused("search_exhausted")`. `SimEnv.hold(qpos, name, T)` poses a held object without
   stepping. Pick and place plan their free segments with it.
-- Six meta actions (`sample`, `move_to`, `move_linear`, `gripper`, `attach`, `detach`): a plan file's `actions` drive
-  pick and place through `EpisodeRun`, the only entry. Their bindings are checked at load, so a composition whose
-  steps do not bind (a place referring to the grasp's pre-pose, a close aimed at the mat) is rejected before any
-  physics step.
+- Six meta actions (`sample`, `move_to`, `move_linear`, `gripper`, `attach`, `detach`): each pick and place runs one
+  fixed composition of them through `EpisodeRun`, the only entry. A pick step may give its lift
+  (`lift: {direction, dist}`, world +Z 0.10 m by default). `steps_to_intents` checks a step list against the hand it
+  starts with, so a place with nothing held or a pick while holding is rejected before any physics step.
 - Acceptance families under `scenarios/acceptance/`, each varying one constraint: F0 open table, F1 wall gap,
   F2 over barrier, F4 caged (unsolvable), and the held-out F5. `scripts/acceptance/witness.py` shows each positive
   instance solvable independently of the chain under test; `scripts/acceptance/certify.py --scenario <yaml>` runs the
@@ -163,6 +163,12 @@ All notable user-facing changes are documented here. This project follows Semant
   moved to `docs/design.md`. Its old-chain demo videos are removed: they showed hard-coded waypoints that no longer run.
 
 ### Removed
+
+- A plan file's `actions` and their item-by-item translation: `actions_to_intents`, `check_plan`, `load_plan`,
+  `pick_part` / `place_part`, `meta_actions.check_part` and `Skill.params["actions"]`. They could only spell the one
+  composition the steps already run; `pick_actions` / `place_actions` now build the lists from the candidate and the
+  step's `lift`, and the five acceptance plan files keep only their `steps`. A plan file with `actions` is rejected.
+  F0 playground seeds 0–4 give the same outcome, certification and per-stage physics steps before and after.
 
 - Grasp and motion fields nothing read: `GraspPlan.waypoints` and `quality`, `motion.types.Waypoint`,
   `GripperSpec.lift`, the `rng` / `object_height` / `scale` parameters of `GraspPlanner.plan`,

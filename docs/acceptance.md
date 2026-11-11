@@ -30,18 +30,14 @@
 | F5 留出（已解封） | `heldout/f5_clutter.yaml` | 两道矮墙（`wall_01`，一道转 45°、一道转 90°）围着转 45° 的 die，手指垂直于近墙会在下探时撞墙 | die 到近墙的间隙，test 100–119 为 5.7–38.9 mm | 可解：手指平行于近墙 |
 
 五族的任务相同：把 die 放到垫子（`mat_01.top`）上；plan 文件在 `plans/`（留出族在 `heldout/plans/`），
-`steps` 是技能步骤，`actions` 是六动作组合，文件有 `actions` 时运行时执行它。被测的是技能层以下，所以不让 LLM 写步骤。
-split：`playground` 0–9，`test` 100–119。
+`steps` 是技能步骤：`pick: die`、`place: {target: mat.top}`，五族逐字相同，pick 用缺省抬升（世界 +Z 0.10 m）。
+每步运行[六动作组合](manipulation.md#六个-meta-action-与-pick--place-组合)，候选由场景几何决定，步骤里没有场景名、
+见证轨迹或搬运高度。被测的是技能层以下，所以不让 LLM 写步骤。写法与 `PlanInvalid` 报错见
+[plan 文件用法](../scenarios/AGENT_PROMPT.md#plan-file-optional)。split：`playground` 0–9，`test` 100–119。
 
-### plan 文件的 `actions`：六动作组合
-
-`actions` 是运行时执行的[六动作组合](manipulation.md#六个-meta-action-与-pick--place-组合)，五族逐字相同：
-候选由场景几何决定，组合里没有场景名、见证轨迹或搬运高度。写法、参数、绑定规则与 `PlanInvalid` 报错见
-[plan 文件用法](../scenarios/AGENT_PROMPT.md#plan-file-optional)；只有 `steps` 的文件展开成同样的两段。
-
-`read_plan_file` 是读 plan 文件的唯一入口（`load_scenario` 与 `load_plan` 都经它），只认 `name` / `steps` / `actions` 三个键。
-它只读文件，不回写、不跨调用缓存，YAML 与 schema 错误原样抛出。F5 的 plan 文件解封后从旧键 `teacher` / `plan` 迁到新键，
-seed 100–119 加载出的技能与动作逐个不变；它的 sha256 因此不再等于封存 manifest 里的值。
+`read_plan_file` 是读 plan 文件的唯一入口，只认 `name` / `steps` 两个键。它只读文件，不回写、不跨调用缓存，YAML 与 schema
+错误原样抛出。F5 的 plan 文件解封后两次改写：先从旧键 `teacher` / `plan` 迁到新键，后去掉与 `steps` 等价的六动作 `actions`，
+每次 seed 100–119 加载出的技能与动作逐个不变；它的 sha256 因此不再等于封存 manifest 里的值。
 
 ### `offset_from`
 
@@ -118,12 +114,12 @@ F2 只跑了 2 个实例：穿透接触让求解器变慢，批次在第 3 个�
 - **读者**：解封前只有 `witness.py --heldout` 与该 task 的 verifier；实现与调参不读它的布局、plan 文件、见证或逐实例结果。
 - **解封**：只在最终评测，且新版实现与参数都已提交；解封时记下这个 commit，评测前对照 manifest 的 sha256。
 - **烧毁**：解封前被实现或调参读取或使用，这批留出作废，记录保留，另建一个未用于调参的留出族。
-- **已解封**：F5 于 2026-11-10 在 `464edf4` 上解封、读了 test seed 100–109（manifest 核对一致），之后它的 plan 文件改用新键。
+- **已解封**：F5 于 2026-11-10 在 `464edf4` 上解封、读了 test seed 100–109（manifest 核对一致），之后它的 plan 文件改用新键、再改成只有 `steps`。
   之后改动链路再要泛化读数，另建一个未读过的留出族，不再用 F5。
 
 ## 被测链路的 certified 读数
 
-`scripts/acceptance/certify.py` 对每个实例用 plan 文件加载出的技能（有 `actions` 时按它）跑一次 `EpisodeRun`（技能、执行门、执行器），不渲染：
+`scripts/acceptance/certify.py` 对每个实例用 plan 文件加载出的技能跑一次 `EpisodeRun`（技能、执行门、执行器），不渲染：
 
 ```text
 python scripts/acceptance/certify.py --scenario scenarios/acceptance/f1_wall_gap.yaml --split test --out out/f1_test
