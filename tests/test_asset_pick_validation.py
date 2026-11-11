@@ -13,8 +13,6 @@ from robotsmith.motion.params import MotionParams
 from robotsmith.motion.plan_state import Attach
 from robotsmith.rollout import asset_pick_validation as apv
 from robotsmith.rollout.asset_pick_validation import _make_scene, _make_task
-from robotsmith.scenario.load import pick_part
-
 
 def test_make_scene_wires_single_named_object():
     scene = _make_scene("die_01")
@@ -32,7 +30,7 @@ def test_make_task_derives_category_from_asset_name():
     assert task.name == "pick_apple_02"
     assert task.success.predicate == "object_above"
     assert [skill.to_dict() for skill in task.skills] == [
-        {"name": "pick", "target": "object", "params": {"actions": pick_part("object")}, "category": "apple"},
+        {"name": "pick", "target": "object", "params": {}, "category": "apple"},
     ]
 
 

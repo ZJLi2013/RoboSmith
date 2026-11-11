@@ -9,7 +9,6 @@ from robotsmith.scenario_runtime.runner import run_scenario_episode
 from robotsmith.tasks.task_spec import SuccessNode, TaskSpec as LegacyTaskSpec
 from robotsmith.grasp.planner import GraspPlan
 from robotsmith.motion.params import MotionParams
-from robotsmith.scenario.load import pick_part, place_part
 from robotsmith.skills import Skill
 from conftest import plan_skills
 
@@ -164,8 +163,7 @@ def test_place_z_resolution(place_params, drop_z, resolved, source, gate):
     }
 
     plan_skills(
-        [Skill("pick", "die", "die", {"actions": pick_part("die")}),
-         Skill("place", "goal", "die", {**place_params, "actions": place_part("die", "goal")})],
+        [Skill("pick", "die", "die"), Skill("place", "goal", "die", place_params)],
         planner,
         _FakeExecutor(),
         solve_ik=lambda *args, **kwargs: np.zeros(9),

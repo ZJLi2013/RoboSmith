@@ -47,7 +47,7 @@ class GraspPlan:
     All poses are in world frame. This is the sole interface between
     "where to grasp" (planner) and "how to reach it" (executor).
 
-    A pick plan's lift comes from the plan's ``actions``; only ``plan_place`` sets ``retreat_pos`` /
+    A pick plan's lift comes from the pick step; only ``plan_place`` sets ``retreat_pos`` /
     ``retreat_quat``, where the place retreats to after the release.
     """
 

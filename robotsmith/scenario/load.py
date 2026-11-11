@@ -4,8 +4,7 @@ A scenario file holds the scene (objects and their relations) and the task
 (instruction + success tree, hidden from the executor). The scene is written
 inline or names a layout ``scenes/<name>.yaml`` beside the scenarios directory,
 so several tasks can share one layout. The optional plan file lives next to it in
-``plans/<same name>.yaml``: the skill steps and the meta action list (``actions``); ``--planner file`` runs the
-actions, or the steps' public parts when the file has no actions.
+``plans/<same name>.yaml``: the skill steps ``--planner file`` runs, a pick optionally with its lift.
 """
 
 from __future__ import annotations
@@ -19,7 +18,6 @@ import yaml
 
 from robotsmith.assets import store
 from robotsmith.assets.library import AssetLibrary
-from robotsmith.execution.meta_actions import check_part
 from robotsmith.scenario import relations
 from robotsmith.scenario.intents import SkillIntentSequenceSpec, SkillIntentSpec
 from robotsmith.scenario.predicates import (
@@ -148,23 +146,9 @@ SCHEMA = {
     },
 }
 
-_ONE = {"type": "object", "minProperties": 1, "maxProperties": 1}
 _LINE = {"type": "object", "additionalProperties": False, "required": ["direction", "dist"],
          "properties": {"direction": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
                         "dist": {"type": "number", "exclusiveMinimum": 0}}}
-# The first version's meta actions (docs/manipulation.md); anything else is rejected, not skipped.
-PLAN_ACTIONS = {
-    "sample": {"type": "object", "additionalProperties": False, "required": ["kind", "object", "as"],
-               "properties": {"kind": {"enum": ["grasp", "place"]}, "object": _ID, "surface": _REF,
-                              "grasp": _ID, "as": _ID}},
-    "move_to": _REF,
-    "move_linear": {"oneOf": [_REF, _LINE]},
-    "gripper": {"type": "object", "additionalProperties": False, "required": ["width"],
-                "properties": {"width": {"enum": ["open", "close"]}, "target": _ID}},
-    "attach": _ID,
-    "detach": _ID,
-}
-BINDING_POSES = {"grasp": {"pre", "grasp"}, "place": {"pre", "place", "retreat"}}
 
 PLAN_SCHEMA = {
     "type": "object",
@@ -173,18 +157,18 @@ PLAN_SCHEMA = {
     "properties": {
         "name": _ID,
         "steps": {"type": "array", "minItems": 1, "items": {"oneOf": [
+            {"type": "object", "additionalProperties": False, "required": ["pick"],
+             "properties": {"pick": _ID, "lift": _LINE}},
+        ] + [
             {"type": "object", "additionalProperties": False, "required": [k], "properties": {k: _ID}}
-            for k in ("pick", "open", "close")
+            for k in ("open", "close")
         ] + [_leaf("place", {"target": _REF}, ["target"])]}},
-        "actions": {"type": "array", "minItems": 1, "items": {
-            **_ONE, "additionalProperties": False, "properties": PLAN_ACTIONS}},
     },
 }
 
 
 class PlanInvalid(ValueError):
-    """A plan the first version cannot run: an unknown action, a reference or object of another part, or holding
-    twice."""
+    """Steps that cannot run from the hand they start with: a pick while holding, or a place with nothing held."""
 
 
 def load_scenario(
@@ -260,133 +244,35 @@ def read_plan_file(path: Path) -> dict:
 def _plan_file(path: Path, assets: dict) -> tuple[SkillIntentSequenceSpec, dict[str, TargetPositionSpec]]:
     data = read_plan_file(path)
     jsonschema.validate(data, PLAN_SCHEMA)
-    if "actions" in data:
-        return actions_to_intents(check_plan(data["actions"]), assets)
     return steps_to_intents(data["steps"], assets)
 
 
-def load_plan(path: Path) -> list[dict]:
-    """The plan file's meta actions, checked by ``check_plan``."""
-    data = read_plan_file(path)
-    if "actions" not in data:
-        raise PlanInvalid(f"{path}: no actions")
-    return check_plan(data["actions"])
+def steps_to_intents(steps: list[dict], assets: dict, *, held: str | None = None
+                     ) -> tuple[SkillIntentSequenceSpec, dict[str, TargetPositionSpec]]:
+    """Steps -> intents, plus a frame for every place target they use; the one check of a step list (plan file,
+    agent, single-asset validation), and it reads nothing but its arguments.
 
-
-def check_plan(plan: list[dict]) -> list[dict]:
-    """``plan`` unchanged when every action is a first-version meta action, the plan starts with a ``sample``, every
-    reference names a pose of the candidate its own part sampled, a place puts down the object its grasp holds, a
-    gripper ``target`` is the part's object (a close names it), and the plan attaches at most once and detaches what
-    it holds."""
-    try:
-        jsonschema.validate(plan, PLAN_SCHEMA["properties"]["actions"])
-    except jsonschema.ValidationError as e:
-        raise PlanInvalid(e.message) from None
-    if "sample" not in plan[0]:
-        raise PlanInvalid("the actions must start with a sample")
-    bound: dict[str, dict] = {}
-    part: dict = {}
-    held = None
-    attached = False
-    for i, step in enumerate(plan):
-        (name, arg), = step.items()
-        refs = [arg] if isinstance(arg, str) else []
-        if name == "sample":
-            if arg["kind"] == "place":
-                grasp = bound.get(arg.get("grasp"), {})
-                if grasp.get("kind") != "grasp":
-                    raise PlanInvalid(f"step {i}: place sample needs a bound grasp, got {arg.get('grasp')!r}")
-                if arg["object"] != grasp["object"]:
-                    raise PlanInvalid(f"step {i}: place sample {arg['as']!r} puts down {arg['object']!r}, "
-                                      f"but its grasp {arg['grasp']!r} holds {grasp['object']!r}")
-            bound[arg["as"]] = part = arg
-        for ref in refs:
-            key, _, pose = ref.partition(".")
-            spec = bound.get(key)
-            if spec is None:
-                raise PlanInvalid(f"step {i}: {name} {ref!r} names no candidate sampled earlier")
-            if spec is not part:
-                raise PlanInvalid(f"step {i}: {name} {ref!r} names candidate {key!r}, not this part's {part['as']!r}")
-            if pose and pose not in BINDING_POSES[spec["kind"]]:
-                raise PlanInvalid(f"step {i}: {ref!r} is not a pose of a {spec['kind']} candidate")
-        if name == "gripper":
-            target = arg.get("target")
-            if target is None and arg["width"] == "close":
-                raise PlanInvalid(f"step {i}: gripper close names no target")
-            if target is not None and target != part["object"]:
-                raise PlanInvalid(f"step {i}: gripper target {target!r} is not this part's object {part['object']!r}")
-        if name == "attach":
-            if attached or bound[arg]["kind"] != "grasp":
-                raise PlanInvalid(f"step {i}: attach {arg!r} must be the plan's one grasp candidate")
-            held, attached = arg, True
-        if name == "detach":
-            if held is None or bound[arg]["kind"] != "place" or bound[arg]["grasp"] != held:
-                raise PlanInvalid(f"step {i}: detach {arg!r} must place what is held ({held!r})")
-            held = None
-    if held is not None:
-        raise PlanInvalid(f"the plan ends holding {held!r}")
-    return plan
-
-
-def pick_part(obj: str) -> list[dict]:
-    """The public plans' pick part for ``obj``: the actions a ``pick`` step runs."""
-    return [{"sample": {"kind": "grasp", "object": obj, "as": "g"}}, {"gripper": {"width": "open"}},
-            {"move_to": "g.pre"}, {"move_linear": "g.grasp"}, {"gripper": {"width": "close", "target": obj}},
-            {"attach": "g"}, {"move_linear": {"direction": [0, 0, 1], "dist": 0.10}}]
-
-
-def place_part(obj: str | None, surface: str) -> list[dict]:
-    """The public plans' place part putting ``obj`` on ``surface``: the actions a ``place`` step runs."""
-    return [{"sample": {"kind": "place", "object": obj, "surface": surface, "grasp": "g", "as": "p"}},
-            {"move_to": "p.pre"}, {"move_linear": "p.place"}, {"detach": "p"},
-            {"gripper": {"width": "open", "target": obj}}, {"move_linear": "p.retreat"}]
-
-
-def steps_to_intents(steps: list[dict], assets: dict) -> tuple[SkillIntentSequenceSpec, dict[str, TargetPositionSpec]]:
-    """Plan-file steps -> intents, plus a frame for every place target they use. A pick or place step carries the
-    public part it runs (``pick_part`` / ``place_part``) as its ``actions``."""
+    ``held`` is the object in hand when the steps start. A pick needs an empty hand and a place a held object; the
+    steps may end holding. A pick's ``lift`` goes into its params."""
     jsonschema.validate(steps, PLAN_SCHEMA["properties"]["steps"])
     intents, targets = [], {}
-    held = None
-    for step in steps:
-        (name, arg), = step.items()
-        if name != "place":
-            if arg not in assets:
-                raise relations.SolveError(f"{name}: unknown object '{arg}'")
-            params = {"actions": pick_part(arg)} if name == "pick" else {}
-            intents.append(SkillIntentSpec(name=name, target=arg, params=params))
-            held = arg if name == "pick" else held
+    for i, step in enumerate(steps):
+        name, arg = next((k, v) for k, v in step.items() if k != "lift")
+        if name == "place":
+            ref = arg["target"]
+            _check_place_ref(ref, assets, targets)
+            if held is None:
+                raise PlanInvalid(f"step {i}: place {ref} with nothing held")
+            intents.append(SkillIntentSpec(name="place", target=ref))
+            held = None
             continue
-        ref = arg["target"]
-        _check_place_ref(ref, assets, targets)
-        intents.append(SkillIntentSpec(name="place", target=ref, params={"actions": place_part(held, ref)}))
-        held = None
-    return SkillIntentSequenceSpec(intents=tuple(intents)), targets
-
-
-def actions_to_intents(actions: list[dict], assets: dict) -> tuple[SkillIntentSequenceSpec,
-                                                                   dict[str, TargetPositionSpec]]:
-    """``check_plan``-checked actions -> one pick or place intent per part (a ``sample`` and the actions up to the
-    next one), each carrying its part as ``actions``, plus a frame for every place target they use."""
-    starts = [i for i, item in enumerate(actions) if "sample" in item] + [len(actions)]
-    intents, targets = [], {}
-    for start, end in zip(starts, starts[1:]):
-        part = actions[start:end]
-        try:
-            kind = check_part(part)
-        except ValueError as e:
-            raise PlanInvalid(str(e)) from None
-        sample = part[0]["sample"]
-        if kind == "pick":
-            if sample["object"] not in assets:
-                raise relations.SolveError(f"pick: unknown object '{sample['object']}'")
-            target = sample["object"]
-        else:
-            if "surface" not in sample:
-                raise PlanInvalid(f"place sample {sample['as']!r} names no surface")
-            target = sample["surface"]
-            _check_place_ref(target, assets, targets)
-        intents.append(SkillIntentSpec(name=kind, target=target, params={"actions": part}))
+        if arg not in assets:
+            raise relations.SolveError(f"{name}: unknown object '{arg}'")
+        if name == "pick":
+            if held is not None:
+                raise PlanInvalid(f"step {i}: pick {arg} while holding {held}")
+            held = arg
+        intents.append(SkillIntentSpec(name=name, target=arg, params={"lift": step["lift"]} if "lift" in step else {}))
     return SkillIntentSequenceSpec(intents=tuple(intents)), targets
 
 

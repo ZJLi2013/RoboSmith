@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 import json
 from pathlib import Path
 import random
@@ -17,7 +17,6 @@ from robotsmith.scenario.adapters import (
     to_legacy_task_spec,
 )
 from robotsmith.scenario.intents import intent_sequence, pick
-from robotsmith.scenario.load import pick_part
 from robotsmith.scenario.predicates import object_lifted
 from robotsmith.scenario.scene_api import layout, obj, region, scene
 from robotsmith.scenario.task_api import task
@@ -80,7 +79,7 @@ def _make_task(asset_name: str) -> TaskSpec:
         instruction=f"Pick up {asset_name}",
         success=object_lifted("object", z_margin=0.02),
     )
-    intents = intent_sequence([replace(pick("object", category=category), params={"actions": pick_part("object")})])
+    intents = intent_sequence([pick("object", category=category)])
     legacy_task = to_legacy_task_spec(cap_task)
     legacy_task.skills = to_legacy_skills(intents, cap_task)
     return legacy_task

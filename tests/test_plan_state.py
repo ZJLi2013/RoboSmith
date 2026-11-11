@@ -6,15 +6,12 @@ import pytest
 from robotsmith.execution.executor import MotionExecutor
 from robotsmith.execution.gate import Holding
 from robotsmith.execution.meta_actions import pick_actions, place_actions
-from robotsmith.scenario.load import pick_part, place_part
 from robotsmith.grasp.planner import GraspPlan
 from robotsmith.grasp.transforms import pose_matrix
 from robotsmith.motion.chain import RuntimeMotionWaypoint
 from robotsmith.motion.params import MotionParams
 from robotsmith.motion.plan_state import Attach, Detach, PlanState, attach, binding, detach
 from robotsmith.motion.planner import GenesisBackend
-
-PICK, PLACE = pick_part("die"), place_part("die", "mat")
 
 QUAT = np.array([0.0, 1.0, 0.0, 0.0])
 HELD = Holding("die", np.eye(4))
@@ -43,12 +40,12 @@ def _pick(exe, planner, params, finger=0.0):
     """From the arm at ``START`` with the fingers at ``finger``, along a straight joint path to the pre-grasp."""
     q0, opened, q_pre = _ik(*START, finger), _ik(*START, 0.04), _ik(_plan().pre_grasp_pos, QUAT, 0.04)
     approach = [opened + (q_pre - opened) * t for t in (0.5, 1.0)]
-    return exe.run("pick", pick_actions(PICK, _plan(), q0, START, approach, params, planner.solve_ik, grasp=HELD), planner,
+    return exe.run("pick", pick_actions(_plan(), q0, START, approach, params, planner.solve_ik, grasp=HELD), planner,
                    PlanState(q0), params)
 
 
 def _place(exe, planner, params, start, phase="all"):
-    return exe.run("place", place_actions(PLACE, _plan(), params, phase=phase), planner, start, params)
+    return exe.run("place", place_actions(_plan(), params, phase=phase), planner, start, params)
 
 
 def test_attach_and_detach_change_only_the_holding():
@@ -117,7 +114,7 @@ def test_pick_lifts_in_a_straight_line_along_world_z_after_the_attach():
 
 def test_place_detaches_before_its_fingers_open():
     params, exe, planner = MotionParams(), MotionExecutor(), GenesisBackend(_ik)
-    actions = place_actions(PLACE, _plan(), params)
+    actions = place_actions(_plan(), params)
     kinds = [a.label if isinstance(a, RuntimeMotionWaypoint) else type(a).__name__ for a in actions]
     assert kinds == ["transport", "descend", "Detach", "release", "retreat"]
     place = _place(exe, planner, params, PlanState(np.zeros(9), HELD))
