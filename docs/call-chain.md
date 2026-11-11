@@ -160,8 +160,9 @@ flowchart TD
 
 技能内部见下一张图。file 与 agent 两条路径共用 `EpisodeRun`，只是步骤表的来源不同：plan 文件的 `steps`，或 agent 回复里的
 `steps`，都经 `scenario/load.steps_to_intents` 变成技能，pick 的 `lift` 进 `Skill.params["lift"]`。物体或放置目标不在场景里、pick 时手里
-已有物体、place 时手里为空（agent 续跑从 `EpisodeRun.held` 推起）即加载时 `PlanInvalid`
-（[写法与报错](../scenarios/AGENT_PROMPT.md#plan-file-optional)）。pick 已走过物理步之后组合即提交，place 仍从实测状态重新规划，这时它被拒就记 `execution_failed`。agent 路径上零步拒绝（`Refused` 的标签）按
+已有物体、place 时手里为空（agent 续跑从 `EpisodeRun.held` 推起）即加载时 `PlanInvalid`，消息以 `step <i>:` 开头
+（[写法与报错](../scenarios/AGENT_PROMPT.md#plan-file-optional)）；关系求解的 `SolveError` 只在这个入口转成 `PlanInvalid`（保留为 cause），
+YAML 与 schema 错误原样抛出。agent 路径的 `parse_steps` 把它包成 `PlanError`、消息不变，作为可修正的原因回给 agent。pick 已走过物理步之后组合即提交，place 仍从实测状态重新规划，这时它被拒就记 `execution_failed`。agent 路径上零步拒绝（`Refused` 的标签）按
 plan 类失败重写剩余步骤，`execution_failed` 按 physical 失败上报；重写后的步骤全部执行完，episode 就不再算被拒。
 
 ### 一步的数据表示：从 plan 文件到凭证

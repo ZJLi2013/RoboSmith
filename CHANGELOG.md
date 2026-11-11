@@ -20,6 +20,9 @@ All notable user-facing changes are documented here. This project follows Semant
   (`lift: {direction, dist}`, world +Z 0.10 m by default). `steps_to_intents` checks a step list against the hand it
   starts with: an unknown object or place target, a place with nothing held and a pick while holding are each a
   `PlanInvalid` naming the step, raised before any physics step; YAML and schema errors are raised as they are.
+  The relation solver's `SolveError` becomes `PlanInvalid` (with the `SolveError` as its cause) only at this entry,
+  and the agent path wraps it as `PlanError` with the same message. A valid step list runs as before: only the
+  exception type of an invalid one changed.
 - Acceptance families under `scenarios/acceptance/`, each varying one constraint: F0 open table, F1 wall gap,
   F2 over barrier, F4 caged (unsolvable), and the held-out F5. `scripts/acceptance/witness.py` shows each positive
   instance solvable independently of the chain under test; `scripts/acceptance/certify.py --scenario <yaml>` runs the
