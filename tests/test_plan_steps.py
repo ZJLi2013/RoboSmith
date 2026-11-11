@@ -9,7 +9,6 @@ import jsonschema
 import pytest
 
 from robotsmith.scenario.load import PlanInvalid, load_scenario, steps_to_intents
-from robotsmith.scenario.relations import SolveError
 
 ACCEPTANCE = Path(__file__).resolve().parents[1] / "scenarios" / "acceptance"
 PLANS = ACCEPTANCE / "plans"
@@ -85,15 +84,15 @@ def test_steps_that_cannot_run_from_the_hand_they_start_with_are_refused(steps, 
 
 
 @pytest.mark.parametrize("steps", [[{"pick": "cup"}], [{"pick": "die"}, {"place": {"target": "tray"}}],
-                                   [{"open": "cabinet"}]])
+                                   [{"open": "cabinet"}], [{"close": "cabinet"}]])
 def test_an_unknown_object_is_refused(steps):
-    with pytest.raises(SolveError, match="unknown object"):
+    with pytest.raises(PlanInvalid, match="unknown object"):
         steps_to_intents(steps, ASSETS)
 
 
 def test_an_unknown_place_target_is_refused_at_load(tmp_path):
     text = (PLANS / "f0_open.yaml").read_text(encoding="utf-8").replace("mat.top", "mat.side")
-    with pytest.raises(SolveError):
+    with pytest.raises(PlanInvalid, match="side"):
         load_scenario(_pair(tmp_path, text), seed=100)
 
 

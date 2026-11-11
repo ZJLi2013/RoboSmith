@@ -260,14 +260,17 @@ def steps_to_intents(steps: list[dict], assets: dict, *, held: str | None = None
         name, arg = next((k, v) for k, v in step.items() if k != "lift")
         if name == "place":
             ref = arg["target"]
-            _check_place_ref(ref, assets, targets)
+            try:
+                _check_place_ref(ref, assets, targets)
+            except relations.SolveError as e:
+                raise PlanInvalid(f"step {i}: {e}") from e
             if held is None:
                 raise PlanInvalid(f"step {i}: place {ref} with nothing held")
             intents.append(SkillIntentSpec(name="place", target=ref))
             held = None
             continue
         if arg not in assets:
-            raise relations.SolveError(f"{name}: unknown object '{arg}'")
+            raise PlanInvalid(f"step {i}: {name}: unknown object '{arg}'")
         if name == "pick":
             if held is not None:
                 raise PlanInvalid(f"step {i}: pick {arg} while holding {held}")
