@@ -77,8 +77,9 @@ What the MVP needs, in order:
 - **Scenarios:** YAML with objects, relations, a success tree hidden from the executor, and playground / test seeds.
 - **Manipulation:** pick and place compose six meta actions (`sample`, `move_to`, `move_linear`, `gripper`, `attach`,
   `detach`) given by the plan file's `actions`; free segments are planned by a joint-space RRT-Connect and the whole
-  trajectory passes the execution gate point by point before it runs. Pick tries geometric candidates in simulation,
-  with an agent repair loop when all fail; drawer open / close still drags the handle, ungated.
+  trajectory passes the execution gate point by point before it runs. Fixed rules choose the grasp and the
+  placement, and pick tries geometric candidates in simulation; no agent corrects them inside an episode (the agent
+  repair loop runs only in offline asset admission). Drawer open / close still drags the handle, ungated.
 - **Verification:** each step and the task are judged by the same predicates on the simulator state, re-judgeable
   offline.
 

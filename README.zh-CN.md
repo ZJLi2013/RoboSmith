@@ -63,8 +63,8 @@ MVP 还要做的，按顺序：
 - **资产：** 由 agent 生成（默认写 Blender 脚本），LLM 评审在仿真里取证后准入，按哈希发布到 Hugging Face。
 - **Scenario：** YAML，写物体、关系、对执行方隐藏的成功判定树，以及 playground / test 两段 seed。
 - **操作：** pick / place 是六个 meta action（`sample`、`move_to`、`move_linear`、`gripper`、`attach`、`detach`）的组合，
-  由 plan 文件的 `actions` 给出；自由段由关节空间 RRT-Connect 规划，整条轨迹逐点过执行门，过了才执行。pick 用几何候选在仿真里试抓，
-  全失败时 agent 修复环介入；抽屉开合沿用拖拽、不过门。
+  由 plan 文件的 `actions` 给出；自由段由关节空间 RRT-Connect 规划，整条轨迹逐点过执行门，过了才执行。抓法与放法由固定规则给出，
+  pick 用几何候选在仿真里试抓，episode 里没有 agent 修正（agent 修复环只在离线资产准入里）；抽屉开合沿用拖拽、不过门。
 - **验证：** 每一步和整个任务用同一组谓词读仿真状态判定，可离线复判。
 
 主要限制：单台 Franka、一张桌子；手指位置控制（约 0.2 kg 以上会滑脱）；MI300X 上是软件渲染，还不适合评测 VLA；一个进程一个场景。
