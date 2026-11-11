@@ -352,4 +352,8 @@ pick 的手指闭合段允许手指碰目标（`grip`），其后的直线抬升
   episode 建一个 `EpisodeRun`（`grasp_selection` 选 `trial` / `trial_all`），pick 带公开组合的 pick 段，走同一套技能、门与
   执行器；pick 停下时把 `cause`、`evidence`、`steps` 记进 `stopped`、零帧，不写 episode。
 - 修复环工具（`grasp/diagnostics/tool.try_candidates`）把 agent 提出的抓法交给单资产入口，以 `trial_all` 试遍，
-  所以同样只经门执行。
+  所以同样只经门执行。单资产入口在第 0 个 episode 读 `GeometricGraspPlanner.last_plans`（最近一次 `plan()` 的全部候选），
+  全部失败时写进诊断请求，这是它唯一的读者。
+
+`GraspPlan` 的 `retreat_pos` / `retreat_quat` 只有 `plan_place` 填（放下后退回的位姿，`place_actions` 读）；pick 候选不带它们，
+抬升由 plan 的 `move_linear` 段给。

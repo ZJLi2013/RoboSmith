@@ -159,6 +159,14 @@ All notable user-facing changes are documented here. This project follows Semant
 
 ### Removed
 
+- Grasp and motion fields nothing read: `GraspPlan.waypoints` and `quality`, `motion.types.Waypoint`,
+  `GripperSpec.lift`, the `rng` / `object_height` / `scale` parameters of `GraspPlanner.plan`,
+  `GeometricGraspPlanner.last_filter_counts` and the pick trace's `filter_counts`, `RuntimeMotionWaypoint.segment_type`,
+  `MotionParams.fine_joint_vel` / `descend_steps` / `lift_steps` / `place_descend_steps` / `retreat_steps`, and the
+  test-only chain evaluation (`evaluate_motion_chain`, `classify_segments`, `MotionChainMetrics`). `GraspPlan.retreat_pos`
+  / `retreat_quat` are optional and only place plans set them. F0 playground seeds 0–4 give the same outcome,
+  certification and per-stage physics steps before and after.
+
 - Assets no scenario, scene, test or document loads: the drafts `chair_02` and `drawer_cabinet_d1` (duplicates of
   `chair_01` and `drawer_cabinet_a`), `drawer_cabinet_blender` (the build of `drawer_cabinet_a`), `drawer_cabinet_b`
   and `drawer_cabinet_c` (no license, review failed), and the admitted `drawer_cabinet_a`, a near-duplicate of the
