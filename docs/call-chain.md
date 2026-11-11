@@ -368,4 +368,4 @@ pick 的手指闭合段允许手指碰目标（`grip`），其后的直线抬升
   全部失败时写进诊断请求，这是它唯一的读者。
 
 `GraspPlan` 的 `retreat_pos` / `retreat_quat` 只有 `plan_place` 填（放下后退回的位姿，`place_actions` 读）；pick 候选不带它们，
-抬升由 plan 的 `move_linear` 段给。
+抬升由 pick 步骤的 `lift` 给（缺省世界 +Z 0.10 m）。

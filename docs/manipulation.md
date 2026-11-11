@@ -153,7 +153,7 @@ GPD 的 93%（主动点云，密集杂物清理，真机 Baxter）同样是另�
 | `finger_open`、`tcp_offset`、`pad_below_tcp`、`pad_above_tcp` | 0.04、0.1034、0.008、0.009 m | 夹爪尺寸（Genesis `panda.xml`） | 保留 |
 | `width_margin` | 0.01 m | 经验余量 | 已删 |
 | 侧抓的中心与高度 | 有向包围盒中心、中高 | 由物体几何导出，没有常数 | 不改 |
-| `approach_clearance` | 0.12 m | pre-grasp 的运动距离，不是候选几何；抬升距离由 plan 的 `move_linear` 段给 | 不在本推荐内 |
+| `approach_clearance` | 0.12 m | pre-grasp 的运动距离，不是候选几何；抬升距离由 pick 步骤的 `lift` 给 | 不在本推荐内 |
 | `finger_closed` | 0.01 m | 闭合目标（控制量）；p2 改为 0.0 没有消除离手 | 不在本推荐内；窄于 20 mm 的物体夹不紧时再改 |
 
 删余量前后，本地 `assets/` 里带 `model.urdf` 的 16 个资产直立放置、yaw 0° / 30° / 90° 时，`plan()`（传入质心）给出的候选

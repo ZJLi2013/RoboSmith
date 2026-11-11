@@ -82,8 +82,8 @@ All notable user-facing changes are documented here. This project follows Semant
   `Refused(label, evidence)` (`search_exhausted`, `unsupported`, `infeasible`), and a pick whose trials stepped physics
   and lifted nothing raises `ExecutionFailed`; both replace `Infeasible`. The episode result field `infeasible` is now
   `stopped`, with `cause`, `evidence` and `steps`.
-- Plan files live in `plans/<same name>.yaml` beside the scenario, with the keys `name`, `steps` and `actions` (the
-  meta actions `load_plan` checks); `--planner file` runs their steps (was `teacher`).
+- Plan files live in `plans/<same name>.yaml` beside the scenario, with the keys `name` and `steps` (a `pick`
+  step may carry a `lift`); `--planner file` runs their steps (was `teacher`).
 - Scenario `pick` steps are judged by the new `grasped` predicate: two different finger links touch the target and
   it rose at least 2 cm from the step's own start, read before the step is planned (`step_start_positions` in the
   judged state, separate from the episode start). `collect_world_state` adds `finger_contacts`, the finger links
@@ -189,7 +189,7 @@ All notable user-facing changes are documented here. This project follows Semant
 - Image-to-3D asset generation (the TRELLIS.2 and Hunyuan3D backends, `generate_asset`), `mesh_to_urdf`, and the
   `robotsmith.assets.catalog` helpers only they called; `scripts/train_smolvla.py` and the `viz` extra. Opaque meshes
   have no parts or joints to build a simulation asset from, and policy training is out of scope.
-- The plan-file keys `teacher` / `plan`; plan files take only `name`, `steps` and `actions`.
+- The plan-file keys `teacher` / `plan`; plan files take only `name` and `steps`.
 - GraspGen and everything built around it: the learned planner and model wrapper, the support-clearance screen,
   feasibility gate and 9-bucket policy, policy onboarding and the metadata-guided rollout orchestrator, the spconv
   checkpoint converter, and the `grasp_policy_bucket` asset field with its `assets/grasp_policy_buckets.json` sidecar.
