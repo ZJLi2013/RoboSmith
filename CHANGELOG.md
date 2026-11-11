@@ -64,6 +64,11 @@ All notable user-facing changes are documented here. This project follows Semant
 
 ### Changed
 
+- Pick and place are planned by `skills/rule_policy.RulePolicy` over one `skills/manipulation_tools.ManipulationTools`
+  held by `EpisodeRun`; `runner.plan_skill` passes the policy whether a place follows, the following single-phase
+  place and the trial explicitly, in place of `ctx.skills` / `ctx.index` and `scene_state["grasp_trial"]`.
+  `skills/pick.py` and `skills/place.py` are gone, and `SkillContext` no longer has `skills`, `index` or `planner`.
+  F0 playground seeds 0–4 give the same outcome, certification and per-stage physics steps before and after.
 - Pick and place pass the execution gate as a whole before any physics step: free segments are planned by
   `JointPlanner`, the rest is `move_linear` and `gripper`, and what cannot pass is refused with a reason and zero
   steps. Pick opens the fingers before approaching and lifts straight up 0.10 m; place detaches before releasing.
