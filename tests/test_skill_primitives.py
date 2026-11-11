@@ -20,8 +20,12 @@ from robotsmith.grasp.transforms import pose_matrix
 from robotsmith.motion.joint_planner import JointPlanner
 from robotsmith.motion.plan_state import Attach, Detach
 from robotsmith.scenario.load import actions_to_intents, check_plan, read_plan_file, steps_to_intents
-from robotsmith.skills import Skill
-from robotsmith.skills.registry import SKILL_DEFS, SkillDef
+from robotsmith.grasp.geometric import GeometricGraspPlanner
+from robotsmith.scenario_runtime import runner
+from robotsmith.scenario_runtime.runner import plan_skill
+from robotsmith.skills import Skill, SkillContext
+from robotsmith.skills.manipulation_tools import ManipulationTools
+from robotsmith.skills.rule_policy import RulePolicy
 from robotsmith.assets.geometry import rotate_vec_wxyz
 from conftest import pick_skill, place_skill, plan_skills
 from robotsmith.skills.frames import (
@@ -261,10 +265,9 @@ class TestRegistryDispatch:
             return {"lifted": lifted[len(calls) - 1], "lift_m": 0.1, "seconds": 0.5}
 
         ex, state = _FakeExecutor(), _scene_state()
-        state["grasp_trial"], state["grasp_trial_all"] = trial, try_all
         try:
             motions = plan_skills([pick_skill("die")], ThreePlans(), ex, lambda *a, **k: np.zeros(9), state,
-                                 MotionParams(), gate=gate)
+                                 MotionParams(), gate=gate, trial=trial, try_all=try_all)
         except (Refused, ExecutionFailed):
             motions = None
         return motions, state["skill_traces"][0], calls
@@ -343,9 +346,8 @@ class TestRegistryDispatch:
         starts = []
         pick = ex.pick
         ex.pick = lambda actions, start: starts.append(np.array(start.q)) or pick(actions, start)
-        state["grasp_trial"] = trial
         try:
-            motions = plan_skills([pick_skill("die")], Plans(), ex, ik, state, MotionParams(), gate=gate)
+            motions = plan_skills([pick_skill("die")], Plans(), ex, ik, state, MotionParams(), gate=gate, trial=trial)
         except (Refused, ExecutionFailed):
             motions = None
         return motions, state["skill_traces"][0], starts
@@ -356,26 +358,26 @@ class TestRegistryDispatch:
                 return plans
 
         state = {**_scene_state(), "positions": {"die": np.array([0.5, 0.0, 0.0]), "mat": np.array([0.4, -0.2, 0.0])},
-                 "grasp_trial": trial, "target_frames": frames or {}}
+                 "target_frames": frames or {}}
         try:
             motions = plan_skills([pick_skill("die"), place_skill("mat")], Plans(), _FakeExecutor(), self._ik,
-                                 state, MotionParams(), gate=gate)
+                                 state, MotionParams(), gate=gate, trial=trial)
         except (Refused, ExecutionFailed):
             motions = None
         return motions, state
 
     @staticmethod
     def _fake_place(gate, monkeypatch, refuse_below=None):
-        """Replace the place primitive; return the (held_place_z, posed objects) of each call."""
+        """Replace the place tool; return the (held_place_z, posed objects) of each call."""
         calls = []
 
-        def place(ctx):
+        def place(self, ctx):
             calls.append((ctx.held_place_z, gate.env.poses[-1][1] if gate.env.poses else None))
             if refuse_below is not None and ctx.held_place_z < refuse_below:
                 raise Refused("search_exhausted", {"reason": "no transport to the standoff"})
             return ctx.gate.ungated([np.asarray(ctx.qpos)])
 
-        monkeypatch.setitem(SKILL_DEFS, "place", SkillDef(place, SKILL_DEFS["place"].post, SKILL_DEFS["place"].settle_s))
+        monkeypatch.setattr(ManipulationTools, "plan_place", place)
         return calls
 
     @staticmethod
@@ -494,6 +496,42 @@ class TestRegistryDispatch:
         assert [t["skill"] for t in state["skill_traces"]] == ["pick", "place"]
         assert state["skill_traces"][0]["trials"][0]["place"] == {"ok": True}
         gate.check_current(motions[0])
+
+    def test_a_refused_place_check_leaves_no_pose_trace_or_write(self, gate, monkeypatch):
+        monkeypatch.setattr(gate.env, "contacts_at",
+                            lambda q, held=None, placed=None:
+                            [(("die", "base"), ("barrier", "base"))] if held and np.allclose(q[:7], 0.0) else [],
+                            raising=False)
+        state = {**_scene_state(), "positions": {"die": np.array([0.5, 0.0, 0.0]), "mat": np.array([0.4, -0.2, 0.0])}}
+        with pytest.raises(Refused):
+            plan_skills([pick_skill("die"), place_skill("mat")], _FakePlanner(), _FakeExecutor(),
+                        lambda *a, **k: np.zeros(9), state, MotionParams(), gate=gate)
+        assert [t["skill"] for t in state["skill_traces"]] == ["pick"]
+        assert gate.env.poses == () and gate.env.writes == 0
+
+    @pytest.mark.parametrize("phase, carried", [("transport", True), ("descend", False), ("all", False)])
+    def test_place_clears_the_carry_over_only_when_it_releases(self, gate, monkeypatch, phase, carried):
+        monkeypatch.setattr(ManipulationTools, "plan_place", lambda self, ctx: ctx.gate.ungated([np.asarray(ctx.qpos)]))
+        ctx = SkillContext(skill=place_skill("mat"), executor=None, motion_planner=None, params=MotionParams(),
+                           scene_state=_scene_state(), qpos=np.zeros(9), category="die", gate=gate, held="die",
+                           held_category="die", held_place_z=0.12, phase=phase)
+        _, category, z = plan_skill(ctx, None, tools=ManipulationTools(gate, None, None, None), policy=RulePolicy(),
+                                    trial=None, try_all=False)
+        assert (category, z) == (("die", 0.12) if carried else (None, None))
+
+    def test_tools_call_the_gate_and_trial_patched_after_construction(self, gate, monkeypatch):
+        tools, seen = ManipulationTools(gate, None, None, None), []
+        monkeypatch.setattr(gate, "verify", lambda **k: seen.append("verify") or "voucher")
+        monkeypatch.setattr(gate.env, "trial_from_here", lambda traj, target: seen.append(target) or {}, raising=False)
+        assert tools.verify({"trajectory": []}) == "voucher" and tools.trial([], "die") == {}
+        assert seen == ["verify", "die"]
+
+    @pytest.mark.parametrize("planner, tried", [(None, False), (GeometricGraspPlanner(), True)])
+    def test_only_geometric_candidates_are_tried(self, planner, tried):
+        env = SimpleNamespace(entity_map={}, planner=planner, solve_ik=lambda *a, **k: np.zeros(9))
+        run = runner.EpisodeRun(env, None, executor=None, motion_params=None, dataset=None, record_fn=None,
+                                target_frames={}, camera_names=(), env_state_names=(), grasp_selection="trial_all")
+        assert (run.trial == run.tools.trial if tried else run.trial is None) and run.try_all is tried
 
     def test_no_place_check_before_a_place_on_a_dynamic_anchor(self, gate, monkeypatch):
         calls = self._fake_place(gate, monkeypatch)

@@ -85,7 +85,7 @@ place: sample(place | g) · move_to(p.pre) · move_linear(p.place) · detach(p) 
 
 ## 一个 pick / place 怎么执行
 
-**pick**（`skills/pick.py`）按候选顺序（写回资产的抓法在前，再按有向包围盒枚举 top_down / side）对每个候选：
+**pick**（`skills/rule_policy.py` 选择，`skills/manipulation_tools.py` 执行）按候选顺序（写回资产的抓法在前，再按有向包围盒枚举 top_down / side）对每个候选：
 
 1. 在当前构型张指；IK 解 pre-grasp（初值为 home 构型、基座关节转向抓取方位，或候选的 `ik_seed`）。
 2. 从 pre-grasp 起的 pick 列表先单独过门，被拒的候选不花规划。
@@ -97,7 +97,7 @@ place: sample(place | g) · move_to(p.pre) · move_linear(p.place) · detach(p) 
 第一个通过的候选被选中；`trial_all`（修复工具用）试遍全部候选，最后按顺序对抬起者重新过门。没有候选在任何试抓之前过门时抛
 `Refused("search_exhausted")`（零物理步）；已有候选试抓过、却没有一个成立时抛 `ExecutionFailed(evidence, steps)`。
 
-**place**（`skills/place.py`）从实测状态开始：`plan_place` 给出手的落点（目标点 + 抓取相对高度，朝向取插入方向），IK 解 standoff（手指取当前值），
+**place**（`ManipulationTools.plan_place`）从实测状态开始：`plan_place` 给出手的落点（目标点 + 抓取相对高度，朝向取插入方向），IK 解 standoff（手指取当前值），
 `JointPlanner.connect` 带持物规划搬运，`place_actions(phase="descend")` 接下放、`Detach`、松指、退回，整条一次 `verify`、一张凭证。
 任一步被拒都是零步 `Refused("search_exhausted")`，证据带 connect 或门的原因。动态锚点的 place 分 transport / descend 两段，
 descend 前重读目标位置；这种 place 不在 pick 里预检。
@@ -169,7 +169,7 @@ block / mug / F0–F2 的 certified 读数仍是[换掉 die](#换掉-die同一�
 |---|---|
 | Genesis 场景状态：快照、构型、状态指纹 | `SimEnv` |
 | 「这条轨迹能不能执行」、持物生命周期与接触许可规则 | `ExecutionGate`（许可规则只在 `permitted` 一处；读实际物理接触的验收用同模块的 `certified`，见 [certified 读数](acceptance.md#被测链路的-certified-读数)） |
-| 候选及其顺序（抓取）、place 的搬运目标 | 技能层（`run_pick` / `run_place`） |
+| 候选及其顺序（抓取）、place 的搬运目标 | 技能层（`RulePolicy.pick` / `ManipulationTools.plan_place`） |
 | plan 文件 `actions` 的引用与物体绑定 | `scenario.load.check_plan` |
 | plan 文件的 `actions` 切成 pick / place 段；只有 `steps` 时展开成公开组合的段 | `scenario.load`（`actions_to_intents`；`pick_part` / `place_part`） |
 | 把一段逐项译成动作列表：段的顺序、允许接触与 `Attach` / `Detach` 的位置 | `execution.meta_actions`（`check_part` / `pick_actions` / `place_actions`） |

@@ -534,10 +534,10 @@ def test_a_refused_step_steps_no_physics():
         scene.writes += len(traj)
         return {"lifted": False, "lift_m": 0.0, "seconds": 0.1}
 
-    state = {"home_qpos": Q0, "positions": {"die": np.array([0.5, 0.0, 0.8])}, "grasp_trial": trial}
+    state = {"home_qpos": Q0, "positions": {"die": np.array([0.5, 0.0, 0.8])}}
     with pytest.raises(Refused) as exc:
         plan_skills([pick_skill("die")], _Planner(), _Executor(), lambda *a, **k: Q0, state, MotionParams(),
-                   gate=ExecutionGate(scene))
+                   gate=ExecutionGate(scene), trial=trial)
     assert exc.value.label == "search_exhausted" and trials == [] and scene.writes == 0
     assert [t["gate"]["reason"] for t in exc.value.evidence["trials"]] == ["collision", "collision"]
 
@@ -545,5 +545,5 @@ def test_a_refused_step_steps_no_physics():
     del scene.contacts_at
     with pytest.raises(ExecutionFailed) as failed:
         plan_skills([pick_skill("die")], _Planner(), _Executor(), lambda *a, **k: Q0, dict(state), MotionParams(),
-                   gate=ExecutionGate(scene))
+                   gate=ExecutionGate(scene), trial=trial)
     assert failed.value.label == "execution_failed" and trials == ["die", "die"] and failed.value.steps == 6

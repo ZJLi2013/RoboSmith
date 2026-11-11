@@ -1,9 +1,7 @@
 """Core skill types shared by the action primitives and the registry.
 
 ``Skill`` is the authored action; ``SkillContext`` is everything a primitive
-needs to plan + execute one skill. Primitives read/write the carry-over state
-(``held_category`` / ``held_place_z``) on the context so the registry loop stays
-generic.
+or the policy needs to plan + execute one skill.
 """
 
 from __future__ import annotations
@@ -13,7 +11,6 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from robotsmith.grasp.planner import GraspPlanner
 from robotsmith.execution.executor import MotionExecutor
 from robotsmith.execution.gate import ExecutionGate
 from robotsmith.motion.params import MotionParams
@@ -57,16 +54,13 @@ class Skill:
 
 @dataclass
 class SkillContext:
-    """Everything a primitive needs to plan + execute one skill.
+    """Everything a primitive or the policy needs to plan + execute one skill.
 
-    Carry-over state (``held_category`` / ``held_place_z``) is read and written
-    by primitives so the registry loop stays generic.
+    Carry-over state (``held_category`` / ``held_place_z``) is the dispatcher's
+    (``scenario_runtime.runner.plan_skill``); a step reads it here.
     """
 
     skill: Skill
-    index: int
-    skills: list[Skill]
-    planner: GraspPlanner
     executor: MotionExecutor
     motion_planner: MotionPlanner
     params: MotionParams
