@@ -25,47 +25,24 @@ from robotsmith.skills.base import Skill, SkillContext, _resolve_skill_category
 from robotsmith.skills.registry import SKILL_DEFS, bound_leaf, register, skill_phases
 
 
-def _candidates(ctx: SkillContext) -> tuple[list[GraspPlan], dict]:
-    """The planner's grasp candidates for the target, and how many each of its filters removed."""
+def _candidates(ctx: SkillContext) -> list[GraspPlan]:
+    """The planner's grasp candidates for the target."""
     skill = ctx.skill
     scene_state = ctx.scene_state
-    obj_h = (
-        skill.params.get("object_height")
-        or scene_state.get("object_heights", {}).get(skill.target)
-    )
-    plans = ctx.planner.plan(
+    return ctx.planner.plan(
         ctx.obj_pos,
         object_quat=scene_state.get("object_quats", {}).get(skill.target),
         category=ctx.category,
         asset=scene_state.get("assets", {}).get(skill.target),
-        object_height=obj_h,
     )
-    return plans, dict(getattr(ctx.planner, "last_filter_counts", {}) or {})
 
 
 def _pick_motion_params(ctx: SkillContext) -> MotionParams:
     """Pick timing = base params, but skip the lift hold when a place follows."""
-    params = ctx.params
     next_is_place = (
         ctx.index + 1 < len(ctx.skills) and ctx.skills[ctx.index + 1].name == "place"
     )
-    return MotionParams(
-        max_joint_vel=params.max_joint_vel,
-        fine_joint_vel=params.fine_joint_vel,
-        dt=params.dt,
-        min_steps=params.min_steps,
-        finger_steps=params.finger_steps,
-        grasp_settle_steps=params.grasp_settle_steps,
-        approach_steps=params.approach_steps,
-        descend_steps=params.descend_steps,
-        grasp_hold_steps=params.grasp_hold_steps,
-        lift_steps=params.lift_steps,
-        lift_hold_steps=0 if next_is_place else params.lift_hold_steps,
-        transport_steps=params.transport_steps,
-        place_descend_steps=params.place_descend_steps,
-        release_steps=params.release_steps,
-        retreat_steps=params.retreat_steps,
-    )
+    return replace(ctx.params, lift_hold_steps=0 if next_is_place else ctx.params.lift_hold_steps)
 
 
 def _ik_init(ctx: SkillContext, plan: GraspPlan) -> np.ndarray:
@@ -90,7 +67,7 @@ def _select(ctx: SkillContext, trial) -> tuple[GraspPlan, VerifiedMotion]:
     ``{"lifted", "lift_m", "seconds"}``. With ``scene_state["grasp_trial_all"]`` every candidate is
     tried, for probes that need the executable fraction.
     """
-    plans, filter_counts = _candidates(ctx)
+    plans = _candidates(ctx)
     try_all = bool(ctx.scene_state.get("grasp_trial_all"))
     target = ctx.skill.target
     place = _static_place(ctx)
@@ -133,13 +110,13 @@ def _select(ctx: SkillContext, trial) -> tuple[GraspPlan, VerifiedMotion]:
         break
     ctx.trace({
         "skill": ctx.skill.name, "target": target, "category": ctx.category,
-        "filter_counts": filter_counts, "no_candidates": not plans, "no_trial_success": chosen is None,
+        "no_candidates": not plans, "no_trial_success": chosen is None,
         "selected_candidate_index": chosen[0].metadata.get("candidate_index") if chosen else None,
         "trials": trials, "trial_seconds": round(sum(t["seconds"] for t in trials), 3),
     })
     if chosen is None:
         evidence = {"reason": "no pick candidate passed the gate and its trial", "candidates": len(plans),
-                    "filter_counts": filter_counts, "trials": trials}
+                    "trials": trials}
         steps = sum(t.get("steps", 0) for t in trials)
         if steps:
             raise ExecutionFailed(evidence, steps)

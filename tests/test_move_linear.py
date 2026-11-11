@@ -7,7 +7,7 @@ from robotsmith.execution.executor import MotionExecutor
 from robotsmith.execution.gate import Holding
 from robotsmith.execution.meta_actions import pick_actions, place_actions
 from robotsmith.scenario.load import pick_part, place_part
-from robotsmith.grasp.planner import GraspPlan, Waypoint
+from robotsmith.grasp.planner import GraspPlan
 from robotsmith.motion import move_linear
 from robotsmith.motion.move_linear import MoveLinear, expand
 from robotsmith.motion.params import MotionParams
@@ -89,12 +89,6 @@ def test_pick_place_and_drag_expand_their_lines_through_move_linear(monkeypatch)
         pre_grasp_pos=np.array([0.5, 0.0, 0.2]), pre_grasp_quat=QUAT,
         retreat_pos=np.array([0.5, 0.0, 0.3]), retreat_quat=QUAT,
         finger_open=0.04, finger_closed=0.0,
-        waypoints=[
-            Waypoint(pos=np.array([0.5, 0.0, 0.2]), quat=QUAT, finger_width=0.04),
-            Waypoint(pos=np.array([0.5, 0.0, 0.1]), quat=QUAT, finger_width=0.04),
-            Waypoint(pos=np.array([0.5, 0.0, 0.1]), quat=QUAT, finger_width=0.0),
-            Waypoint(pos=np.array([0.5, 0.0, 0.3]), quat=QUAT, finger_width=0.0),
-        ],
     )
     pre = (plan.pre_grasp_pos, plan.pre_grasp_quat)
     q = _ik(*pre, 0.04)

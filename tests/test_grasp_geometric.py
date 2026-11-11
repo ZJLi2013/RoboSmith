@@ -24,9 +24,6 @@ def test_geometric_die_sized_box_gives_four_top_down_and_four_side_grasps():
     td = plans[0]
     np.testing.assert_allclose(td.grasp_pos - np.asarray(td.metadata["tip_pos"]), [0, 0, GripperSpec().tcp_offset])
     np.testing.assert_allclose(quat_wxyz_to_matrix(td.grasp_quat)[:, 2], [0, 0, -1], atol=1e-6)
-    for p in plans:
-        assert p.retreat_pos[2] > p.grasp_pos[2] + 0.1
-        assert p.waypoints[2].finger_width == p.finger_closed
     side = plans[4]
     assert side.metadata["tip_pos"][2] == pytest.approx(0.025)
     assert abs(side.metadata["approach_dir"][2]) < 1e-9
@@ -99,14 +96,14 @@ def _bottle_urdf(tmp_path, inertial_rpy="0 0 0"):
 
 def test_geometric_plan_places_the_urdf_relative_to_the_inertial_origin_genesis_reports(tmp_path):
     yaw90 = np.array([np.cos(np.pi / 4), 0, 0, np.sin(np.pi / 4)])
-    plans = GeometricGraspPlanner().plan(np.array([0.5, 0.1, 0.875]), yaw90, asset=_bottle_urdf(tmp_path), scale=0.5)
-    assert sorted({round(p.metadata["closing_width"], 4) for p in plans}) == [0.015, 0.03]
+    plans = GeometricGraspPlanner().plan(np.array([0.5, 0.1, 0.875]), yaw90, asset=_bottle_urdf(tmp_path))
+    assert sorted({round(p.metadata["closing_width"], 4) for p in plans}) == [0.03, 0.06]
     top = plans[0].metadata["tip_pos"]
     assert top[:2] == pytest.approx([0.5, 0.1])
     assert top[2] == pytest.approx(0.875)
     side = next(p for p in plans if p.metadata["kind"] == "side")
     assert side.metadata["tip_pos"][2] == pytest.approx(0.875)
-    narrow = next(p for p in plans if p.metadata["closing_width"] == pytest.approx(0.015))
+    narrow = next(p for p in plans if p.metadata["closing_width"] == pytest.approx(0.03))
     assert abs(narrow.metadata["finger_dir"][0]) == pytest.approx(1.0, abs=1e-6)
 
 

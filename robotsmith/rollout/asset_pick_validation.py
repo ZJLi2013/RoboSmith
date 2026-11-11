@@ -284,7 +284,6 @@ def run_asset_pick(config: AssetPickValidationConfig, asset_name: str) -> dict:
             "no_trial_success": pick_trace.get("no_trial_success"),
             "trials": pick_trace.get("trials"),
             "trial_seconds": pick_trace.get("trial_seconds"),
-            "filter_counts": pick_trace.get("filter_counts"),
             "object_initial_pos": [float(v) for v in initial_positions["object"]],
             "finger_final_qpos": [float(v) for v in to_numpy(env.franka.get_dofs_position(env.finger_dof))],
         }

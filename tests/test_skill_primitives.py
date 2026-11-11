@@ -232,10 +232,8 @@ class TestRegistryDispatch:
         markers = [t[-1] for t in traj if np.allclose(t, t[-1])]
         assert markers == [0.0, 1.0, 2.0, 3.0, 3.0]
 
-    def test_pick_with_every_candidate_filtered_out_records_counts_and_is_refused(self, gate):
+    def test_pick_without_candidates_is_refused(self, gate):
         class EmptyPlanner(_FakePlanner):
-            last_filter_counts = {"raw": 8, "z_reject": 8, "accepted": 0}
-
             def plan(self, *a, **k):
                 return []
 
@@ -245,7 +243,7 @@ class TestRegistryDispatch:
                        state, MotionParams(), gate=gate)
         assert ex.calls == []
         trace = state["skill_traces"][0]
-        assert trace["no_candidates"] and trace["filter_counts"]["z_reject"] == 8
+        assert trace["no_candidates"]
 
     def _trial_run(self, gate, lifted, try_all=False):
         class ThreePlans(_FakePlanner):

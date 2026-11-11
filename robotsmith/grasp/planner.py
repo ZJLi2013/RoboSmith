@@ -1,9 +1,7 @@
 """Grasp planning contracts.
 
 This module defines the shared data contract between grasp planners and motion
-execution: ``GraspPlan`` plus the ``GraspPlanner`` backend ABC. The ``Waypoint``
-primitive is owned by the motion layer (``robotsmith.motion.types``) and
-re-exported here for the planners that build waypoint sequences.
+execution: ``GraspPlan`` plus the ``GraspPlanner`` backend ABC.
 """
 
 from __future__ import annotations
@@ -16,7 +14,6 @@ from typing import Optional
 import numpy as np
 
 from robotsmith.grasp.transforms import TOP_DOWN_QUAT, rotmat_to_quat_wxyz
-from robotsmith.motion.types import Waypoint
 
 _DEFAULT_APPROACH = np.array([0.0, 0.0, -1.0])
 
@@ -50,25 +47,19 @@ class GraspPlan:
     All poses are in world frame. This is the sole interface between
     "where to grasp" (planner) and "how to reach it" (executor).
 
-    Pick plans set ``waypoints``: the executor walks the ordered waypoint list.
-    The fixed ``pre_grasp``/``grasp``/``retreat`` fields are used by ``place``
-    (which builds its own transport/descend/retreat sequence from them).
+    A pick plan's lift comes from the plan's ``actions``; only ``plan_place`` sets ``retreat_pos`` /
+    ``retreat_quat``, where the place retreats to after the release.
     """
 
     grasp_pos: np.ndarray
     grasp_quat: np.ndarray          # EE orientation at grasp (wxyz)
     pre_grasp_pos: np.ndarray       # hover / approach waypoint
     pre_grasp_quat: np.ndarray
-    retreat_pos: np.ndarray         # post-grasp lift waypoint
-    retreat_quat: np.ndarray
     finger_open: float              # finger width while approaching
     finger_closed: float            # finger width when grasping
-    quality: float = 1.0            # planner confidence (0-1)
+    retreat_pos: Optional[np.ndarray] = None
+    retreat_quat: Optional[np.ndarray] = None
     metadata: dict = field(default_factory=dict)
-
-    # Learned planner: ordered waypoint sequence for approach-aware motion.
-    # When set, MotionExecutor uses this instead of the fixed fields above.
-    waypoints: Optional[list[Waypoint]] = None
 
 
 class GraspPlanner(ABC):
@@ -81,14 +72,11 @@ class GraspPlanner(ABC):
         self,
         object_pos: np.ndarray,
         object_quat: np.ndarray | None = None,
-        rng: np.random.Generator | None = None,
         *,
         category: str = "block",
         asset: Any = None,
-        object_height: float | None = None,
-        scale: float = 1.0,
     ) -> list[GraspPlan]:
-        """Return GraspPlan(s) sorted by quality (descending)."""
+        """Return GraspPlan(s) in the order to try them."""
         ...
 
     def plan_place(
@@ -132,6 +120,5 @@ class GraspPlanner(ABC):
             retreat_quat=quat.copy(),
             finger_open=0.04,
             finger_closed=0.01,
-            quality=1.0,
             metadata={"source": "place", "category": category, "approach_dir": a.tolist()},
         )
