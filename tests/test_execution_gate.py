@@ -113,12 +113,7 @@ def _pick_plan():
     return GraspPlan(
         grasp_pos=np.array([0.5, 0.0, 0.85]), grasp_quat=quat, pre_grasp_pos=np.array([0.5, 0.0, 0.95]),
         pre_grasp_quat=quat, retreat_pos=np.array([0.5, 0.0, 1.0]), retreat_quat=quat,
-        finger_open=0.04, finger_closed=0.0, waypoints=[
-            SimpleNamespace(pos=np.array([0.5, 0.0, 0.95]), quat=quat, finger_width=0.04),
-            SimpleNamespace(pos=np.array([0.5, 0.0, 0.85]), quat=quat, finger_width=0.04),
-            SimpleNamespace(pos=np.array([0.5, 0.0, 0.85]), quat=quat, finger_width=0.0),
-            SimpleNamespace(pos=np.array([0.5, 0.0, 1.0]), quat=quat, finger_width=0.0),
-        ])
+        finger_open=0.04, finger_closed=0.0)
 
 
 def _ik(pos, quat, finger_pos, *, init_qpos=None):
@@ -129,7 +124,7 @@ def _ik(pos, quat, finger_pos, *, init_qpos=None):
 
 
 def _at_first_waypoint(plan, finger):
-    return _ik(plan.waypoints[0].pos, plan.waypoints[0].quat, finger)
+    return _ik(plan.pre_grasp_pos, plan.pre_grasp_quat, finger)
 
 
 GRASP = Holding("die", np.eye(4))

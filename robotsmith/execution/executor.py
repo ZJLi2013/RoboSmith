@@ -66,7 +66,7 @@ def _open_drag_waypoints(
         ),
         RuntimeMotionWaypoint(
             pos=handle, quat=grasp_quat, finger_width=finger_closed,
-            label="grasp", segment_type="finger", finger_only=True,
+            label="grasp", finger_only=True,
             steps=params.grasp_hold_steps,
             hold_after_steps=params.grasp_settle_steps,
         ),
@@ -86,7 +86,7 @@ def _open_drag_waypoints(
         RuntimeMotionWaypoint(
             pos=target + back * retreat_height, quat=grasp_quat,
             finger_width=finger_open, label="release",
-            segment_type="finger", finger_only=True,
+            finger_only=True,
             steps=params.release_steps,
         ),
     ]

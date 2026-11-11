@@ -76,8 +76,7 @@ def pick_actions(
             already_open = np.allclose(opened[7:], np.asarray(start_q, dtype=np.float64)[7:])
             width = plan.finger_open
             actions.append(RuntimeMotionWaypoint(pos=pos, quat=quat, finger_width=width, label="open",
-                                                 segment_type="finger", steps=0 if already_open else None,
-                                                 finger_only=True))
+                                                 steps=0 if already_open else None, finger_only=True))
         elif key == "move_to pre":
             pos, quat = poses["pre"]
             actions.append(RuntimeMotionWaypoint(pos=pos, quat=quat, finger_width=width, label="approach",
@@ -89,8 +88,7 @@ def pick_actions(
         elif key == "gripper close":
             width = plan.finger_closed
             actions.append(RuntimeMotionWaypoint(pos=pos, quat=quat, finger_width=width, label="close",
-                                                 segment_type="finger", finger_only=True,
-                                                 hold_after_steps=params.grasp_settle_steps, allow="grip"))
+                                                 finger_only=True, hold_after_steps=params.grasp_settle_steps, allow="grip"))
         elif key == "attach":
             actions.append(Attach(grasp))
         elif key == "move_linear line":
@@ -153,18 +151,17 @@ def place_actions(part: list[dict], place_plan: GraspPlan, params: MotionParams,
         elif key == "move_linear place":
             pos, quat = poses["place"]
             actions.append(RuntimeMotionWaypoint(pos=pos, quat=quat, finger_width=width, label="descend",
-                                                 linear="keep", steps=params.place_descend_steps, allow="rest"))
+                                                 linear="keep", allow="rest"))
         elif key == "detach":
             actions.append(Detach())
         elif key == "gripper open":
             width = place_plan.finger_open
             actions.append(RuntimeMotionWaypoint(pos=pos, quat=quat, finger_width=width, label="release",
-                                                 segment_type="finger", steps=params.release_steps,
-                                                 finger_only=True, allow="grip"))
+                                                 steps=params.release_steps, finger_only=True, allow="grip"))
         elif key == "move_linear retreat":
             pos, quat = poses["retreat"]
             actions.append(RuntimeMotionWaypoint(pos=pos, quat=quat, finger_width=width, label="retreat",
-                                                 linear="keep", steps=params.retreat_steps, allow="grip"))
+                                                 linear="keep", allow="grip"))
     return actions
 
 

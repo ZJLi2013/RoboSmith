@@ -11,9 +11,7 @@ from typing import Protocol, runtime_checkable
 
 import numpy as np
 
-from robotsmith.motion.types import Waypoint
-
-__all__ = ["Waypoint", "MotionPlanner", "GenesisBackend"]
+__all__ = ["MotionPlanner", "GenesisBackend"]
 
 
 @runtime_checkable

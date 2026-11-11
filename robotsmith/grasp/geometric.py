@@ -21,10 +21,8 @@ from robotsmith.assets import derive
 from robotsmith.grasp import annotations
 from robotsmith.grasp.planner import GraspPlan, GraspPlanner
 from robotsmith.grasp.transforms import quat_wxyz_to_matrix, rotmat_to_quat_wxyz
-from robotsmith.motion.types import Waypoint
 
 DOWN = np.array([0.0, 0.0, -1.0])
-UP = np.array([0.0, 0.0, 1.0])
 
 
 @dataclass(frozen=True)
@@ -40,7 +38,6 @@ class GripperSpec:
     pad_below_tcp: float = 0.008
     pad_above_tcp: float = 0.009
     approach_clearance: float = 0.12
-    lift: float = 0.17
 
     @property
     def max_width(self) -> float:
@@ -64,20 +61,17 @@ def _canonical(axis: np.ndarray) -> np.ndarray:
 class GeometricGraspPlanner(GraspPlanner):
     def __init__(self, gripper: GripperSpec = GripperSpec()):
         self.gripper = gripper
-        self.last_filter_counts: dict[str, int] = {}
         self.last_plans: list[GraspPlan] = []
 
-    def plan(self, object_pos, object_quat=None, rng=None, *, category="block", asset: Any = None,
-             object_height=None, scale=1.0) -> list[GraspPlan]:
+    def plan(self, object_pos, object_quat=None, *, category="block", asset: Any = None) -> list[GraspPlan]:
         rot = np.eye(3) if object_quat is None else quat_wxyz_to_matrix(np.asarray(object_quat, dtype=np.float64))
         local = derive.visual_points(asset.urdf_path) - derive.inertial_origin(asset.urdf_path)
-        world = local * scale @ rot.T + np.asarray(object_pos, dtype=np.float64)
+        world = local @ rot.T + np.asarray(object_pos, dtype=np.float64)
         written = [self._plan("annotation", *annotations.to_world(c, object_pos, object_quat), 0.0, category)
                    for c in annotations.current_grasps(asset.root_dir)]
         plans = written + self.candidates(world, category, com=object_pos)
         for k, p in enumerate(plans):
             p.metadata["candidate_index"] = k
-        self.last_filter_counts = {"raw": len(plans), "accepted": len(plans)}
         self.last_plans = plans
         return plans
 
@@ -112,16 +106,9 @@ class GeometricGraspPlanner(GraspPlanner):
         quat = rotmat_to_quat_wxyz(rot)
         hand = tip - approach * g.tcp_offset
         pre = hand - approach * g.approach_clearance
-        lifted = hand + UP * g.lift
         return GraspPlan(
             grasp_pos=hand, grasp_quat=quat, pre_grasp_pos=pre, pre_grasp_quat=quat.copy(),
-            retreat_pos=lifted, retreat_quat=quat.copy(), finger_open=g.finger_open, finger_closed=g.finger_closed,
+            finger_open=g.finger_open, finger_closed=g.finger_closed,
             metadata={"source": "geometric", "kind": kind, "category": category, "closing_width": float(width),
                       "tip_pos": tip.tolist(), "approach_dir": approach.tolist(), "finger_dir": finger.tolist()},
-            waypoints=[
-                Waypoint(pos=pre, quat=quat.copy(), finger_width=g.finger_open),
-                Waypoint(pos=hand.copy(), quat=quat.copy(), finger_width=g.finger_open),
-                Waypoint(pos=hand.copy(), quat=quat.copy(), finger_width=g.finger_closed),
-                Waypoint(pos=lifted, quat=quat.copy(), finger_width=g.finger_closed),
-            ],
         )

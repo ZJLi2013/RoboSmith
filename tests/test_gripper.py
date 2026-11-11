@@ -6,9 +6,8 @@ from robotsmith.execution.executor import MotionExecutor
 from robotsmith.execution.gate import Holding
 from robotsmith.execution.meta_actions import pick_actions, place_actions
 from robotsmith.scenario.load import pick_part, place_part
-from robotsmith.grasp.planner import GraspPlan, Waypoint
+from robotsmith.grasp.planner import GraspPlan
 from robotsmith.motion import gripper
-from robotsmith.motion.chain import evaluate_motion_chain
 from robotsmith.motion.gripper import Gripper, expand
 from robotsmith.motion.params import MotionParams
 from robotsmith.motion.plan_state import PlanState
@@ -50,7 +49,7 @@ def test_expand_leaves_its_inputs_alone_and_repeats_itself():
     assert a.q_target is not q_start
 
 
-def test_pick_place_drag_and_scoring_open_and_close_through_gripper(monkeypatch):
+def test_pick_place_and_drag_open_and_close_through_gripper(monkeypatch):
     seen = []
     real = gripper.expand
 
@@ -65,12 +64,6 @@ def test_pick_place_drag_and_scoring_open_and_close_through_gripper(monkeypatch)
         pre_grasp_pos=np.array([0.5, 0.0, 0.2]), pre_grasp_quat=QUAT,
         retreat_pos=np.array([0.5, 0.0, 0.3]), retreat_quat=QUAT,
         finger_open=0.04, finger_closed=0.0,
-        waypoints=[
-            Waypoint(pos=np.array([0.5, 0.0, 0.2]), quat=QUAT, finger_width=0.04),
-            Waypoint(pos=np.array([0.5, 0.0, 0.1]), quat=QUAT, finger_width=0.04),
-            Waypoint(pos=np.array([0.5, 0.0, 0.1]), quat=QUAT, finger_width=0.0),
-            Waypoint(pos=np.array([0.5, 0.0, 0.3]), quat=QUAT, finger_width=0.0),
-        ],
     )
     pre = (plan.pre_grasp_pos, plan.pre_grasp_quat)
     q = _ik(*pre, 0.0)
@@ -83,6 +76,3 @@ def test_pick_place_drag_and_scoring_open_and_close_through_gripper(monkeypatch)
     seen.clear()
     exe.drag_handle(np.array([0.5, 0.0, 0.15]), QUAT, np.array([-0.1, 0.0, 0.0]), planner, np.zeros(9), params)
     assert seen == [0.0, 0.04]
-    seen.clear()
-    evaluate_motion_chain(plan.waypoints, _ik, np.zeros(9), max_final_approach_joint_step=0.8)
-    assert seen == [0.0]

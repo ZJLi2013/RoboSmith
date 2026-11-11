@@ -5,7 +5,7 @@ import math
 import numpy as np
 import pytest
 
-from robotsmith.motion.chain import _compute_steps, _same_pose
+from robotsmith.motion.chain import _compute_steps
 from robotsmith.execution.executor import MotionExecutor
 from robotsmith.execution.gate import Holding
 from robotsmith.execution.meta_actions import pick_actions, place_actions
@@ -13,7 +13,7 @@ from robotsmith.scenario.load import pick_part, place_part
 from robotsmith.motion.plan_state import PlanState
 from robotsmith.motion.planner import GenesisBackend
 from robotsmith.motion.params import MotionParams
-from robotsmith.grasp.planner import GraspPlan, Waypoint
+from robotsmith.grasp.planner import GraspPlan
 
 PICK, PLACE = pick_part("die"), place_part("die", "mat")
 
@@ -39,12 +39,12 @@ class TestComputeSteps:
         steps, _ = _compute_steps(np.zeros(9), q1, vel=1.0, dt=DT, min_steps=5)
         assert steps == 5
 
-    def test_fine_vel_gives_more_steps_than_normal(self):
+    def test_slower_vel_gives_more_steps(self):
         q1 = np.zeros(9)
         q1[2] = 0.5
-        s_normal, _ = _compute_steps(np.zeros(9), q1, vel=1.0, dt=DT)
-        s_fine, _ = _compute_steps(np.zeros(9), q1, vel=0.3, dt=DT)
-        assert s_fine > s_normal
+        s_fast, _ = _compute_steps(np.zeros(9), q1, vel=1.0, dt=DT)
+        s_slow, _ = _compute_steps(np.zeros(9), q1, vel=0.3, dt=DT)
+        assert s_slow > s_fast
 
     def test_ignores_finger_joints(self):
         """Only arm joints (first 7) count for distance."""
@@ -65,22 +65,13 @@ def _trivial_ik(pos, quat, finger_width, init_qpos=None, **_kw):
 
 
 def _pick_plan():
-    """4-waypoint plan: pre-approach, grasp-open, grasp-close, retreat."""
     return GraspPlan(
         grasp_pos=np.array([0.5, 0.0, 0.1]),
         grasp_quat=IDENTITY,
         pre_grasp_pos=np.array([0.5, 0.0, 0.2]),
         pre_grasp_quat=IDENTITY,
-        retreat_pos=np.array([0.5, 0.0, 0.3]),
-        retreat_quat=IDENTITY,
         finger_open=0.04,
         finger_closed=0.0,
-        waypoints=[
-            Waypoint(pos=np.array([0.5, 0.0, 0.22]), quat=IDENTITY, finger_width=0.04),
-            Waypoint(pos=np.array([0.5, 0.0, 0.10]), quat=IDENTITY, finger_width=0.04),
-            Waypoint(pos=np.array([0.5, 0.0, 0.10]), quat=IDENTITY, finger_width=0.00),
-            Waypoint(pos=np.array([0.5, 0.0, 0.30]), quat=IDENTITY, finger_width=0.00),
-        ],
     )
 
 
@@ -132,12 +123,7 @@ class TestPlaceMotionChain:
                 q[3] = 1.5
             return q
 
-        params = MotionParams(
-            transport_steps=3,
-            place_descend_steps=4,
-            release_steps=5,
-            retreat_steps=6,
-        )
+        params = MotionParams(transport_steps=3, release_steps=5)
         exe = MotionExecutor()
         traj = exe.run("place", place_actions(PLACE, plan, params), GenesisBackend(unstable_open_ik),
                        PlanState(np.zeros(9), HELD), params)
@@ -152,11 +138,3 @@ class TestPlaceMotionChain:
         release_arm = _segment_frames(traj, release_idx)[:, :7]
         assert np.allclose(release_arm, release_arm[0])
         assert release_arm[0][3] == pytest.approx(0.0)
-
-
-def test_same_pose_ignores_finger_width():
-    def wp(z, finger):
-        return Waypoint(pos=np.array([0.5, 0.0, z]), quat=IDENTITY, finger_width=finger)
-
-    assert _same_pose(wp(0.1, 0.04), wp(0.1, 0.00))
-    assert not _same_pose(wp(0.1, 0.04), wp(0.3, 0.04))

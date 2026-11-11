@@ -7,7 +7,7 @@ from robotsmith.execution.gate import Refused
 from robotsmith.scenario.specs import FrameRef
 from robotsmith.scenario_runtime.runner import run_scenario_episode
 from robotsmith.tasks.task_spec import SuccessNode, TaskSpec as LegacyTaskSpec
-from robotsmith.grasp.planner import GraspPlan, Waypoint
+from robotsmith.grasp.planner import GraspPlan
 from robotsmith.motion.params import MotionParams
 from robotsmith.scenario.load import pick_part, place_part
 from robotsmith.skills import Skill
@@ -119,7 +119,6 @@ def _fake_plan(x, y, z):
         finger_open=0.04,
         finger_closed=0.01,
         metadata={"source": "fake"},
-        waypoints=[Waypoint(pos=np.array([x, y, z + 0.1]), quat=q, finger_width=0.04)],
     )
 
 
