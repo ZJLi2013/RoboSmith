@@ -156,6 +156,11 @@ All notable user-facing changes are documented here. This project follows Semant
 
 ### Removed
 
+- Assets no scenario, scene, test or document loads: the drafts `chair_02` and `drawer_cabinet_d1` (duplicates of
+  `chair_01` and `drawer_cabinet_a`), `drawer_cabinet_blender` (the build of `drawer_cabinet_a`), `drawer_cabinet_b`
+  and `drawer_cabinet_c` (no license, review failed), and the admitted `drawer_cabinet_a`, a near-duplicate of the
+  `drawer_cabinet` the drawer scenarios use.
+
 - The rocRobo motion sidecar and its collision-blind straight-line fallback: it planned in its own simplified world,
   which disagreed with the simulator's geometry. `run_skills`, `plan_segment`, `LIFT` and
   `MotionExecutor.pick` / `place` went with the hard-coded motion templates.
