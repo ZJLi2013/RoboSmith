@@ -18,7 +18,8 @@ All notable user-facing changes are documented here. This project follows Semant
 - Six meta actions (`sample`, `move_to`, `move_linear`, `gripper`, `attach`, `detach`): each pick and place runs one
   fixed composition of them through `EpisodeRun`, the only entry. A pick step may give its lift
   (`lift: {direction, dist}`, world +Z 0.10 m by default). `steps_to_intents` checks a step list against the hand it
-  starts with, so a place with nothing held or a pick while holding is rejected before any physics step.
+  starts with: an unknown object or place target, a place with nothing held and a pick while holding are each a
+  `PlanInvalid` naming the step, raised before any physics step; YAML and schema errors are raised as they are.
 - Acceptance families under `scenarios/acceptance/`, each varying one constraint: F0 open table, F1 wall gap,
   F2 over barrier, F4 caged (unsolvable), and the held-out F5. `scripts/acceptance/witness.py` shows each positive
   instance solvable independently of the chain under test; `scripts/acceptance/certify.py --scenario <yaml>` runs the

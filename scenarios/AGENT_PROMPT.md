@@ -122,14 +122,18 @@ Without the `lift` line it runs the same.
 
 ### `PlanInvalid` messages and fixes
 
-The steps are checked in order, from the hand they start with, when the file loads:
+The steps are checked in order, from the hand they start with, when the file loads; each message starts with
+`step <i>:`:
 
 | Message contains | Fix |
 |---|---|
 | `place <target> with nothing held` | pick the object before placing it |
 | `pick <object> while holding <held>` | place what is held before the next pick |
 | `unknown object '<id>'` | use an object id from the scene |
-| a schema message (e.g. naming `actions` or `push`) | only `pick` (with `lift`), `place`, `open` and `close` exist |
+| the place target's name | use a place target the object's metadata lists |
+
+A key the schema does not know (e.g. `actions` or `push`) is a jsonschema `ValidationError`, raised before these
+checks: only `name` and `steps` are keys, and only `pick` (with `lift`), `place`, `open` and `close` are steps.
 
 ## Validate
 
