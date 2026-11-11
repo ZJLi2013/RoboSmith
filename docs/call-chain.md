@@ -18,6 +18,92 @@
 
 每个框写 `模块.函数`，框按所属模块放进层里；同一层内的子框是可以单独替换的组件。
 
+## 对象：一步 pick / place 由谁完成
+
+```mermaid
+classDiagram
+    class EpisodeRun {
+        +run_steps(skills, bindings)
+        +result()
+    }
+    class SkillContext {
+        skill
+        skills
+        index
+        scene_state
+        held_place_z
+    }
+    class SkillDef {
+        primitive
+        post
+        settle_s
+    }
+    class pick {
+        <<module>>
+        +run_pick(ctx)
+        _select(ctx, trial)
+        _place_check()
+    }
+    class place {
+        <<module>>
+        +run_place(ctx)
+        _resolve_place_plan(ctx)
+    }
+    class GraspPlanner {
+        <<abstract>>
+        +plan()
+        +plan_place()
+    }
+    class GeometricGraspPlanner {
+        +candidates(world_points)
+    }
+    class ExecutionGate {
+        +verify(trajectory, spans)
+        +check_point(q, span)
+        +check_current(motion)
+        +ungated(trajectory)
+    }
+    class JointPlanner {
+        +connect(q_start, q_goal)
+    }
+    class MotionExecutor {
+        +run(name, actions)
+        +drag_handle()
+    }
+    class SimEnv {
+        +contacts_at(qpos)
+        +posed(qpos, objects)
+        +trial_from_here(trajectory, target)
+    }
+    class VerifiedMotion
+
+    EpisodeRun --> SimEnv
+    EpisodeRun *-- ExecutionGate
+    EpisodeRun --> MotionExecutor
+    EpisodeRun ..> SkillContext : 每个 phase 构造
+    EpisodeRun ..> SkillDef : 查 SKILL_DEFS
+    SkillDef --> pick : primitive
+    SkillDef --> place : primitive
+    SkillContext --> ExecutionGate
+    SkillContext --> GraspPlanner
+    SkillContext --> MotionExecutor
+    GraspPlanner <|-- GeometricGraspPlanner
+    SimEnv *-- GeometricGraspPlanner : build()
+    ExecutionGate --> SimEnv
+    pick ..> JointPlanner : 每个候选构造
+    place ..> JointPlanner : 构造
+    pick ..> place : 预跑 place
+    JointPlanner --> ExecutionGate
+    ExecutionGate ..> VerifiedMotion : 签发
+```
+
+实线箭头 = 持有（注入），菱形 = 自己创建，空心三角 = 继承，虚线 = 构造后交出或调用。`EpisodeRun.__init__` 创建
+`ExecutionGate`；`env`、`executor` 由入口传入；`SimEnv.build` 把 `GeometricGraspPlanner` 存为 `planner`。图上看不出的三处跨步耦合：
+
+- `scene_state` 是 dict，`_live_scene_state` 往里放 `grasp_trial = env.trial_from_here` 回调与 `grasp_trial_all` 标志。
+- pick 由 `ctx.skills[ctx.index + 1]` 看下一步，是单阶段 place 时在 `env.posed` 里预跑 place 的原语（`_static_place`、`_place_check`）。
+- `held_place_z` 由 pick 写进 `SkillContext`，`EpisodeRun._plan` 存下，下一步 place 的 `_resolve_place_plan` 读。
+
 ## episode：从入口到判定
 
 ```mermaid
@@ -70,6 +156,23 @@ flowchart TD
 段内顺序与公开组合不同、引用或物体不属于本段（`check_plan`）即加载时 `PlanInvalid`（[写法与报错](../scenarios/AGENT_PROMPT.md#plan-file-optional)）。pick 已走过物理步之后组合即提交，place 仍从实测状态重新规划，这时它被拒就记 `execution_failed`。agent 路径上零步拒绝（`Refused` 的标签）按
 plan 类失败重写剩余步骤，`execution_failed` 按 physical 失败上报；重写后的步骤全部执行完，episode 就不再算被拒。
 
+### 一步的数据表示：从 plan 文件到凭证
+
+```mermaid
+flowchart LR
+    Y["plan YAML actions"] -->|check_plan<br/>actions_to_intents| I["SkillIntentSpec"]
+    I -->|to_legacy_skills| S["Skill<br/>params actions"]
+    S -->|EpisodeRun._plan| C["SkillContext"]
+    C -->|pick_actions / place_actions<br/>按 PICK_ORDER / PLACE_ORDER| A["RuntimeMotionWaypoint<br/>与 Attach / Detach"]
+    A -->|execute_motion_chain| M["MotionChainExecution<br/>segments"]
+    M -->|spans_of / poses_of| P["Span"]
+    P -->|ExecutionGate.verify| V["VerifiedMotion"]
+```
+
+段内顺序由 `meta_actions.check_part` 固定为一种，plan 能换的是物体、放置面、绑定名与抬升的方向和距离；四个验收族的
+`actions` 相同。场景与任务另有两套类型：`scenario/specs` 的 `SceneSpec` / `TaskSpec` 经 `adapters.to_legacy_scene_config` /
+`to_legacy_task_spec` 转成运行时的 `SceneConfig` 与 `tasks/task_spec.TaskSpec`（`materialize_candidate`）。
+
 ## 一个技能：候选、整条轨迹、过门
 
 ```mermaid
@@ -121,6 +224,46 @@ flowchart TD
     style PL fill:#e8eef9,stroke:#3b5b9a
     style LOW fill:#fff4e0,stroke:#b9770e
 ```
+
+同一个 pick 按调用顺序（certify 用的 file 规划器，`grasp_selection="trial"`）：
+
+```mermaid
+sequenceDiagram
+    participant R as EpisodeRun
+    participant K as pick
+    participant G as GeometricGraspPlanner
+    participant Q as ExecutionGate
+    participant J as JointPlanner
+    participant E as SimEnv
+    participant L as place
+
+    R->>R: _live_scene_state（放入 grasp_trial 回调）
+    R->>K: run_pick(ctx)
+    K->>G: plan(obj_pos, asset)
+    G-->>K: 候选（写回的抓法在前）
+    loop 每个候选，直到第一个通过
+        K->>Q: verify（从 pre-grasp 起的 pick 段）
+        K->>J: connect(opened, q_pre)
+        K->>Q: verify（整条 pick 轨迹）
+        opt 下一步是单阶段 place
+            K->>E: posed(q_end, 手里的物体)
+            K->>L: run_place(place_ctx)，凭证丢弃
+        end
+        opt place 可达或不预检
+            K->>E: trial_from_here(trajectory)
+            E-->>K: lifted（抬高超过 0.02 m）
+            opt lifted
+                K->>Q: verify（快照恢复后再签一次）
+            end
+        end
+    end
+    K-->>R: VerifiedMotion
+    R->>Q: check_current(motion)
+    R->>E: record_fn 逐点回放
+```
+
+候选循环就是规则策略：选哪个候选、试抓与 place 预检的先后都写在 `pick._select` 里，和候选生成、规划、试抓的调用不分开。
+试抓步进了物理，之前签发的凭证随状态指纹失效，所以抬起后要再 verify 一次。
 
 门检查的是会被执行的每一个点：pick 的规划进场段、手指段与段后保持（含抬升后的保持）都在 `spans` 里，`spans` 必须铺满整条轨迹。
 pick 的手指闭合段允许手指碰目标（`grip`），其后的直线抬升持物且允许离开支撑面（`rest`）；place 的规划搬运段持物，
