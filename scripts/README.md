@@ -17,7 +17,7 @@ stage: **assets → datagen → acceptance**, plus **setup**.
 
 ## `acceptance/` — acceptance families ([docs/acceptance.md](../docs/acceptance.md))
 
-- `certify.py`: run the manipulation chain on a family's instances and judge every physics step; writes `instances.jsonl` and `summary.json`.
+- `certify.py`: run the manipulation chain on a scenario's instances (`--scenario <yaml>`, any scenario with a `split`) and judge every physics step; writes `instances.jsonl` and `summary.json`.
 - `witness.py`: the solvability witness, independent of the chain under test.
 - `batch.py`: the batch runner both use; a worker that hangs past an attempt's timeout is killed from outside and resumed.
 - `make_fixtures.py`: write the URDF-primitive fixtures of the families into `assets/`.

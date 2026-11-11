@@ -110,8 +110,8 @@ F2 只跑了 2 个实例：穿透接触让求解器变慢，批次在第 3 个�
 
 - **位置**：族定义、plan 文件、见证参数（`witness.json`）与约束和选择理由（`README.md`，封存）在
   `scenarios/acceptance/heldout/`，逐实例结果只放在实验记录的封存目录里。公共 `witness.py` 只有
-  `--heldout` 机制，不含任何留出族名或参数；`certify.py` 按 `--family` 解析 `scenarios/acceptance/<family>.yaml`，
-  留出族只在解封读数时以 `--family heldout/<name>` 显式给出。
+  `--heldout` 机制，不含任何留出族名或参数；`certify.py` 读 `--scenario` 给出的场景文件，留出族只在解封读数时以
+  `--scenario scenarios/acceptance/heldout/<name>.yaml` 显式给出。
 - **冻结**：只有构造它的 task 写这些文件；test 批次在已提交的输入上运行，manifest 记下 commit 与各文件的 sha256，
   之后只读。批次失败或输入未提交时不写 manifest，修正后整批重跑。
 - **改动留出文件**：封存期间只允许不改字节的迁移（如移动路径），sha256 保持与 manifest 一致；改内容等于烧毁。
@@ -126,18 +126,20 @@ F2 只跑了 2 个实例：穿透接触让求解器变慢，批次在第 3 个�
 `scripts/acceptance/certify.py` 对每个实例用 plan 文件加载出的技能（有 `actions` 时按它）跑一次 `EpisodeRun`（技能、执行门、执行器），不渲染：
 
 ```text
-python scripts/acceptance/certify.py --family f1_wall_gap --split test --out out/f1_test
+python scripts/acceptance/certify.py --scenario scenarios/acceptance/f1_wall_gap.yaml --split test --out out/f1_test
 ```
+
+它读任意带 `split` 的 scenario：每个实例要挪的是 plan 里 pick 的物体，不认物体名；难度读数只对 `witness.py` 里的族给出。
 
 - **每个物理步都判**：`SimEnv.step()` 每步回调一次，读该步解出的接触，按正在执行的 span 用
   `robotsmith.execution.gate.certified` 判。试抓、正式回放用已验证轨迹的 span，步骤与任务判定的 settle 用末个
   已回放的 span；reset 及其静止计步不判；不属于任何阶段的物理步算违规。试抓的快照恢复不抹掉它的接触计数。
-- **每组 seed 一个场景**：实例之间 certify 只把 die 移到本 seed 的起点。`scene_groups` 按「除 die 起点外场景相同」（物体、资产、
+- **每组 seed 一个场景**：实例之间 certify 只把 plan 里 pick 的物体移到本 seed 的起点。`scene_groups` 按「除这些物体的起点外场景相同」（物体、资产、
   yaw、关节初值、其余物体位置、桌面）把 seed 分组，每组在第一次运行时建一次场景；换组前 `gs.destroy()`，因为 Genesis 一个进程
   只允许一次 `gs.init`。公开族的固定件不随 seed 变，只建一次场景；固定件随 seed 变化的族按组各建一次
   （mat 随 seed 移动的 F0 副本，两组各一例，在 GPU 上验证过）。
-- **规则**是执行门的 `permitted` 再加一条：die 没被抓着时只能碰桌面、放置目标与机器人手指。门判的是静态位姿，
-  认证判的是实际物理，没被抓的 die 碰到墙说明它被推了。和见证的差别：搬运中 die 擦到桌面也算违规。
+- **规则**是执行门的 `permitted` 再加一条：被操作的物体没被抓着时只能碰桌面、放置目标与机器人手指。门判的是静态位姿，
+  认证判的是实际物理，没被抓的物体碰到墙说明它被推了。和见证的差别：搬运中物体擦到桌面也算违规。
 - **certified**：正例要任务谓词成立且零违规；负例要第一步以 `Refused` 的标签（`search_exhausted` 等）停下且 reset 之后
   零物理步。其余结果分别记停下的标签（`search_exhausted`、`execution_failed`）、`violation`、`task_failed`、`init_failed`（静止检查不过）与 `error`（抛异常，重试一次，
   两次尝试都留在 `instances.jsonl`，取后一次）。Genesis 偶尔在某个物理步上挂住，进程内中断不了它，所以超时在进程外：

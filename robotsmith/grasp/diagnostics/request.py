@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import xml.etree.ElementTree as ET
+from collections import Counter
 from dataclasses import asdict
 from pathlib import Path
 
@@ -12,7 +13,7 @@ import numpy as np
 from robotsmith.assets import derive
 
 PLAYBOOK = Path(__file__).with_name("playbook.md")
-DIRECTIONS = ("coordinate_frame, closing_axis, support_clearance, grip_control, scene_placement, add_candidate, "
+DIRECTIONS = ("coordinate_frame, closing_axis, grip_control, scene_placement, add_candidate, "
               "ik_reachability, asset_mass_or_inertia, asset_friction, asset_geometry_or_collision, solver_settings, "
               "unknown")
 NEXT_STEPS = ("propose_candidate_pose, propose_ik_seed, request_asset_fix, flag_scene_placement, "
@@ -66,6 +67,37 @@ def _sections(mesh) -> list[dict]:
     return out
 
 
+def _outcome(t: dict) -> dict:
+    """What stopped one candidate, read from its pick trial record."""
+    if isinstance(t.get("gate"), dict):
+        return {"outcome": "gate_rejected", "gate": t["gate"]}
+    if (t.get("approach") or {}).get("ok") is False:
+        return {"outcome": "approach_refused", "approach": {k: v for k, v in t["approach"].items() if k != "ok"}}
+    if (t.get("place") or {}).get("ok") is False:
+        return {"outcome": "place_refused", "place": t["place"].get("label")}
+    if t.get("motion_error"):
+        return {"outcome": "motion_error", "motion_error": t["motion_error"]}
+    return {"outcome": "tried", "lift_m": t.get("lift_m")}
+
+
+_OUTCOME_PHRASES = {"gate_rejected": "rejected by the execution gate before any physics step",
+                    "approach_refused": "refused for lack of an approach path",
+                    "place_refused": "skipped because the place from where their pick ends was refused",
+                    "motion_error": "rejected by IK or motion planning"}
+
+
+def _question(plans, trials) -> str:
+    if not plans:
+        return "The geometric planner produced 0 candidates for this object, so no grasp was tried; diagnose."
+    counts = Counter(t["outcome"] for t in trials)
+    parts = [f"{n} {'was' if n == 1 else 'were'} {_OUTCOME_PHRASES[k]}" for k, n in counts.items() if k != "tried"]
+    if counts["tried"]:
+        lift = max((t["lift_m"] or 0.0 for t in trials if t["outcome"] == "tried"), default=0.0)
+        parts.append(f"{counts['tried']} {'was' if counts['tried'] == 1 else 'were'} tried and none lifted the object "
+                     f"(max lift {lift:.3f} m)")
+    return f"The planner produced {len(plans)} candidates; {', '.join(parts) or 'none was tried'}; diagnose."
+
+
 def evidence(*, urdf_path: Path, category: str, pos, quat, aabb, table_z: float, gripper, plans, label: dict,
              object_xy) -> dict:
     from robotsmith.grasp.transforms import quat_wxyz_to_matrix
@@ -78,21 +110,15 @@ def evidence(*, urdf_path: Path, category: str, pos, quat, aabb, table_z: float,
     by_idx = {p.metadata.get("candidate_index"): p for p in plans}
     trials = []
     for t in label.get("trials") or []:
-        row = {"candidate": t["candidate_index"], "kind": t.get("kind"), "ik":
-               "rejected: " + t["motion_error"] if t.get("motion_error") else "ok", "lift_m": t.get("lift_m")}
+        row = {"candidate": t["candidate_index"], "kind": t.get("kind"), **_outcome(t)}
         p = by_idx.get(t["candidate_index"])
         if p is not None:
             md = p.metadata
             row |= {"closing_width_m": round(md.get("closing_width", 0.0), 4), "tip_xyz": _r(md["tip_pos"]),
                     "approach": _r(md["approach_dir"]), "finger_axis": _r(md["finger_dir"])}
         trials.append(row)
-    lifts = [t["lift_m"] or 0.0 for t in trials]
-    question = ("The geometric planner produced 0 candidates for this object, so no grasp was tried; diagnose."
-                if not plans else
-                f"The planner produced {len(plans)} candidates; {len(trials)} were tried and none lifted the object "
-                f"(max lift {max(lifts, default=0.0):.3f} m); diagnose.")
     return {
-        "question": question,
+        "question": _question(plans, trials),
         "gripper": {"type": "Franka Panda parallel gripper", "max_opening_m": round(gripper.max_width, 4),
                     "finger_pad_beyond_tcp_m": gripper.pad_below_tcp},
         "object": {"category": category, "mass_kg": mass, "aabb_min_m": _r(aabb[0]), "aabb_max_m": _r(aabb[1]),

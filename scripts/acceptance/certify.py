@@ -1,10 +1,10 @@
-"""Certified readings of the manipulation chain on the acceptance families.
+"""Certified readings of the manipulation chain on a scenario's instances.
 
-  python scripts/acceptance/certify.py --family f0_open --split test --out out/f0_open_test
+  python scripts/acceptance/certify.py --scenario scenarios/acceptance/f0_open.yaml --split test --out out/f0_open_test
 
-Each instance runs the family's plan file (its ``actions`` when present) once through ``EpisodeRun``
+Each instance runs the scenario's plan file (its ``actions`` when present) once through ``EpisodeRun``
 (skills, execution gate, executor) on the seed's layout: one scene is built per group of seeds whose scenes differ
-only in where the die starts (``scene_groups``), and each instance moves the die to its seed's start. Every physics step after the reset is read for the contacts it resolved and judged by
+only in where the picked objects start (``scene_groups``), and each instance moves them to its seed's start. Every physics step after the reset is read for the contacts it resolved and judged by
 ``gate.certified`` for the span being executed: trial and replay steps by the verified motion's spans, step
 and task settles by the last replayed span. A positive instance is certified when the task predicate holds
 and no step of any stage broke the rule; a negative one when its first step is refused and nothing ran
@@ -96,12 +96,13 @@ def run_instance(env, pkg, family, mon, record_episode):
     from robotsmith.scenario_runtime.runner import (EpisodeRun, evaluate_scenario_task, reset_scene,
                                                     resolve_static_target_positions)
     from robotsmith.sim.sim_env import SceneInvalid
-    from witness import caged, difficulty
+    from witness import FAMILIES, caged, difficulty
 
     task = pkg.legacy_task
     placed = {o.name_override: np.asarray(o.fixed_position, dtype=float) for o in pkg.legacy_scene.objects}
-    die = env.placed_map["die"]
-    env.placed_map["die"] = dataclasses.replace(die, position=list(placed["die"]))
+    picked = movers(pkg)
+    for name in picked:
+        env.placed_map[name] = dataclasses.replace(env.placed_map[name], position=list(placed[name]))
     row = {"family": family, "layout": {k: _tolist(v) for k, v in placed.items()}}
     mon.enter("init")
     try:
@@ -109,10 +110,13 @@ def run_instance(env, pkg, family, mon, record_episode):
     except SceneInvalid as exc:
         return {**row, "settle_ok": False, "outcome": "init_failed", "why": str(exc), "steps": dict(mon.steps)}
     settled = {n: _tolist(p) for n, p in env.sync_object_states().items()}
-    row.update(settle_ok=True, settled=settled, **difficulty(family, placed, np.asarray(settled["die"])))
-    if family in NEGATIVE:
-        why = caged(placed, np.asarray(settled["die"]))
-        row.update(caged=not why, caged_why=why)
+    row.update(settle_ok=True, settled=settled)
+    if family in FAMILIES:
+        (obj,) = picked
+        row.update(difficulty(family, placed, np.asarray(settled[obj])))
+        if family in NEGATIVE:
+            why = caged(placed, np.asarray(settled[obj]))
+            row.update(caged=not why, caged_why=why)
 
     meta, last = {}, [None]
     run = EpisodeRun(env, task, executor=MotionExecutor(), motion_params=MotionParams(), dataset=_NoDataset(),
@@ -190,14 +194,19 @@ class _NoDataset:
         pass
 
 
+def movers(pkg) -> set[str]:
+    """The objects the plan picks: the ones whose start differs between seeds of one built scene."""
+    return {s.target for s in pkg.legacy_task.skills if s.name == "pick"}
+
+
 def scene_groups(packages: dict) -> list[list[int]]:
-    """The seeds in groups one built scene serves: within a group the scene differs only in where the die starts,
-    the one thing ``run_instance`` changes between instances."""
+    """The seeds in groups one built scene serves: within a group the scene differs only in where the picked
+    objects start, the one thing ``run_instance`` changes between instances."""
     groups: dict[str, list[int]] = {}
     for seed, pkg in packages.items():
-        scene = pkg.legacy_scene
+        scene, picked = pkg.legacy_scene, movers(pkg)
         objects = [(o.name_override, o.asset_query, o.yaw_deg, sorted((o.joint_init or {}).items()),
-                    None if o.name_override == "die" else _tolist(o.fixed_position)) for o in scene.objects]
+                    None if o.name_override in picked else _tolist(o.fixed_position)) for o in scene.objects]
         groups.setdefault(repr((objects, _tolist(scene.table_size), scene.table_height)), []).append(seed)
     return list(groups.values())
 
@@ -209,7 +218,7 @@ def seeds_for(path: Path, split: str, limit: int | None) -> list[int]:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--family", required=True)
+    ap.add_argument("--scenario", type=Path, required=True, help="scenario YAML; its plan file is plans/<name>.yaml")
     ap.add_argument("--split", choices=["playground", "test"], required=True)
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--out", type=Path, required=True)
@@ -225,7 +234,8 @@ def main() -> None:
     from robotsmith.sim.recorder import record_episode
     from robotsmith.sim.sim_env import SimEnv
 
-    path = REPO / "scenarios" / "acceptance" / f"{args.family}.yaml"
+    path = args.scenario.resolve()
+    family = path.stem
     plan_file = path.parent / "plans" / path.name
     seeds = seeds_for(path, args.split, args.limit)
     args.out.mkdir(parents=True, exist_ok=True)
@@ -246,7 +256,7 @@ def main() -> None:
             built.update(group=group, env=env, mon=Monitor(env))
         built["mon"].start()
         return {"split": args.split,
-                **run_instance(built["env"], packages[seed], args.family, built["mon"], record_episode)}
+                **run_instance(built["env"], packages[seed], family, built["mon"], record_episode)}
 
     prior = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()] if args.resume else []
     with log.open("a" if args.resume else "w", encoding="utf-8") as fh:
@@ -254,10 +264,10 @@ def main() -> None:
                          show=("seed", "attempt", "outcome", "first_violation", "seconds"),
                          running=log.with_suffix(".running"))
     outcomes = Counter(r["outcome"] for r in rows)
-    summary = {"family": args.family, "split": args.split, "seeds": seeds,
+    summary = {"family": family, "split": args.split, "seeds": seeds,
                "certified": sum(r["certified"] for r in rows), "n": len(rows), "outcomes": dict(outcomes)}
     (args.out / "summary.json").write_text(json.dumps(summary, indent=1) + "\n", encoding="utf-8")
-    print(f"{args.family} {args.split}: {summary['certified']}/{summary['n']} certified {dict(outcomes)}")
+    print(f"{family} {args.split}: {summary['certified']}/{summary['n']} certified {dict(outcomes)}")
 
 
 if __name__ == "__main__":

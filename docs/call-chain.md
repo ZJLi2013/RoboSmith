@@ -84,7 +84,7 @@ flowchart TD
     end
 
     subgraph PL["place.run_place"]
-        PP["place._resolve_place_plan → grasp/planner.plan_place<br/>落点 = 目标点 + 抓取相对高度"]
+        PP["place._resolve_place_plan → grasp/planner.plan_place<br/>手的落点 = 目标点 + 抓取相对高度，朝向取插入方向<br/>只有竖直放置时物体落在目标点上"]
         PC["place._connect：IK 解 standoff，手指取当前值<br/>JointPlanner.connect 带持物规划搬运段"]
         PX["MotionExecutor.run(meta_actions.place_actions(phase=descend))<br/>从 standoff 下放、松手、退回"]
         V3{"ExecutionGate.verify<br/>rest = 放置目标的 entity；plan_state.binding 取实测手与物体位姿"}

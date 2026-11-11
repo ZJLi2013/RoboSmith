@@ -88,7 +88,8 @@ def test_a_trial_restore_does_not_undo_its_steps():
     assert mon.steps == {"trial": 3, "replay": 1} and mon.violating["trial"] == 1
 
 
-ACCEPTANCE = Path(__file__).resolve().parents[1] / "scenarios" / "acceptance"
+SCENARIOS = Path(__file__).resolve().parents[1] / "scenarios"
+ACCEPTANCE = SCENARIOS / "acceptance"
 
 
 def _packages(path, seeds):
@@ -98,6 +99,22 @@ def _packages(path, seeds):
 
 def test_a_family_whose_fixtures_stay_put_builds_one_scene():
     assert certify.scene_groups(_packages(ACCEPTANCE / "f0_open.yaml", range(10))) == [list(range(10))]
+
+
+def test_the_objects_an_instance_moves_are_the_plans_pick_targets():
+    block = _packages(SCENARIOS / "pick_place_block_on_mat.yaml", [0])[0]
+    assert certify.movers(block) == {"block"}
+    assert certify.movers(_packages(ACCEPTANCE / "f0_open.yaml", [0])[0]) == {"die"}
+
+
+def test_seeds_that_differ_only_in_where_the_picked_object_starts_share_a_scene():
+    packages = _packages(SCENARIOS / "pick_place_block_on_mat.yaml", range(10))
+
+    def start(seed):
+        return next(o.fixed_position for o in packages[seed].legacy_scene.objects if o.name_override == "block")
+
+    assert len({tuple(np.round(start(s), 5)) for s in range(10)}) > 1
+    assert certify.scene_groups(packages) == [list(range(10))]
 
 
 def test_a_fixture_that_moves_between_seeds_gets_a_scene_of_its_own(tmp_path):

@@ -21,8 +21,11 @@ All notable user-facing changes are documented here. This project follows Semant
   physics step.
 - Acceptance families under `scenarios/acceptance/`, each varying one constraint: F0 open table, F1 wall gap,
   F2 over barrier, F4 caged (unsolvable), and the held-out F5. `scripts/acceptance/witness.py` shows each positive
-  instance solvable independently of the chain under test; `scripts/acceptance/certify.py` runs the chain and judges
-  every physics step, writing `instances.jsonl` and `summary.json`.
+  instance solvable independently of the chain under test; `scripts/acceptance/certify.py --scenario <yaml>` runs the
+  chain on any scenario with a `split` and judges every physics step, writing `instances.jsonl` and `summary.json`.
+  The objects each instance moves are the plan's pick targets, not a fixed name.
+- `scenarios/pick_place_block_on_mat.yaml` and `scenarios/pick_place_mug_on_mat.yaml`: the F0 layout with `block_01`
+  and `mug_02` in place of the die.
 - `scripts/acceptance/batch.supervise`: the witness and certify batches run in a worker process; an attempt past
   600 s has its process group killed from outside, gets an `error` row, and the batch resumes. This replaces the
   in-process timer, which a simulator step holding the GIL could block.
@@ -182,6 +185,9 @@ All notable user-facing changes are documented here. This project follows Semant
   frames the solved scene).
 - The `metric_scale` and `upright` annotations, `AssetMetadata.task_poses`, `scene_state["object_scales"]`, and
   `robotsmith.scenes.pose_utils`.
+- `GripperSpec.width_margin`: geometric candidates close across any horizontal axis up to the full opening
+  (`2 × finger_open`, 80 mm). The execution gate already rejects a finger touching the object anywhere on the
+  pick's commanded descent; a touch that only happens in replay is a certified violation.
 
 ### Fixed
 
@@ -192,9 +198,11 @@ All notable user-facing changes are documented here. This project follows Semant
   finger, and the check used half of it, so grasps whose lower pad enters the support surface passed P0.
 - Geometric grasp candidates close along the Panda hand's local Y axis, the axis its finger joints move on. They
   put the closing direction in X, so the fingers closed across the other side of the object.
-- Top-down geometric candidates keep the TCP at least `GripperSpec.pad_below_tcp + support_clearance` (8 + 10 mm)
-  above the object's bottom. The pads reach 8 mm below the TCP, and on low objects they dragged on the table while
-  closing.
+- Top-down geometric candidates hold the finger pads inside the object's height, at the centre-of-mass height and
+  then as shallow as they fit (`GripperSpec.pad_below_tcp` / `pad_above_tcp`, from the Panda pad geometry), over the
+  centre of mass and then the box centre. They used fixed depths below the top over the box centre; on low objects the
+  pads dragged on the table while closing, and a box centre pulled off by a handle put both contacts at a pad edge.
+  A finger that still meets the support is rejected by the execution gate, so no clearance margin is added.
 
 ## [0.1.0] - 2026-10-20
 
