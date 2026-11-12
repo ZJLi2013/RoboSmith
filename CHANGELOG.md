@@ -175,7 +175,8 @@ All notable user-facing changes are documented here. This project follows Semant
   and the checks on them), and the uncalled builders `intents.close_`, `predicates.negate`,
   `scene_api.on_articulated` / `on_articulated_opening`. `adapters.resolved_target_positions` is gone too: every YAML
   scenario's place target is anchored, so it was always empty, and `certify.py` and `run_generated_scenario.py` take
-  their static target points from `resolve_static_target_positions` alone.
+  their static target points from `resolve_static_target_positions` alone. Every scenario loads the same apart from
+  the removed keys, and F0 playground seeds 0–4 give the same outcome, certification and per-stage physics steps.
 
 - A plan file's `actions` and their item-by-item translation: `actions_to_intents`, `check_plan`, `load_plan`,
   `pick_part` / `place_part`, `meta_actions.check_part` and `Skill.params["actions"]`. They could only spell the one
