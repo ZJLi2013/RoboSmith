@@ -183,6 +183,9 @@ All notable user-facing changes are documented here. This project follows Semant
   the `predicates` builders now build `tasks.TaskSpec` and `SuccessNode` directly, and check the tree's names at load
   (`validators.check_task`, same error text). `to_legacy_skills` and `validate_skill_intent_sequence` take the scene,
   and `ScenarioRuntimePackage` has no `scenario_task`; each materialization gets its own copy of the loaded task.
+  All 14 scenarios at seeds 0–4 in both load modes load the same apart from the removed keys above; the non-YAML
+  single-asset tasks, and the serialization, bindings and errors of any / not / nested all success trees, are
+  unchanged; materializing one candidate in both orders neither rewrites nor shares the first task.
 
 - The second scene and target types: `SceneSpec`, `LayoutSpec`, `RegionSpec`, `ObjectSpec`, `TargetPositionSpec`,
   `to_legacy_scene_config`, `adapters.target_frames`, `validators.validate_scene` and `scenario/scene_api.py`
