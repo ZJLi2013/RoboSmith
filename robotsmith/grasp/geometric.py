@@ -6,7 +6,7 @@ across. Top-down grasps sit over the centre of mass first, then over the box cen
 finger pads inside the object's height: at the centre-of-mass height, then as shallow as the pads
 allow. Grasps written back to the asset by a verified repair (``annotations``) come first.
 Candidates are not scored or screened beyond that width check: which one works is decided
-by trying them in simulation (``grasp_trial`` in the pick skill).
+by trying them in simulation (``ManipulationTools.trial``, called by the pick policy).
 """
 
 from __future__ import annotations

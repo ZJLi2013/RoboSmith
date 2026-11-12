@@ -24,6 +24,8 @@ from robotsmith.sim.franka import HOME_QPOS, to_numpy_f32
 from robotsmith.sim.world_state import collect_world_state, settle_window
 from robotsmith.skills import SKILL_DEFS, SkillContext, resolve_frame, skill_phases
 from robotsmith.skills.base import _resolve_skill_category
+from robotsmith.skills.manipulation_tools import ManipulationTools
+from robotsmith.skills.rule_policy import RulePolicy
 from robotsmith.tasks import evaluate_success
 from robotsmith.tasks.task_spec import TaskSpec
 
@@ -107,6 +109,13 @@ class EpisodeRun:
         self.grasp_selection = grasp_selection
         self.dataset, self.record_fn, self.target_frames = dataset, record_fn, target_frames
         self.gate = ExecutionGate(env)
+        self.motion_planner = GenesisBackend(env.solve_ik)
+        self.tools = ManipulationTools(self.gate, env.planner, executor, self.motion_planner)
+        self.policy = RulePolicy()
+        # Geometric candidates are judged by trying them from the live scene (snapshot, replay, restore).
+        geometric = isinstance(env.planner, GeometricGraspPlanner)
+        self.trial = self.tools.trial if geometric else None
+        self.try_all = geometric and grasp_selection == "trial_all"
         self.camera_names, self.env_state_names = camera_names, env_state_names
         self.initial_positions = collect_object_positions(env)
         self.skill_traces: list[dict] = []
@@ -122,21 +131,18 @@ class EpisodeRun:
         self.stopped = None
 
     def _plan(self, skill, index: int, planned: list, scene_state: dict, phase: str) -> VerifiedMotion:
-        """One phase of ``skill`` planned by its primitive from the live ``scene_state``, verified by the gate
-        against the current scene; raises ``Refused`` / ``ExecutionFailed`` like the primitive. The primitive's
-        carry-over (``held_category`` / ``held_place_z``) is kept for the next step."""
-        skill_def = SKILL_DEFS.get(skill.name)
-        if skill_def is None:
-            raise ValueError(f"Unknown skill: {skill.name!r}")
+        """One phase of ``skill`` planned from the live ``scene_state`` (``plan_skill``), verified by the gate
+        against the current scene; raises ``Refused`` / ``ExecutionFailed`` like the plan. The carry-over
+        (``held_category`` / ``held_place_z``) is kept for the next step."""
         ctx = SkillContext(
-            skill=skill, index=index, skills=planned, planner=self.env.planner, executor=self.executor,
-            motion_planner=GenesisBackend(self.env.solve_ik), params=self.motion_params, scene_state=scene_state,
-            qpos=self.qpos, category=_resolve_skill_category(skill, scene_state.get("assets", {}),
-                                                             self.held_category),
+            skill=skill, executor=self.executor, motion_planner=self.motion_planner, params=self.motion_params,
+            scene_state=scene_state, qpos=self.qpos,
+            category=_resolve_skill_category(skill, scene_state.get("assets", {}), self.held_category),
             gate=self.gate, held=self.held, held_category=self.held_category, held_place_z=self.held_place_z,
             phase=phase)
-        motion = skill_def.primitive(ctx)
-        self.held_category, self.held_place_z = ctx.held_category, ctx.held_place_z
+        next_skill = planned[index + 1] if index + 1 < len(planned) else None
+        motion, self.held_category, self.held_place_z = plan_skill(
+            ctx, next_skill, tools=self.tools, policy=self.policy, trial=self.trial, try_all=self.try_all)
         return motion
 
     def _record_step(self, q):
@@ -165,8 +171,7 @@ class EpisodeRun:
             if skill.name == "pick":
                 self.pick_start = self.frame_count
             for phase in phases:
-                scene_state = _live_scene_state(env, self.target_frames, self.skill_traces,
-                                                trial_all=self.grasp_selection == "trial_all")
+                scene_state = _live_scene_state(env, self.target_frames, self.skill_traces)
                 if step_start is None:
                     step_start = {n: np.asarray(p).tolist() for n, p in collect_object_positions(env).items()}
                 obj = skill.target if skill.name == "pick" else self.held
@@ -233,6 +238,34 @@ class EpisodeRun:
             final_window=self.window,
             stopped=self.stopped,
         )
+
+
+def plan_skill(ctx: SkillContext, next_skill, *, tools: ManipulationTools, policy: RulePolicy, trial,
+               try_all: bool) -> tuple[VerifiedMotion, str | None, float | None]:
+    """One phase of ``ctx.skill``: pick and place through ``policy``, any other skill through its primitive.
+    Returns the motion and the carry-over (``held_category``, ``held_place_z``) for the next step.
+
+    A pick is told whether ``next_skill`` is a place and, when that place is planned in one phase, which place to
+    check from where each candidate ends."""
+    skill = ctx.skill
+    skill_def = SKILL_DEFS.get(skill.name)
+    if skill_def is None:
+        raise ValueError(f"Unknown skill: {skill.name!r}")
+    if skill.name == "pick":
+        place_follows = next_skill is not None and next_skill.name == "place"
+        frame = ctx.scene_state.get("target_frames", {}).get(next_skill.target) if place_follows else None
+        place_next = next_skill if place_follows and skill_phases(next_skill, frame) == ["all"] else None
+        motion, held_place_z = policy.pick(ctx, tools, place_follows=place_follows, place_next=place_next,
+                                           trial=trial, try_all=try_all)
+        return motion, ctx.category, held_place_z
+    if skill.name == "place":
+        motion = policy.place(ctx, tools)
+        # The object is only released on the descend phase; transport still carries it,
+        # so hold-state carry-over must survive into descend.
+        if ctx.phase in ("all", "descend"):
+            return motion, None, None
+        return motion, ctx.held_category, ctx.held_place_z
+    return skill_def.primitive(ctx), ctx.held_category, ctx.held_place_z
 
 
 def _judge_completion(env, entry: dict, skill, skill_def, binding: dict, hold, record_step,
@@ -338,8 +371,6 @@ def _live_scene_state(
     env,
     target_frames: dict,
     skill_traces: list[dict],
-    *,
-    trial_all: bool = False,
 ) -> dict:
     scene_state = {
         "home_qpos": HOME_QPOS.copy(),
@@ -356,9 +387,6 @@ def _live_scene_state(
         # use them for phase-aware collision-world exemption of the manipulated link.
         "target_frames": target_frames,
     }
-    # Geometric candidates are judged by trying them from the live scene (snapshot, replay, restore).
-    if isinstance(getattr(env, "planner", None), GeometricGraspPlanner):
-        scene_state["grasp_trial"], scene_state["grasp_trial_all"] = env.trial_from_here, trial_all
     # Resolve every named target against the live world so e.g. a tray slot
     # tracks the drawer's current opening instead of a static "fully open" point.
     for name, frame in target_frames.items():

@@ -18,7 +18,7 @@ from robotsmith.skills.registry import (
 from robotsmith.skills.frames import resolve_frame
 
 # Import the action modules for their registration side effects.
-from robotsmith.skills import open_close, pick, place  # noqa: F401,E402
+from robotsmith.skills import open_close  # noqa: F401,E402
 
 __all__ = [
     "Skill",

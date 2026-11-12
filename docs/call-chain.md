@@ -28,26 +28,27 @@ classDiagram
     }
     class SkillContext {
         skill
-        skills
-        index
         scene_state
+        held
         held_place_z
+        phase
     }
     class SkillDef {
         primitive
         post
         settle_s
     }
-    class pick {
-        <<module>>
-        +run_pick(ctx)
-        _select(ctx, trial)
-        _place_check()
+    class RulePolicy {
+        +pick(ctx, tools, place_follows, place_next, trial, try_all)
+        +place(ctx, tools)
     }
-    class place {
-        <<module>>
-        +run_place(ctx)
-        _resolve_place_plan(ctx)
+    class ManipulationTools {
+        +grasp_candidates(ctx)
+        +plan_pick(ctx, plan, params)
+        +verify(request)
+        +trial(trajectory, target)
+        +posed(qpos, objects)
+        +plan_place(ctx)
     }
     class GraspPlanner {
         <<abstract>>
@@ -80,29 +81,36 @@ classDiagram
     EpisodeRun --> SimEnv
     EpisodeRun *-- ExecutionGate
     EpisodeRun --> MotionExecutor
+    EpisodeRun *-- ManipulationTools
+    EpisodeRun *-- RulePolicy
     EpisodeRun ..> SkillContext : 每个 phase 构造
     EpisodeRun ..> SkillDef : 查 SKILL_DEFS
-    SkillDef --> pick : primitive
-    SkillDef --> place : primitive
+    SkillDef ..> open_close : primitive
+    RulePolicy ..> ManipulationTools : 调用
+    ManipulationTools --> ExecutionGate
+    ManipulationTools --> GraspPlanner
+    ManipulationTools --> MotionExecutor
+    ManipulationTools ..> JointPlanner : 每次规划构造
     SkillContext --> ExecutionGate
-    SkillContext --> GraspPlanner
     SkillContext --> MotionExecutor
     GraspPlanner <|-- GeometricGraspPlanner
     SimEnv *-- GeometricGraspPlanner : build()
     ExecutionGate --> SimEnv
-    pick ..> JointPlanner : 每个候选构造
-    place ..> JointPlanner : 构造
-    pick ..> place : 预跑 place
     JointPlanner --> ExecutionGate
     ExecutionGate ..> VerifiedMotion : 签发
 ```
 
 实线箭头 = 持有（注入），菱形 = 自己创建，空心三角 = 继承，虚线 = 构造后交出或调用。`EpisodeRun.__init__` 创建
-`ExecutionGate`；`env`、`executor` 由入口传入；`SimEnv.build` 把 `GeometricGraspPlanner` 存为 `planner`。图上看不出的三处跨步耦合：
+`ExecutionGate`、`ManipulationTools`（注入门、`env.planner`、执行器与 `GenesisBackend(env.solve_ik)`）与 `RulePolicy`；`env`、`executor` 由入口传入；
+`SimEnv.build` 把 `GeometricGraspPlanner` 存为 `planner`。`SKILL_DEFS` 里 pick / place 只带完成判据与 `settle_s`，规划由策略做；
+open / close 仍走自己的 `primitive`。
 
-- `scene_state` 是 dict，`_live_scene_state` 往里放 `grasp_trial = env.trial_from_here` 回调与 `grasp_trial_all` 标志。
-- pick 由 `ctx.skills[ctx.index + 1]` 看下一步，是单阶段 place 时在 `env.posed` 里预跑 place 的原语（`_static_place`、`_place_check`）。
-- `held_place_z` 由 pick 写进 `SkillContext`，`EpisodeRun._plan` 存下，下一步 place 的 `_resolve_place_plan` 读。
+- `ManipulationTools` 是 pick / place 里调用抓取规划器、`gate.verify`、`JointPlanner` 与 `trial_from_here` 的唯一一处，
+  每次调用执行一个显式请求，不选候选、不重试。门与试抓都在调用时从 `gate` / `env` 上取，certify 包在它们外面的监听照样生效。
+- `RulePolicy` 只做选择：候选顺序、place 预检、试抓与试抓后重签。
+- 跨步依赖由 `runner.plan_skill` 显式传给策略：下一步是不是 place（`place_follows`，决定抬升后是否保持）、
+  它是不是单阶段 place（`place_next`，决定预检哪个 place）、试抓（`trial`，规划器是 `GeometricGraspPlanner` 时为 `tools.trial`）
+  与 `try_all`。pick 返回的 `held_place_z` 由 `plan_skill` 交回 `EpisodeRun` 存下，下一步 place 从 `SkillContext` 读。
 
 ## episode：从入口到判定
 
@@ -117,9 +125,9 @@ flowchart TD
         RUN["runner.EpisodeRun.run_steps<br/>每步按 skill_phases 分段；每段先 _live_scene_state 重读仿真"]
     end
 
-    subgraph SKILL["技能：runner.EpisodeRun._plan 按 SKILL_DEFS 分发，返回 VerifiedMotion"]
-        PICK["pick.run_pick"]
-        PLACE["place.run_place"]
+    subgraph SKILL["技能：runner.plan_skill 分发，返回 VerifiedMotion"]
+        PICK["rule_policy.RulePolicy.pick"]
+        PLACE["rule_policy.RulePolicy.place"]
         OC["open_close.run_open / run_close<br/>gate.ungated"]
     end
 
@@ -162,7 +170,7 @@ plan 类失败重写剩余步骤，`execution_failed` 按 physical 失败上报�
 flowchart LR
     Y["plan YAML actions"] -->|check_plan<br/>actions_to_intents| I["SkillIntentSpec"]
     I -->|to_legacy_skills| S["Skill<br/>params actions"]
-    S -->|EpisodeRun._plan| C["SkillContext"]
+    S -->|EpisodeRun._plan → plan_skill| C["SkillContext"]
     C -->|pick_actions / place_actions<br/>按 PICK_ORDER / PLACE_ORDER| A["RuntimeMotionWaypoint<br/>与 Attach / Detach"]
     A -->|execute_motion_chain| M["MotionChainExecution<br/>segments"]
     M -->|spans_of / poses_of| P["Span"]
@@ -177,18 +185,18 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    subgraph PK["pick._select：按候选顺序"]
-        GEO["grasp/geometric.GeometricGraspPlanner.plan<br/>写回的抓法在前，再按有向包围盒枚举 top_down / side"]
-        PM["pick._pick_request<br/>当前构型张指；IK 解 pre-grasp（初值 = home 构型、基座关节转向抓取方位，或 ik_seed）<br/>从 pre-grasp 起的 pick 列表先单独 verify，再 JointPlanner.connect 从张指后的构型规划进场段<br/>MotionExecutor.run 从当前构型跑 meta_actions.pick_actions 译出的整张列表，进场段是带路径的 move_to 项<br/>plan_state.binding 取候选的抓取位姿"]
-        V1{"ExecutionGate.verify"}
-        PRE{"pick._place_check：下一步是单阶段 place 时<br/>在 SimEnv.posed(pick 末点, 目标在手中) 里以复制的 SkillContext 调 place 原语<br/>凭证与 trace 丢弃"}
-        TR["sim_env.SimEnv.trial_from_here<br/>重放、恢复快照；物体抬高超过 0.02 m 算抬起"]
+    subgraph PK["RulePolicy.pick：按候选顺序"]
+        GEO["ManipulationTools.grasp_candidates → grasp/geometric.GeometricGraspPlanner.plan<br/>写回的抓法在前，再按有向包围盒枚举 top_down / side"]
+        PM["ManipulationTools.plan_pick<br/>当前构型张指；IK 解 pre-grasp（初值 = home 构型、基座关节转向抓取方位，或 ik_seed）<br/>从 pre-grasp 起的 pick 列表先单独 verify，再 JointPlanner.connect 从张指后的构型规划进场段<br/>MotionExecutor.run 从当前构型跑 meta_actions.pick_actions 译出的整张列表，进场段是带路径的 move_to 项<br/>plan_state.binding 取候选的抓取位姿"]
+        V1{"ManipulationTools.verify → ExecutionGate.verify"}
+        PRE{"rule_policy._place_check：place_next 不为空时<br/>在 ManipulationTools.posed(pick 末点, 目标在手中) 里以复制的 SkillContext 调 plan_place<br/>凭证与 trace 丢弃"}
+        TR["ManipulationTools.trial → sim_env.SimEnv.trial_from_here<br/>重放、恢复快照；物体抬高超过 0.02 m 算抬起"]
         V2{"恢复后对同一条轨迹再 verify"}
     end
 
-    subgraph PL["place.run_place"]
-        PP["place._resolve_place_plan → grasp/planner.plan_place<br/>手的落点 = 目标点 + 抓取相对高度，朝向取插入方向<br/>只有竖直放置时物体落在目标点上"]
-        PC["place._connect：IK 解 standoff，手指取当前值<br/>JointPlanner.connect 带持物规划搬运段"]
+    subgraph PL["ManipulationTools.plan_place"]
+        PP["manipulation_tools._resolve_place_plan → grasp/planner.plan_place<br/>手的落点 = 目标点 + 抓取相对高度，朝向取插入方向<br/>只有竖直放置时物体落在目标点上"]
+        PC["ManipulationTools._connect：IK 解 standoff，手指取当前值<br/>JointPlanner.connect 带持物规划搬运段"]
         PX["MotionExecutor.run(meta_actions.place_actions(phase=descend))<br/>从 standoff 下放、松手、退回"]
         V3{"ExecutionGate.verify<br/>rest = 放置目标的 entity；plan_state.binding 取实测手与物体位姿"}
     end
@@ -230,39 +238,43 @@ flowchart TD
 ```mermaid
 sequenceDiagram
     participant R as EpisodeRun
-    participant K as pick
+    participant P as RulePolicy
+    participant T as ManipulationTools
     participant G as GeometricGraspPlanner
     participant Q as ExecutionGate
     participant J as JointPlanner
     participant E as SimEnv
-    participant L as place
 
-    R->>R: _live_scene_state（放入 grasp_trial 回调）
-    R->>K: run_pick(ctx)
-    K->>G: plan(obj_pos, asset)
-    G-->>K: 候选（写回的抓法在前）
+    R->>R: _live_scene_state
+    R->>P: plan_skill → pick(ctx, tools, place_follows, place_next, trial)
+    P->>T: grasp_candidates(ctx)
+    T->>G: plan(obj_pos, asset)
+    G-->>P: 候选（写回的抓法在前）
     loop 每个候选，直到第一个通过
-        K->>Q: verify（从 pre-grasp 起的 pick 段）
-        K->>J: connect(opened, q_pre)
-        K->>Q: verify（整条 pick 轨迹）
-        opt 下一步是单阶段 place
-            K->>E: posed(q_end, 手里的物体)
-            K->>L: run_place(place_ctx)，凭证丢弃
+        P->>T: plan_pick(ctx, plan, params)
+        T->>Q: verify（从 pre-grasp 起的 pick 段）
+        T->>J: connect(opened, q_pre)
+        T-->>P: request
+        P->>T: verify(request)
+        T->>Q: verify（整条 pick 轨迹）
+        opt place_next 不为空
+            P->>T: posed(q_end, 手里的物体)
+            P->>T: plan_place(place_ctx)，凭证丢弃
         end
         opt place 可达或不预检
-            K->>E: trial_from_here(trajectory)
-            E-->>K: lifted（抬高超过 0.02 m）
+            P->>T: trial(trajectory, target)
+            T->>E: trial_from_here(trajectory)
+            E-->>P: lifted（抬高超过 0.02 m）
             opt lifted
-                K->>Q: verify（快照恢复后再签一次）
+                P->>T: verify(request)（快照恢复后再签一次）
             end
         end
     end
-    K-->>R: VerifiedMotion
+    P-->>R: VerifiedMotion 与 held_place_z
     R->>Q: check_current(motion)
     R->>E: record_fn 逐点回放
 ```
 
-候选循环就是规则策略：选哪个候选、试抓与 place 预检的先后都写在 `pick._select` 里，和候选生成、规划、试抓的调用不分开。
 试抓步进了物理，之前签发的凭证随状态指纹失效，所以抬起后要再 verify 一次。
 
 门检查的是会被执行的每一个点：pick 的规划进场段、手指段与段后保持（含抬升后的保持）都在 `spans` 里，`spans` 必须铺满整条轨迹。

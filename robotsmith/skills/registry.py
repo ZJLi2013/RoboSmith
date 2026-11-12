@@ -2,9 +2,10 @@
 
 A task is an ordered list of ``Skill``s. ``EpisodeRun`` executes them
 sequentially through the ``SKILL_DEFS`` registry (one definition per action:
-its primitive and, once migrated, its completion condition). Adding a new action
-means dropping a module with an ``@register("name")`` primitive into this
-package — the episode loop stays generic (no if/elif growth).
+its primitive and, once migrated, its completion condition). Pick and place are
+planned by the policy (``rule_policy.RulePolicy``), so their definitions carry
+no primitive. Adding a new action means dropping a module with an
+``@register("name")`` primitive into this package.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ class SkillDef:
     binding is unchecked; ``settle_s`` is the recorded hold before judging it.
     """
 
-    primitive: Callable[[SkillContext], VerifiedMotion]
+    primitive: Callable[[SkillContext], VerifiedMotion] | None
     post: Callable[[Skill, dict], object] | None = None
     settle_s: float = 0.0
 
@@ -56,6 +57,10 @@ def bound_leaf(skill: Skill, binding: dict):
     if binding.get("status") != "bound":
         return None
     return SuccessNode.leaf(binding["predicate"], dict(binding["params"]))
+
+
+SKILL_DEFS["pick"] = SkillDef(None, bound_leaf)
+SKILL_DEFS["place"] = SkillDef(None, bound_leaf, settle_s=0.5)
 
 
 def skill_phases(skill: Skill, target_frame=None) -> list[str]:
