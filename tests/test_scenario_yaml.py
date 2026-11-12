@@ -13,6 +13,7 @@ from robotsmith.assets import derive, store
 from robotsmith.assets.library import AssetLibrary
 from robotsmith.scenario import relations
 from robotsmith.scenario.load import SCHEMA, _read, load_scenario
+from robotsmith.scenario.validators import ValidationError
 from robotsmith.scenario_runtime import materialize_candidate
 from robotsmith.tasks import evaluate_success
 
@@ -133,6 +134,16 @@ def test_scenario_refuses_a_draft_asset(tmp_path):
                     "task: {instruction: x, success: {lifted: {object: die, height: 0.1}}}\n")
     with pytest.raises(store.AssetNotAdmitted, match="die_01: no llm_review on the current build"):
         load_scenario(path, seed=0, library=AssetLibrary(tmp_path / "assets"))
+
+
+def test_scenario_refuses_a_duplicate_object_id(tmp_path):
+    path = tmp_path / "s.yaml"
+    path.write_text("scenario: s\nrobot: franka\nscene:\n  support: table_simple\n  objects:\n"
+                    "    - {id: die, asset: die_01, on: support, near: robot}\n"
+                    "    - {id: die, asset: block_01, on: support, near: robot}\n"
+                    "task: {instruction: x, success: {lifted: {object: die, height: 0.1}}}\n")
+    with pytest.raises(ValidationError, match="duplicate object names: \\['die'\\]"):
+        load_scenario(path, seed=0)
 
 
 def _offset_scene(yaw: float) -> list[dict]:

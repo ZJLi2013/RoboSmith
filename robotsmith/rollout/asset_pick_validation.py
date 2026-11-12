@@ -11,10 +11,9 @@ from typing import Callable
 
 import numpy as np
 
-from robotsmith.scenario.adapters import to_legacy_scene_config, to_legacy_skills
+from robotsmith.scenario.adapters import to_legacy_skills
 from robotsmith.scenario.intents import intent_sequence, pick
 from robotsmith.scenario.predicates import object_lifted
-from robotsmith.scenario.scene_api import layout, obj, region, scene
 from robotsmith.scenario_runtime.runner import EpisodeRun
 from robotsmith.sim.world_state import collect_world_state
 from robotsmith.rollout.episode_layout import (
@@ -22,7 +21,7 @@ from robotsmith.rollout.episode_layout import (
     derive_skill_targets,
 )
 from robotsmith.rollout.video_export import copy_episode_videos
-from robotsmith.scenes.config import SceneConfig, TASK_WORKSPACE_XY
+from robotsmith.scenes.config import ObjectPlacement, SceneConfig, TASK_WORKSPACE_XY
 from robotsmith.tasks import evaluate_success
 from robotsmith.tasks.task_spec import TaskSpec
 
@@ -67,35 +66,27 @@ def _object_pose_label(env, name: str) -> dict:
 
 def _make_task(asset_name: str) -> TaskSpec:
     category = _asset_category(asset_name)
-    cap_scene = _make_cap_scene(asset_name)
+    scene = _make_scene(asset_name)
     intents = intent_sequence([pick("object", category=category)])
     return TaskSpec(
         name=f"pick_{asset_name}",
         instruction=f"Pick up {asset_name}",
-        scene=cap_scene.name,
+        scene=scene.name,
         success=object_lifted("object", z_margin=0.02),
-        skills=to_legacy_skills(intents, cap_scene),
+        skills=to_legacy_skills(intents, scene, ()),
     )
 
 
 def _make_scene(asset_name: str) -> SceneConfig:
-    return to_legacy_scene_config(_make_cap_scene(asset_name))
-
-
-def _make_cap_scene(asset_name: str):
-    lower, upper = TASK_WORKSPACE_XY
-    return scene(
-        f"pick_{asset_name}",
-        layout=layout(
-            regions=[
-                region(
-                    "task_workspace",
-                    ((lower[0], lower[1]), (upper[0], upper[1])),
-                ),
-            ],
-        ),
+    (x0, y0), (x1, y1) = TASK_WORKSPACE_XY
+    return SceneConfig(
+        name=f"pick_{asset_name}",
         objects=[
-            obj("object", asset=asset_name, region="task_workspace"),
+            ObjectPlacement(
+                asset_query=asset_name,
+                position_range=[[x0, y0, 0.0], [x1, y1, 0.0]],
+                name_override="object",
+            ),
         ],
     )
 

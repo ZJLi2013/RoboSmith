@@ -7,8 +7,8 @@ authoring helpers build leaves of the composable success tree (no core-loop chan
 import pytest
 
 from robotsmith.scenario.predicates import all_of, joint_closed, joint_opened
-from robotsmith.scenario.scene_api import layout, obj, region, scene
 from robotsmith.scenario.validators import ValidationError, check_task
+from robotsmith.scenes.config import ObjectPlacement, SceneConfig
 from robotsmith.tasks.predicates import evaluate_predicate, evaluate_success
 from robotsmith.tasks.task_spec import TaskSpec
 
@@ -47,11 +47,8 @@ class TestAuthoringHelpers:
 
 
 def _drawer_scene():
-    return scene(
-        "open_drawer",
-        layout=layout(regions=[region("front", ((0.40, -0.10), (0.55, 0.10)))]),
-        objects=[obj("drawer", asset="drawer_cabinet", fixed_position=(0.55, 0.0, 0.0))],
-    )
+    return SceneConfig(name="open_drawer", objects=[
+        ObjectPlacement(asset_query="drawer_cabinet", fixed_position=[0.55, 0.0, 0.0], name_override="drawer")])
 
 
 def _task(name, instruction, success):
@@ -62,7 +59,7 @@ class TestRoundTrip:
     def test_check_and_evaluate(self):
         task = _task("open_drawer", "Open the drawer",
                      joint_opened("drawer", "drawer_slide", open_position=0.25))
-        check_task(task, _drawer_scene())  # "drawer" resolves to the scene object
+        check_task(task, _drawer_scene(), ())  # "drawer" resolves to the scene object
 
         assert evaluate_success(task.success, _env(0.30)) is True
         assert evaluate_success(task.success, _env(0.10)) is False
@@ -73,7 +70,7 @@ class TestRoundTrip:
             joint_opened("drawer", "drawer_slide", open_position=0.25),
             joint_closed("drawer", "drawer_slide", closed_position=0.40),
         ))
-        check_task(task, _drawer_scene())
+        check_task(task, _drawer_scene(), ())
         assert evaluate_success(task.success, _env(0.30)) is True
         assert evaluate_success(task.success, _env(0.45)) is False
 
@@ -81,4 +78,4 @@ class TestRoundTrip:
         task = _task("bad_ref", "Open the missing drawer",
                      joint_opened("ghost", "drawer_slide", open_position=0.25))
         with pytest.raises(ValidationError, match="ghost"):
-            check_task(task, _drawer_scene())
+            check_task(task, _drawer_scene(), ())

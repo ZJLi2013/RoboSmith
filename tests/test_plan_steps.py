@@ -28,7 +28,7 @@ def _pair(tmp_path, plan_text: str) -> Path:
 
 
 def _intents(scenario: Path):
-    return load_scenario(scenario, seed=100)[2].intents
+    return load_scenario(scenario, seed=100)[3].intents
 
 
 @pytest.mark.parametrize("family", FAMILIES)
