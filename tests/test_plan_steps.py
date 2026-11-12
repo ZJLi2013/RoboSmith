@@ -28,7 +28,7 @@ def _pair(tmp_path, plan_text: str) -> Path:
 
 
 def _skills(scenario: Path):
-    return load_scenario(scenario, seed=100)[3]
+    return load_scenario(scenario, seed=100).task.skills
 
 
 @pytest.mark.parametrize("family", FAMILIES)

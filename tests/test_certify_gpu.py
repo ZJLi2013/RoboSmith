@@ -20,14 +20,14 @@ WALL_TCP = np.array([0.55, 0.12, 0.805])
 
 def test_monitor_reads_a_known_legal_and_a_known_illegal_motion():
     from robotsmith.execution.gate import Span
-    from robotsmith.scenario_runtime import materialize_candidate
+    from robotsmith.scenario.load import load_scenario
     from robotsmith.sim.sim_env import SimEnv
 
     spec = importlib.util.spec_from_file_location("certify", ROOT / "scripts" / "acceptance" / "certify.py")
     certify = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(certify)
 
-    env = SimEnv.build(materialize_candidate(SCENARIO, seed=100).legacy_scene, seed=100)
+    env = SimEnv.build(load_scenario(SCENARIO, seed=100).scene, seed=100)
     mon = certify.Monitor(env)
     ctx = ([Span("move", 0, 10_000)], "die", {"env"}, "probe")
     readings = {}

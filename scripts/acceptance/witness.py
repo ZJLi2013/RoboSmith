@@ -27,7 +27,7 @@ sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from batch import run_batch, supervise
 
-from robotsmith.scenario_runtime import materialize_candidate
+from robotsmith.scenario.load import load_scenario
 from robotsmith.scenario_runtime.runner import evaluate_scenario_task
 
 TCP = 0.1034
@@ -244,19 +244,19 @@ def main() -> None:
         fam = CONTROLS[args.family] if args.control else FAMILIES[args.family]
         gap = None
     seeds = list(range(args.seeds[0], args.seeds[1] + 1))
-    packages = {s: materialize_candidate(path, seed=s) for s in seeds}
-    first = packages[seeds[0]].legacy_scene
+    packages = {s: load_scenario(path, seed=s) for s in seeds}
+    first = packages[seeds[0]].scene
     env = SimEnv.build(first, seed=seeds[0])
     fixed = {o.name_override: o.fixed_position for o in first.objects if o.name_override != "die"}
     for pkg in packages.values():
-        scene = pkg.legacy_scene
+        scene = pkg.scene
         assert all(np.allclose(o.fixed_position, fixed[o.name_override])
                    for o in scene.objects if o.name_override != "die"), "fixtures move between seeds"
         assert tuple(scene.table_size) == tuple(first.table_size), "table size changes between seeds"
 
     def one(seed):
         pkg = packages[seed]
-        placed = {o.name_override: np.asarray(o.fixed_position, dtype=float) for o in pkg.legacy_scene.objects}
+        placed = {o.name_override: np.asarray(o.fixed_position, dtype=float) for o in pkg.scene.objects}
         row = {**head, "die_xyz": placed["die"].round(4).tolist()}
         try:
             env.reset({"die": tuple(placed["die"])}, settle_steps=30)
@@ -268,7 +268,7 @@ def main() -> None:
         if fam is None:
             why = caged(placed, die)
             return {**row, "witness_ok": not why, "why": why}
-        w = witness(env, pkg.legacy_task, fam, die, placed["mat"])
+        w = witness(env, pkg.task, fam, die, placed["mat"])
         ok = w["success"] and w["first_illegal"] is None
         return {**row, **w, "witness_ok": ok, "why": "" if ok else str(w["first_illegal"] or "task failed")}
 

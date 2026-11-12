@@ -143,7 +143,7 @@ def run_agentic_episode(env, package, assets: dict, *, role: str, executor, moti
     """Plan, execute, judge each step; on a plan-level failure re-plan the rest (at most ``MAX_REPLANS``)."""
     if role not in ROLES:
         raise ValueError(f"role must be one of {ROLES}")
-    task, scene = package.legacy_task, package.legacy_scene
+    task, scene = package.task, package.scene
     yaw_deg = {o.name_override: o.yaw_deg for o in scene.objects}
     success = task.success.to_dict() if role == "certifier" else None
     record = PlannerRecord(role=role)

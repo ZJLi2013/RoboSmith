@@ -25,7 +25,7 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from robotsmith.scenario_runtime import materialize_candidate
+from robotsmith.scenario.load import load_scenario
 
 HOME_QPOS = np.array([0, -0.3, 0, -2.2, 0, 2.0, 0.79, 0.04, 0.04], dtype=np.float32)
 JOINT_NAMES = [
@@ -118,9 +118,9 @@ def render_scenario(
     from robotsmith.scenes.genesis_loader import load_resolved_scene
     from robotsmith.sim.franka import FORCE_LOWER, FORCE_UPPER, KP, KV
 
-    package = materialize_candidate(scenario_path, seed=seed)
-    scene_config = package.legacy_scene
-    name = package.legacy_task.name
+    package = load_scenario(scenario_path, seed=seed)
+    scene_config = package.scene
+    name = package.task.name
 
     library = AssetLibrary(assets_root)
     resolved = ProgrammaticSceneBackend(seed=seed).resolve(scene_config, library)

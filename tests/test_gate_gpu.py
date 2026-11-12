@@ -24,10 +24,10 @@ RELEASE = np.array([0.45, -0.05, 0.90])
 def test_gate_on_the_wall_scene():
     from robotsmith.execution.gate import ExecutionGate, Holding, MotionRejected, Span, StaleMotion
     from robotsmith.grasp.transforms import pose_matrix
-    from robotsmith.scenario_runtime import materialize_candidate
+    from robotsmith.scenario.load import load_scenario
     from robotsmith.sim.sim_env import SimEnv
 
-    env = SimEnv.build(materialize_candidate(SCENARIO, seed=100).legacy_scene, seed=100)
+    env = SimEnv.build(load_scenario(SCENARIO, seed=100).scene, seed=100)
     gate = ExecutionGate(env)
     ik = lambda tcp: np.asarray(env.solve_ik(tcp + [0, 0, TCP], quat=TOP_DOWN, finger_pos=0.04),  # noqa: E731
                                 dtype=np.float64)

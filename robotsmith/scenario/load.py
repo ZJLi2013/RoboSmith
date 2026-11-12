@@ -1,4 +1,5 @@
-"""Load a YAML scenario: validate, apply variations, solve relations, lower to specs.
+"""Load a YAML scenario into one ``Scenario``: validate, apply variations, solve relations, build the runtime
+scene, task, plan skills and target frames.
 
 A scenario file holds the scene (objects and their relations) and the task
 (instruction + success tree, hidden from the executor). The scene is written
@@ -11,6 +12,7 @@ from __future__ import annotations
 
 import random
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 import jsonschema
@@ -19,6 +21,7 @@ import yaml
 from robotsmith.assets import store
 from robotsmith.assets.library import AssetLibrary
 from robotsmith.scenario import relations
+from robotsmith.scenario.adapters import CONTACT_TOL_M, relation_params, to_step_bindings
 from robotsmith.scenario.predicates import (
     joint_closed,
     joint_opened,
@@ -33,7 +36,6 @@ from robotsmith.skills import Skill
 from robotsmith.tasks.task_spec import SuccessNode, TaskSpec
 
 DEFAULT_ASSETS = Path(__file__).resolve().parents[2] / "assets"
-CONTACT_TOL_M = 0.02
 
 
 class _Loader(yaml.SafeLoader):
@@ -162,14 +164,27 @@ class PlanInvalid(ValueError):
     """Steps that cannot run from the hand they start with: a pick while holding, or a place with nothing held."""
 
 
+@dataclass(frozen=True)
+class Scenario:
+    """One scenario at one seed, built once before ``SimEnv.build`` and not written afterwards.
+
+    Plan mode: ``task`` carries the plan file's skills and their step bindings, ``target_frames`` the place targets
+    those steps use. Agent mode: ``task`` has no skills or bindings and ``target_frames`` holds every place target."""
+
+    source_path: Path
+    scene: SceneConfig
+    task: TaskSpec
+    target_frames: dict[str, FrameRef]
+
+
 def load_scenario(
     path: str | Path,
     *,
     seed: int,
+    agent_plan: bool = False,
     library: AssetLibrary | None = None,
-) -> tuple[SceneConfig, dict[str, FrameRef], TaskSpec, list[Skill] | None]:
-    """Scene, the plan file's place-target frames, task and the plan file's skills (None without a plan file)
-    for one seed."""
+) -> Scenario:
+    """The scenario at ``seed``; the plan file is read and checked in both modes, and used only in plan mode."""
     path = Path(path)
     data = _read(path)
     jsonschema.validate(data, SCHEMA)
@@ -225,7 +240,12 @@ def load_scenario(
         success=_success(data["task"]["success"], assets, solved.placements),
     )
     check_task(task, scene, targets)
-    return scene, targets, task, skills
+    if agent_plan:
+        targets = all_place_target_frames(assets)
+    elif skills is not None:
+        task.skills = skills
+        task.step_bindings = to_step_bindings(skills, task.success, assets)
+    return Scenario(source_path=path, scene=scene, task=task, target_frames=targets)
 
 
 def read_plan_file(path: Path) -> dict:
@@ -290,20 +310,6 @@ def place_target_frame(ref: str, assets: dict) -> FrameRef:
     spec = relations.place_target(assets[parent], target)
     kind = "articulated_opening" if "joint" in spec else "placement"
     return FrameRef(kind=kind, parent=parent, opening=target)
-
-
-def relation_params(mode: str, obj: str, ref: str, assets: dict, yaw_deg: float) -> dict:
-    """``object_in_box`` params for ``obj`` on / inside the place target ``ref``."""
-    parent, target = relations.split_ref(ref)
-    if target is None:
-        raise relations.SolveError(f"{mode}: '{parent}' must name a place target as <id>.<target>")
-    spec = relations.place_target(assets[parent], target)
-    params = {"object": obj, "parent": parent, "box": spec["box"], "target": target,
-              "yaw_deg": yaw_deg, "mode": mode, "tol": CONTACT_TOL_M}
-    if "joint" in spec:
-        params["joint"] = spec["joint"]
-        params["axis"] = list(assets[parent].get_joint(spec["joint"]).axis)
-    return params
 
 
 def _success(node: dict, assets: dict, placements: dict) -> SuccessNode:

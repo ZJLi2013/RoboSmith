@@ -14,7 +14,7 @@ from robotsmith.assets.library import AssetLibrary
 from robotsmith.scenario import relations
 from robotsmith.scenario.load import SCHEMA, _read, load_scenario
 from robotsmith.scenario.validators import ValidationError
-from robotsmith.scenario_runtime import materialize_candidate
+from robotsmith.scenario.load import load_scenario
 from robotsmith.tasks import evaluate_success
 
 SCENARIOS = Path(__file__).resolve().parents[1] / "scenarios"
@@ -24,21 +24,21 @@ DIE_HALF = 0.025
 
 
 def _package(name: str):
-    return materialize_candidate(SCENARIOS / f"{name}.yaml", seed=0)
+    return load_scenario(SCENARIOS / f"{name}.yaml", seed=0)
 
 
 def _placed(pkg) -> dict:
-    return {o.name_override: np.asarray(o.fixed_position) for o in pkg.legacy_scene.objects}
+    return {o.name_override: np.asarray(o.fixed_position) for o in pkg.scene.objects}
 
 
 def _bounds(pkg) -> dict:
     library = AssetLibrary(ASSETS)
     return {o.name_override: derive.visual_bounds(library.get(o.asset_query).urdf_path)
-            for o in pkg.legacy_scene.objects}
+            for o in pkg.scene.objects}
 
 
 def _box_leaf(pkg) -> dict:
-    node = pkg.legacy_task.success
+    node = pkg.task.success
     while node.op != "leaf":
         node = node.terms[0]
     return node.params
@@ -69,14 +69,14 @@ def _success(pkg, moved: dict, joints: dict | None = None) -> bool:
         "contacts": {n: [m for m in positions if m != n] for n in positions},
         "window": {"steps": [1, 2], "poses": {n: [[*p, 1.0, 0.0, 0.0, 0.0]] * 2 for n, p in positions.items()}},
     }
-    return evaluate_success(pkg.legacy_task.success, state)
+    return evaluate_success(pkg.task.success, state)
 
 
 @pytest.mark.parametrize("name", sorted(p.stem for p in SCENARIOS.glob("*.yaml")))
 def test_scenario_loads_with_its_plan(name):
     pkg = _package(name)
-    assert pkg.legacy_task.skills
-    assert all(o.fixed_position is not None for o in pkg.legacy_scene.objects)
+    assert pkg.task.skills
+    assert all(o.fixed_position is not None for o in pkg.scene.objects)
 
 
 CLOSED, OPEN = {"drawer": {"drawer_slide": 0.0}}, {"drawer": {"drawer_slide": 0.2}}
