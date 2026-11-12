@@ -1,8 +1,6 @@
-"""Adapters from scenario authoring specs to the current RoboSmith runtime.
+"""Adapters from scenario plan steps to the current RoboSmith runtime: Skills and per-step bindings.
 
-These adapters lower scenario authoring objects to the runtime contract:
-SceneConfig, Skills and per-step bindings. The task and its SuccessNode tree
-are built once, by scenario.load.
+The scene, its target frames, the task and its SuccessNode tree are built once, by scenario.load.
 """
 
 from __future__ import annotations
@@ -10,93 +8,19 @@ from __future__ import annotations
 from robotsmith.scenario.intents import SkillIntentSequenceSpec
 from robotsmith.scenario.load import CONTACT_TOL_M, relation_params
 from robotsmith.scenario.relations import SolveError, place_target, split_ref
-from robotsmith.scenario.specs import FrameRef, SceneSpec, TargetPositionSpec
-from robotsmith.scenario.validators import validate_scene, validate_skill_intent_sequence
+from robotsmith.scenario.validators import validate_skill_intent_sequence
 from robotsmith.skills import Skill
 from robotsmith.skills.frames import resolve_drag_joint
-from robotsmith.scenes.config import ObjectPlacement, SceneConfig
+from robotsmith.scenes.config import SceneConfig
 from robotsmith.tasks.task_spec import SuccessNode
 
 PICK_LIFT_M = 0.02
 
 
-def to_legacy_scene_config(scene: SceneSpec) -> SceneConfig:
-    """Lower a scenario SceneSpec to the current simulator-agnostic SceneConfig.
-
-    Example:
-        scenario input:
-            cap_scene = SceneSpec(
-                name="cap_pick_die",
-                layout=LayoutSpec(
-                    regions={
-                        "left_reachable": RegionSpec(
-                            name="left_reachable",
-                            xy_bounds=((0.42, -0.14), (0.50, -0.06)),
-                        ),
-                    },
-                ),
-                objects=(
-                    ObjectSpec(
-                        name="die",
-                        asset="die_01",
-                        region="left_reachable",
-                    ),
-                ),
-            )
-
-            legacy_scene = to_legacy_scene_config(cap_scene)
-
-        Legacy output:
-            SceneConfig(
-                name="cap_pick_die",
-                objects=[
-                    ObjectPlacement(
-                        asset_query="die_01",
-                        position_range=[[0.42, -0.14, 0.0], [0.50, -0.06, 0.0]],
-                        name_override="die",
-                    ),
-                ],
-            )
-
-    The scenario scene is the authoring object; SceneConfig/ObjectPlacement is the
-    legacy runtime contract consumed by the existing resolver and Genesis path.
-    """
-
-    validate_scene(scene)
-    camera_overrides = {}
-    if scene.camera_position is not None:
-        camera_overrides["camera_position"] = list(scene.camera_position)
-    if scene.camera_target is not None:
-        camera_overrides["camera_target"] = list(scene.camera_target)
-    if scene.table_size is not None:
-        camera_overrides["table_size"] = list(scene.table_size)
-    if scene.table_height is not None:
-        camera_overrides["table_height"] = scene.table_height
-    return SceneConfig(
-        name=scene.name,
-        objects=[
-            ObjectPlacement(
-                asset_query=obj.asset,
-                count=1,
-                position_range=_region_position_range(scene, obj.region)
-                if obj.region is not None
-                else None,
-                fixed_position=list(obj.fixed_position)
-                if obj.fixed_position is not None
-                else None,
-                name_override=obj.name,
-                joint_init=dict(obj.joint_init) if obj.joint_init else None,
-                yaw_deg=obj.yaw_deg,
-            )
-            for obj in scene.objects
-        ],
-        **camera_overrides,
-    )
-
-
 def to_legacy_skills(
     intents: SkillIntentSequenceSpec,
-    scene: SceneSpec,
+    scene: SceneConfig,
+    target_names,
 ) -> list[Skill]:
     """Lower scenario task-level skill intents to current runtime Skills.
 
@@ -105,7 +29,7 @@ def to_legacy_skills(
     the runtime.
     """
 
-    validate_skill_intent_sequence(intents, scene)
+    validate_skill_intent_sequence(intents, scene, target_names)
     return [
         Skill(
             name=intent.name,
@@ -225,49 +149,3 @@ def bindings_from_steps(intents: SkillIntentSequenceSpec, assets: dict, yaw_deg:
         else:
             bindings.append(_unchecked("no preceding pick"))
     return bindings
-
-
-def target_frames(scene: SceneSpec) -> dict[str, FrameRef]:
-    """Self-describing frame for every target, for live runtime resolution.
-
-    Static targets become ``world`` frames; anchored targets pass their FrameRef
-    through. The runtime resolves each against the live world per segment so a
-    point attached to a moving part (e.g. a drawer tray) tracks it.
-    """
-
-    validate_scene(scene)
-    frames: dict[str, FrameRef] = {}
-    for target in scene.target_positions:
-        if target.anchor is not None:
-            frames[target.name] = target.anchor
-        else:
-            frames[target.name] = FrameRef(
-                kind="world", xyz=_target_position(scene, target)
-            )
-    return frames
-
-
-def _region_position_range(
-    scene: SceneSpec,
-    region_name: str | None,
-) -> list[list[float]]:
-    if region_name is None:
-        raise ValueError("region_name is required")
-    region = scene.layout.regions[region_name]
-    z = 0.0 if region.z is None else region.z
-    lower, upper = region.xy_bounds
-    return [[lower[0], lower[1], z], [upper[0], upper[1], z]]
-
-
-def _target_position(
-    scene: SceneSpec,
-    target: TargetPositionSpec,
-) -> tuple[float, float, float]:
-    if target.fixed_position is not None:
-        return target.fixed_position
-    if target.region is None:
-        raise ValueError(f"target position '{target.name}' has no placement")
-    region = scene.layout.regions[target.region]
-    lower, upper = region.xy_bounds
-    z = 0.0 if region.z is None else region.z
-    return ((lower[0] + upper[0]) / 2.0, (lower[1] + upper[1]) / 2.0, z)

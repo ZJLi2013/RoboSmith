@@ -27,14 +27,9 @@ from robotsmith.scenario.predicates import (
     objects_aligned,
     stacked,
 )
-from robotsmith.scenario.specs import (
-    FrameRef,
-    LayoutSpec,
-    ObjectSpec,
-    SceneSpec,
-    TargetPositionSpec,
-)
-from robotsmith.scenario.validators import check_task
+from robotsmith.scenario.specs import FrameRef
+from robotsmith.scenario.validators import check_object_ids, check_task
+from robotsmith.scenes.config import ObjectPlacement, SceneConfig
 from robotsmith.tasks.task_spec import SuccessNode, TaskSpec
 
 DEFAULT_ASSETS = Path(__file__).resolve().parents[2] / "assets"
@@ -172,8 +167,9 @@ def load_scenario(
     *,
     seed: int,
     library: AssetLibrary | None = None,
-) -> tuple[SceneSpec, TaskSpec, SkillIntentSequenceSpec | None]:
-    """Scene, task and the plan file's intents (None without a plan file) for one seed."""
+) -> tuple[SceneConfig, dict[str, FrameRef], TaskSpec, SkillIntentSequenceSpec | None]:
+    """Scene, the plan file's place-target frames, task and the plan file's intents (None without a plan file)
+    for one seed."""
     path = Path(path)
     data = _read(path)
     jsonschema.validate(data, SCHEMA)
@@ -185,6 +181,7 @@ def load_scenario(
         scene_data = _read(path.parent.parent / "scenes" / f"{scene_data}.yaml")
         jsonschema.validate(scene_data, LAYOUT_SCHEMA)
     objects = [dict(o) for o in scene_data["objects"]]
+    check_object_ids([o["id"] for o in objects])
     by_id = {o["id"]: o for o in objects}
     for key, choices in data.get("variations", {}).items():
         obj_id, _, field = key.partition(".")
@@ -205,23 +202,21 @@ def load_scenario(
     if plan_file.exists():
         intents, targets = _plan_file(plan_file, assets)
 
-    scene = SceneSpec(
+    scene = SceneConfig(
         name=data["scenario"],
-        layout=LayoutSpec(),
-        objects=tuple(
-            ObjectSpec(
-                name=o["id"],
-                asset=o["asset"],
-                fixed_position=solved.placements[o["id"]].position,
+        objects=[
+            ObjectPlacement(
+                asset_query=o["asset"],
+                fixed_position=list(solved.placements[o["id"]].position),
+                name_override=o["id"],
+                joint_init=dict(o["joint_init"]) if o.get("joint_init") else None,
                 yaw_deg=solved.placements[o["id"]].yaw_deg,
-                joint_init=dict(o.get("joint_init", {})),
             )
             for o in objects
-        ),
-        target_positions=tuple(targets.values()),
-        camera_position=solved.camera_position,
-        camera_target=solved.camera_target,
-        table_size=solved.table_size,
+        ],
+        camera_position=list(solved.camera_position),
+        camera_target=list(solved.camera_target),
+        table_size=list(solved.table_size),
     )
     task = TaskSpec(
         name=data["scenario"],
@@ -229,8 +224,8 @@ def load_scenario(
         instruction=data["task"]["instruction"],
         success=_success(data["task"]["success"], assets, solved.placements),
     )
-    check_task(task, scene)
-    return scene, task, intents
+    check_task(task, scene, targets)
+    return scene, targets, task, intents
 
 
 def read_plan_file(path: Path) -> dict:
@@ -238,14 +233,14 @@ def read_plan_file(path: Path) -> dict:
     return _read(Path(path))
 
 
-def _plan_file(path: Path, assets: dict) -> tuple[SkillIntentSequenceSpec, dict[str, TargetPositionSpec]]:
+def _plan_file(path: Path, assets: dict) -> tuple[SkillIntentSequenceSpec, dict[str, FrameRef]]:
     data = read_plan_file(path)
     jsonschema.validate(data, PLAN_SCHEMA)
     return steps_to_intents(data["steps"], assets)
 
 
 def steps_to_intents(steps: list[dict], assets: dict, *, held: str | None = None
-                     ) -> tuple[SkillIntentSequenceSpec, dict[str, TargetPositionSpec]]:
+                     ) -> tuple[SkillIntentSequenceSpec, dict[str, FrameRef]]:
     """Steps -> intents, plus a frame for every place target they use; the one check of a step list (plan file,
     agent, single-asset validation), and it reads nothing but its arguments.
 
@@ -284,17 +279,17 @@ def _check_place_ref(ref: str, assets: dict, targets: dict) -> None:
         targets[ref] = place_target_frame(ref, assets)
 
 
-def all_place_target_frames(assets: dict) -> dict[str, TargetPositionSpec]:
+def all_place_target_frames(assets: dict) -> dict[str, FrameRef]:
     """A frame for every place target of every scene object, for steps not known at load."""
     return {f"{obj}.{t['name']}": place_target_frame(f"{obj}.{t['name']}", assets)
             for obj, asset in assets.items() for t in asset.metadata.place_targets}
 
 
-def place_target_frame(ref: str, assets: dict) -> TargetPositionSpec:
+def place_target_frame(ref: str, assets: dict) -> FrameRef:
     parent, target = relations.split_ref(ref)
     spec = relations.place_target(assets[parent], target)
     kind = "articulated_opening" if "joint" in spec else "placement"
-    return TargetPositionSpec(name=ref, anchor=FrameRef(kind=kind, parent=parent, opening=target))
+    return FrameRef(kind=kind, parent=parent, opening=target)
 
 
 def relation_params(mode: str, obj: str, ref: str, assets: dict, yaw_deg: float) -> dict:

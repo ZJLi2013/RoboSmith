@@ -35,15 +35,16 @@ def scene_objects(scene, assets: dict, positions: dict) -> list[dict]:
     """The object list the agent reads: id, asset, movable or fixed, live position, size, targets, joints."""
     out = []
     for obj in scene.objects:
-        asset = assets[obj.name]
-        pos = positions.get(obj.name, obj.fixed_position)
+        name = obj.name_override
+        asset = assets[name]
+        pos = positions.get(name, obj.fixed_position)
         out.append({
-            "id": obj.name,
-            "asset": obj.asset,
+            "id": name,
+            "asset": obj.asset_query,
             "kind": "fixed" if asset.is_fixture else "movable",
             "pos": [round(float(v), 3) for v in np.asarray(pos).reshape(-1)[:3]],
             "size": [round(v / 100.0, 3) for v in asset.metadata.size_cm],
-            "place_targets": [f"{obj.name}.{t['name']}" for t in asset.metadata.place_targets],
+            "place_targets": [f"{name}.{t['name']}" for t in asset.metadata.place_targets],
             "joints": [j.name for j in asset.movable_joints],
         })
     return out
@@ -142,8 +143,8 @@ def run_agentic_episode(env, package, assets: dict, *, role: str, executor, moti
     """Plan, execute, judge each step; on a plan-level failure re-plan the rest (at most ``MAX_REPLANS``)."""
     if role not in ROLES:
         raise ValueError(f"role must be one of {ROLES}")
-    task, scene = package.legacy_task, package.scenario_scene
-    yaw_deg = {o.name: o.yaw_deg for o in scene.objects}
+    task, scene = package.legacy_task, package.legacy_scene
+    yaw_deg = {o.name_override: o.yaw_deg for o in scene.objects}
     success = task.success.to_dict() if role == "certifier" else None
     record = PlannerRecord(role=role)
     reset_scene(env, settle_steps)
@@ -166,7 +167,7 @@ def run_agentic_episode(env, package, assets: dict, *, role: str, executor, moti
             record.routing.append(failure)
             continue
         record.plans.append(steps)
-        skills = to_legacy_skills(intents, package.scenario_scene)
+        skills = to_legacy_skills(intents, scene, package.target_frames)
         start = len(run.skills)
         failed = run.run_steps(skills, bindings, stop_on_fail=True)
         if failed is None:

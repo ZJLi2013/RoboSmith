@@ -184,6 +184,14 @@ All notable user-facing changes are documented here. This project follows Semant
   (`validators.check_task`, same error text). `to_legacy_skills` and `validate_skill_intent_sequence` take the scene,
   and `ScenarioRuntimePackage` has no `scenario_task`; each materialization gets its own copy of the loaded task.
 
+- The second scene and target types: `SceneSpec`, `LayoutSpec`, `RegionSpec`, `ObjectSpec`, `TargetPositionSpec`,
+  `to_legacy_scene_config`, `adapters.target_frames`, `validators.validate_scene` and `scenario/scene_api.py`
+  (`FrameRef` stays). `load_scenario` returns `(SceneConfig, target_frames, TaskSpec, intents)` and refuses a
+  duplicate object id with `ValidationError`; `ScenarioRuntimePackage` carries `target_frames` instead of
+  `scenario_scene`, and each materialization gets its own copy of the loaded scene. `check_task`, `to_legacy_skills`
+  and `validate_skill_intent_sequence` take the scene and the target names. All 14 scenarios at seeds 0–4 in both
+  load modes load the same, and F0 playground seeds 0–4 give the same outcome, certification and per-stage physics steps.
+
 - A plan file's `actions` and their item-by-item translation: `actions_to_intents`, `check_plan`, `load_plan`,
   `pick_part` / `place_part`, `meta_actions.check_part` and `Skill.params["actions"]`. They could only spell the one
   composition the steps already run; `pick_actions` / `place_actions` now build the lists from the candidate and the

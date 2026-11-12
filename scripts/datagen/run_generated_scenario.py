@@ -16,7 +16,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from robotsmith.assets.library import AssetLibrary
-from robotsmith.scenario.adapters import target_frames
 from robotsmith.scenario.load import DEFAULT_ASSETS
 from robotsmith.rollout.video_export import copy_episode_videos
 from robotsmith.scenario_runtime import handoff, materialize_candidate
@@ -92,7 +91,7 @@ def run_scenario_smoke(
     # static xyz markers for success/diagnostics: asset-anchored *static* targets
     # (placement affordances on a fixture) are resolved against the live world
     # (articulated/opening anchors stay excluded — they move with a joint).
-    scene_frames = target_frames(package.scenario_scene)
+    scene_frames = package.target_frames
     target_positions = resolve_static_target_positions(env, scene_frames)
 
     episodes = []
@@ -102,7 +101,7 @@ def run_scenario_smoke(
         if config.role is not None:
             library = AssetLibrary(DEFAULT_ASSETS)
             result, planner_record = run_agentic_episode(
-                env, package, {o.name: library.get(o.asset) for o in package.scenario_scene.objects},
+                env, package, {o.name_override: library.get(o.asset_query) for o in package.legacy_scene.objects},
                 role=config.role, executor=executor, motion_params=motion_params, dataset=dataset,
                 record_fn=record_episode, settle_steps=config.settle_steps, target_frames=scene_frames,
                 camera_names=camera_names, env_state_names=env_state_names,

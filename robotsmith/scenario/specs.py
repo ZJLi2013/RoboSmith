@@ -1,71 +1,8 @@
-"""Typed scenario authoring specs for scene/task definitions."""
+"""Self-describing target frames that the runtime resolves against the live world."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-
-RegionName = str
-
-
-@dataclass(frozen=True)
-class RegionSpec:
-    """Named tabletop region for object or target placement.
-
-    Args:
-        name: Logical region name, e.g. "left_reachable".
-        xy_bounds: XY min/max corners in world/table coordinates.
-        z: Optional placement Z used when lowering to legacy ranges.
-    """
-
-    name: str
-    xy_bounds: tuple[tuple[float, float], tuple[float, float]]
-    z: float | None = None
-
-
-@dataclass(frozen=True)
-class LayoutSpec:
-    """Workspace and named regions for a scene.
-
-    Args:
-        workspace: Workspace preset name, currently "franka_tabletop" by
-            default.
-        regions: Mapping from region name to RegionSpec. Objects and targets
-            reference these names instead of repeating raw placement bounds.
-    """
-
-    workspace: str = "franka_tabletop"
-    regions: dict[str, RegionSpec] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class ObjectSpec:
-    """Physical object in a scenario scene.
-
-    Args:
-        name: Logical object name used by instructions, predicates, and later
-            skills.
-        asset: Asset query or asset id in the RoboSmith asset catalog.
-        region: Optional named region reference for semantic placement.
-        fixed_position: Optional exact XYZ world position for fixture/debug
-            scenes. region and fixed_position are layout hints, not task
-            semantics.
-        joint_init: Articulated assets only. Per-scenario initial joint state
-            {joint: qpos} (e.g. {"drawer_slide": 0.35} for a frozen-open
-            drawer), overriding the asset metadata default on reset. Empty =
-            use the asset default.
-        yaw_deg: Per-scenario rotation (degrees) about world +Z applied on top
-            of the asset's canonical upright pose. Positive = counter-clockwise
-            seen from above; negative = clockwise. Lets a scene orient a fixture
-            (e.g. face an open shelf toward the arm) without editing the asset's
-            shared upright metadata.
-    """
-
-    name: str
-    asset: str
-    region: RegionName | None = None
-    fixed_position: tuple[float, float, float] | None = None
-    joint_init: dict[str, float] = field(default_factory=dict)
-    yaw_deg: float = 0.0
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
@@ -105,50 +42,3 @@ class FrameRef:
     local_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
     opening: str | None = None  # articulated_opening / placement: place_targets name
     approach: tuple[float, float, float] | None = None
-
-
-@dataclass(frozen=True)
-class TargetPositionSpec:
-    """Named non-physical target position used by success predicates.
-
-    Args:
-        name: Logical target name, e.g. "goal".
-        region: Optional named region reference used to resolve a target point.
-        fixed_position: Optional exact XYZ target position.
-        anchor: Optional self-describing FrameRef. When set (e.g. attached to an
-            articulated container), the runtime resolves the point against the
-            live world each segment instead of trusting a static world value.
-
-    Target positions are not simulator objects. Legacy predicates may need the
-    adapter to materialize them into predicate-readable env_state.
-    """
-
-    name: str
-    region: RegionName | None = None
-    fixed_position: tuple[float, float, float] | None = None
-    anchor: FrameRef | None = None
-
-
-@dataclass(frozen=True)
-class SceneSpec:
-    """scenario scene authoring artifact.
-
-    Args:
-        name: Scene identifier used by adapters and generated legacy configs.
-        layout: Workspace and named region definitions.
-        objects: Physical objects that should appear in the simulator.
-        target_positions: Optional non-physical targets referenced by success
-            predicates.
-
-    SceneSpec does not contain language instructions, success conditions, or
-    robot action policy.
-    """
-
-    name: str
-    layout: LayoutSpec
-    objects: tuple[ObjectSpec, ...]
-    target_positions: tuple[TargetPositionSpec, ...] = ()
-    camera_position: tuple[float, float, float] | None = None
-    camera_target: tuple[float, float, float] | None = None
-    table_size: tuple[float, float, float] | None = None
-    table_height: float | None = None
