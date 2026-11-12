@@ -346,7 +346,7 @@ playground 读到 1 GPU·h 截止，完成的 9 个实例全部 `search_exhauste
 
 没有候选走到沿下层 `approach` [-1, 0, 0] 的水平插入。`search_exhausted` 只说明声明的候选与预算内没有过门的运动，不证明不可解。
 
-即使搬运走通，下层放置也过不了：`place._resolve_place_plan` 把手放在层板顶面中心、只加抓取时手离支撑面的高度，按仓库的候选与
+即使搬运走通，下层放置也过不了：`manipulation_tools._resolve_place_plan` 把手放在层板顶面中心、只加抓取时手离支撑面的高度，按仓库的候选与
 `plan_place` 计算，die 中心在放置终点落在后挡板外（货架系 x = −0.103 m，挡板内侧面 −0.062 m）。这是计算结果，没在仿真里跑，
 也不是上面搬运失败的已证成因。可能的修法是先给物体的目标位姿、再按持物变换求手的位姿（MoveIt Task Constructor 的做法），未实测。
 
