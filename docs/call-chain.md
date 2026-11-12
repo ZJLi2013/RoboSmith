@@ -223,6 +223,23 @@ classDiagram
   按 `target_frames` 对活世界求出的那些。按 region 随机摆放只有 `rollout/asset_pick_validation.py` 一处调用，而且每次 reset 重新采样位置。
 - `ObjectPlacement.count` 在 YAML 场景恒为 1，但 `scenes/backend.py` 按它摆放多份，`tests/test_scenes.py` 用到 5 与 20，所以保留。
 
+#### 已删除的无读者结构
+
+两种表示里只写不读、或生产代码不调用的结构已删除，运行时没有读者因此改变：
+
+- 运行时任务：`TaskSpec.contact_objects` 与写它的 `adapters.derive_contact_objects`，`TaskSpec.episode_length` / `dart_sigma`。
+  `TaskSpec.to_dict()`（录制数据集里的任务元数据）因此少这三个键；`from_dict` 读旧文件时忽略它们。
+- 运行时场景：`SceneConfig.description` / `robot`。
+- 作者侧场景：`RegionSpec.min_distance` / `keep_out_radius`、`ObjectSpec.pose`，连同 `scene_api.region` / `obj` 的同名参数和
+  `validators` 里对它们的检查。
+- 不被调用的 builder：`intents.close_`、`predicates.negate`、`scene_api.on_articulated` / `on_articulated_opening`。
+- `adapters.resolved_target_positions`：YAML 场景的 place 目标都带锚点，它恒为空字典；`certify.py` 与 `run_generated_scenario.py`
+  不再把它并入静态目标点，只用 `resolve_static_target_positions`。
+
+等价范围：14 个 YAML 场景 × seed 0–4 × {plan 文件, agent} 的加载结果（场景配置、`task.to_dict()`、`step_bindings`、`target_frames`、
+agent 的物体列表与请求文本）除上面删掉的键外逐字段相同；F0 playground seed 0–4 的 certify 结果逐实例相同。
+按 region 随机摆放的 `rollout/asset_pick_validation.py` 路径不在这两项检查里；它调用 `scene_api.region` / `obj` 时不传被删的参数，也不读被删的字段。
+
 目标（拟议，尚未实现）：每个概念保留运行时那一份，作者侧的一份连同转译删除。
 
 | 概念 | owner | 删除 |
