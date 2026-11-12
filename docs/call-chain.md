@@ -183,49 +183,55 @@ flowchart LR
 
 ### 一个场景的数据表示：两份并存，目标是一份
 
-现状：任务与成功树只有运行时一份，`load_scenario` 直接建 `tasks.TaskSpec`（成功树是 `SuccessNode`）；场景与步骤仍是两份，
-`materialize_candidate` 经 `scenario/adapters.py` 的 `to_legacy_scene_config` 与 `to_legacy_skills` 产出运行时那份，两份都放进
-`ScenarioRuntimePackage`。
+现状：场景、place 目标、任务与成功树都只有运行时一份。`load_scenario` 直接建 `SceneConfig`、`dict[str, FrameRef]` 与
+`tasks.TaskSpec`（成功树是 `SuccessNode`）；步骤仍是两份，`materialize_candidate` 经 `scenario/adapters.py` 的 `to_legacy_skills`
+把 plan 文件的 `SkillIntentSequenceSpec` 转成 `Skill`。candidate 与 package 两层包装还在。
 
 ```mermaid
 classDiagram
     class ScenarioCandidate {
         scene
+        target_frames
         task
         intents
     }
     class ScenarioRuntimePackage {
-        scenario_scene
         scenario_intents
         legacy_scene
+        target_frames
         legacy_task
     }
-    class SceneSpec
     class SkillIntentSequenceSpec
     class SceneConfig
+    class ObjectPlacement
+    class FrameRef
     class TaskSpec
     class SuccessNode
     class Skill
-    ScenarioCandidate --> SceneSpec : scene
+    ScenarioCandidate --> SceneConfig : scene
+    ScenarioCandidate --> FrameRef : target_frames（plan 文件用到的）
     ScenarioCandidate --> TaskSpec : task
-    ScenarioRuntimePackage --> SceneSpec : scenario_scene
-    ScenarioRuntimePackage --> SceneConfig : legacy_scene
+    ScenarioRuntimePackage --> SceneConfig : legacy_scene（scene 的深拷贝）
+    ScenarioRuntimePackage --> FrameRef : target_frames（agent 模式为全部 place 目标）
     ScenarioRuntimePackage --> TaskSpec : legacy_task（task 的深拷贝）
+    SceneConfig *-- ObjectPlacement
     TaskSpec *-- SuccessNode
     TaskSpec *-- Skill
-    SceneSpec ..> SceneConfig : to_legacy_scene_config
     SkillIntentSequenceSpec ..> Skill : to_legacy_skills
 ```
 
-- 运行时只读右边：`SimEnv.build(legacy_scene)`、`EpisodeRun(legacy_task)`、`evaluate_scenario_task(legacy_task)`、recorder 的
-  `task_spec.to_dict()`。左边的读者只有 `adapters.target_frames(scenario_scene)`、planner 的 `to_legacy_skills(intents, scenario_scene)`，
-  以及 planner 与 `run_generated_scenario.py` 读 `scenario_scene.objects` 的 `name` / `asset` / `yaw_deg`。
-- 任务对象：`load_scenario` 建一次放进 candidate，之后不再写。`materialize_candidate` 每次调用深拷贝出本次的 `legacy_task`，
-  把本次的 `skills` / `step_bindings` 写在拷贝上，所以同一 candidate 按 plan 与 agent 各物化一次，两份结果互不影响。
-- 成功树的名字检查在加载时做（`validators.check_task`）：叶子参数里的 `object` / `objects` / `parent` / `reference` 必须是场景物体、
-  目标或 `table`，否则抛 `ValidationError: success predicate references unknown names: [...]`。
-- YAML 场景的物体都是 `fixed_position`，place 目标都带锚点；判定与诊断用的静态目标点只有 `resolve_static_target_positions`
-  按 `target_frames` 对活世界求出的那些。按 region 随机摆放只有 `rollout/asset_pick_validation.py` 一处调用，而且每次 reset 重新采样位置。
+- 运行时读 package：`SimEnv.build(legacy_scene)`、`EpisodeRun(legacy_task, target_frames=...)`、
+  `resolve_static_target_positions(env, target_frames)`、`evaluate_scenario_task(legacy_task)`、recorder 的 `task_spec.to_dict()`。
+  planner 与 `run_generated_scenario.py` 从 `legacy_scene.objects` 读 `name_override` / `asset_query` / `yaw_deg`。
+- 场景与任务：`load_scenario` 各建一次放进 candidate，之后不再写。`materialize_candidate` 每次调用深拷贝出本次的 `legacy_scene` 与
+  `legacy_task`，新建本次的 `target_frames`，把本次的 `skills` / `step_bindings` 写在拷贝上，所以同一 candidate 按 plan 与 agent
+  各物化一次，两份结果互不影响，candidate 也不变。
+- 加载期检查：物体 id 不能重复（`validators.check_object_ids`，抛 `ValidationError: duplicate object names: [...]`）；成功树的名字检查
+  （`validators.check_task`）要求叶子参数里的 `object` / `objects` / `parent` / `reference` 是场景物体、目标或 `table`，否则抛
+  `ValidationError: success predicate references unknown names: [...]`。
+- YAML 场景的物体都是 `fixed_position`，place 目标都是带锚点的 `FrameRef`；判定与诊断用的静态目标点只有
+  `resolve_static_target_positions` 按 `target_frames` 对活世界求出的那些。按 region 随机摆放只有 `rollout/asset_pick_validation.py`
+  一处，它直接建带 `position_range` 的 `SceneConfig`，每次 reset 重新采样位置。
 - `ObjectPlacement.count` 在 YAML 场景恒为 1，但 `scenes/backend.py` 按它摆放多份，`tests/test_scenes.py` 用到 5 与 20，所以保留。
 
 #### 已删除的无读者结构
@@ -255,13 +261,25 @@ agent 的物体列表与请求文本）除上面删掉的键外逐字段相同�
 any / all-not / 嵌套 all / not-any 四种成功树在两种加载模式下的 `to_dict()` 与 `step_bindings`，not 下嵌未知对象时的报错文本，
 以及同一 candidate 先 plan 后 agent、先 agent 后 plan 两次物化的结果，都与改动前相同。
 
+#### 场景与目标帧合并为运行时一份
+
+作者侧的 `SceneSpec` / `LayoutSpec` / `RegionSpec` / `ObjectSpec` / `TargetPositionSpec`、转译它们的 `to_legacy_scene_config` /
+`adapters.target_frames`、`scenario/scene_api.py` 与 `validators.validate_scene` 已删除；`FrameRef` 保留。`load_scenario` 返回
+`(SceneConfig, target_frames, TaskSpec, intents)`，`ScenarioRuntimePackage` 不再有 `scenario_scene`，改持 `target_frames`；
+`check_task`、`to_legacy_skills` 与 `validate_skill_intent_sequence` 改收场景与目标名。`validate_scene` 的检查里 YAML 路径缺的只有
+物体 id 不重复，移进 `load_scenario`，由 `tests/test_scenario_yaml.py` 钉住；其余由 JSON Schema 或构造方式保证。
+
+等价范围：14 个 YAML 场景 × seed 0–4 × {plan 文件, agent} 的加载结果逐字段相同（不删任何字段）；`asset_pick_validation._make_scene`
+对 `die_01` / `mug_02` / `block_01` 的场景配置逐字段相同；同一 candidate 两种顺序物化，先得结果与 candidate 都不变；F0 playground
+seed 0–4 的 certify 结果逐实例相同。
+
 目标（拟议，尚未实现）：每个概念保留运行时那一份，作者侧的一份连同转译删除。
 
 | 概念 | owner | 删除 |
 |---|---|---|
 | 一个场景在一个 seed 下的全部运行时输入 | `scenario.load.Scenario`（新增） | `ScenarioCandidate`、`ScenarioRuntimePackage`、`load_candidate`、`materialize_candidate` |
-| 场景（物体、桌子、相机） | `scenes.config.SceneConfig` | `SceneSpec`、`LayoutSpec`、`RegionSpec`、`ObjectSpec`、`to_legacy_scene_config`、`scene_api` |
-| place 目标 | `Scenario.target_frames: dict[str, FrameRef]` | `TargetPositionSpec`、`adapters.target_frames` |
+| 场景（物体、桌子、相机） | `scenes.config.SceneConfig` | 已完成 |
+| place 目标 | `Scenario.target_frames: dict[str, FrameRef]` | 已完成（现由 candidate / package 持有） |
 | 成功判定树 | `tasks.task_spec.SuccessNode` | 已完成 |
 | 任务 | `tasks.task_spec.TaskSpec` | 已完成 |
 | 一步 | `skills.base.Skill` | `SkillIntentSpec` 一族、`to_legacy_skills`；`steps_to_intents` 改为直接返回 `list[Skill]` |
@@ -274,8 +292,6 @@ any / all-not / 嵌套 all / not-any 四种成功树在两种加载模式下的 
   `AssetNotAdmitted`。
 - 字段：`source_path`；`scene: SceneConfig`；`task: TaskSpec`（plan 文件路径下 `skills` 与 `step_bindings` 已填，`agent_plan=True` 时为空）；
   `target_frames`（`agent_plan=True` 时含全部 place 目标）。
-- 读 `scenario_scene.objects` 的消费者改读 `ObjectPlacement.name_override` / `asset_query` / `yaw_deg`，`scene_objects` 与
-  `render_request` 原样复用。
 - 迁移不改的行为：certify 的 init / stopped / 任务判定分支与 `certified` 的汇总留在 `certify.run_instance`；任务判定照旧传
   `window=run.window`，不传时 `evaluate_scenario_task` 会再 settle 一次。
 - 等价依据：同一 `(path, seed, agent_plan)` 下新旧两边的场景配置、`task.to_dict()`、`step_bindings`、`target_frames` 与 agent 收到的
