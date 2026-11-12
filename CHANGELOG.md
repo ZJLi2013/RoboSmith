@@ -193,20 +193,23 @@ All notable user-facing changes are documented here. This project follows Semant
   duplicate object id with `ValidationError`; `ScenarioRuntimePackage` carries `target_frames` instead of
   `scenario_scene`, and each materialization gets its own copy of the loaded scene. `check_task`, `to_legacy_skills`
   and `validate_skill_intent_sequence` take the scene and the target names. All 14 scenarios at seeds 0–4 in both
-  load modes load the same, and F0 playground seeds 0–4 give the same outcome, certification and per-stage physics steps.
+  load modes load the same, the single-asset entry's `_make_scene` builds the same config for `die_01`, `mug_02` and
+  `block_01`, and F0 playground seeds 0–4 give the same outcome, certification and per-stage physics steps.
 
 - The second step type: `SkillIntentSpec` / `SkillIntentSequenceSpec`, the `scenario/intents.py` builders,
   `to_legacy_skills` and `validators.validate_skill_intent_sequence`, whose checks `steps_to_intents` already made on
   every path. `steps_to_intents` is now `steps_to_skills` and returns `list[Skill]`; `load_scenario` returns the plan's
   skills, `ScenarioCandidate.intents` is `skills`, and `ScenarioRuntimePackage` has no `scenario_intents`.
   `to_step_bindings` and `bindings_from_steps` take `list[Skill]`. Fixed step inputs give the same skills, bindings and
-  errors, the 14 scenarios load the same, and F0 playground seeds 0–4 give the same outcome, certification and steps.
+  errors, `_make_task` builds the same single-asset tasks, the 14 scenarios load the same, and F0 playground seeds 0–4
+  give the same outcome, certification and steps.
 
 - The candidate / package wrappers: `ScenarioCandidate`, `ScenarioRuntimePackage`, `load_candidate`,
   `materialize_candidate` and `scenario_runtime/loader.py` / `materialize.py`. `load_scenario(path, *, seed,
   agent_plan=False)` returns one `Scenario` (`source_path`, `scene`, `task`, `target_frames`); plan mode fills the
   task's skills and step bindings at load, agent mode leaves them empty and carries every place target. The plan file
-  is still read and checked in both modes. `relation_params` and `CONTACT_TOL_M` moved to `scenario.adapters`, and
+  is still read and checked in both modes. `relation_params` and `CONTACT_TOL_M` moved to `scenario.adapters`, so that
+  `load` (which now builds the step bindings) depends on `adapters` one way instead of a circular import, and
   `scenario/validators.py` is merged into `scenario.load` (`ValidationError`, `check_object_ids`, `check_task`).
   The 14 scenarios load the same, six kinds of bad input raise the same errors in both modes, loads share no mutable
   objects, and F0 playground seeds 0–4 give the same outcome, certification and steps.
