@@ -203,7 +203,8 @@ All notable user-facing changes are documented here. This project follows Semant
   `materialize_candidate` and `scenario_runtime/loader.py` / `materialize.py`. `load_scenario(path, *, seed,
   agent_plan=False)` returns one `Scenario` (`source_path`, `scene`, `task`, `target_frames`); plan mode fills the
   task's skills and step bindings at load, agent mode leaves them empty and carries every place target. The plan file
-  is still read and checked in both modes. `relation_params` and `CONTACT_TOL_M` moved to `scenario.adapters`.
+  is still read and checked in both modes. `relation_params` and `CONTACT_TOL_M` moved to `scenario.adapters`, and
+  `scenario/validators.py` is merged into `scenario.load` (`ValidationError`, `check_object_ids`, `check_task`).
   The 14 scenarios load the same, six kinds of bad input raise the same errors in both modes, loads share no mutable
   objects, and F0 playground seeds 0–4 give the same outcome, certification and steps.
 
