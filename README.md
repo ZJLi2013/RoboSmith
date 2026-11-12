@@ -32,8 +32,8 @@ put the pen into the holder   10/10      2/10     never: grasped ×5 · never: i
 
 ## Where it stands
 
-RoboSmith's own manipulation is a composition of six meta actions: a plan file's `actions` run as written, free
-segments are planned by a joint-space RRT-Connect, and every point to be executed passes one execution gate before any
+RoboSmith's own manipulation is a composition of six meta actions: each pick and place step runs one fixed
+composition, free segments are planned by a joint-space RRT-Connect, and every point to be executed passes one execution gate before any
 physics step; what cannot pass is refused with a reason and zero steps ([design](docs/manipulation.md)). On the public
 acceptance families, `main`, playground seeds 0–9, one MI300X:
 
@@ -76,7 +76,7 @@ What the MVP needs, in order:
   simulation; published by hash to Hugging Face.
 - **Scenarios:** YAML with objects, relations, a success tree hidden from the executor, and playground / test seeds.
 - **Manipulation:** pick and place compose six meta actions (`sample`, `move_to`, `move_linear`, `gripper`, `attach`,
-  `detach`) given by the plan file's `actions`; free segments are planned by a joint-space RRT-Connect and the whole
+  `detach`) in one fixed order, the step choosing the object, the place target and the lift; free segments are planned by a joint-space RRT-Connect and the whole
   trajectory passes the execution gate point by point before it runs. Fixed rules choose the grasp and the
   placement, and pick tries geometric candidates in simulation; no agent corrects them inside an episode (the agent
   repair loop runs only in offline asset admission). Drawer open / close still drags the handle, ungated.

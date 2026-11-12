@@ -2,7 +2,8 @@
 
 ``ManipulationTools`` is the one caller, for pick and place, of the grasp planner, the execution gate, the
 ``JointPlanner`` and ``trial_from_here``. A pick is the executor's pick list for one candidate: open the fingers, a
-``JointPlanner`` approach to its pre-grasp, the straight descend, the close and the straight lift. A place is a
+``JointPlanner`` approach to its pre-grasp, the straight descend, the close and the straight lift the step's
+``lift`` gives (world +Z 0.10 m when it gives none). A place is a
 ``JointPlanner`` transport with the held object to the standoff above the target, then the executor's straight
 descend, release and retreat; the whole trajectory passes the gate once. Which candidate to try, whether to check
 the place first and when to verify again belong to the policy (``rule_policy.RulePolicy``).
@@ -13,7 +14,7 @@ from __future__ import annotations
 import numpy as np
 
 from robotsmith.execution.gate import Holding, MotionRejected, Refused, Span, VerifiedMotion, poses_of, spans_of
-from robotsmith.execution.meta_actions import pick_actions, place_actions
+from robotsmith.execution.meta_actions import PICK_LIFT, pick_actions, place_actions
 from robotsmith.grasp.planner import GraspPlan
 from robotsmith.motion import gripper
 from robotsmith.motion.joint_planner import JointPlanner
@@ -62,8 +63,8 @@ class ManipulationTools:
         holding = binding(target, (plan.grasp_pos, plan.grasp_quat), env.object_pose(target))
 
         def run(start, start_hand, approach):
-            actions = pick_actions(ctx.skill.params["actions"], plan, start, start_hand, approach, params, solve_ik,
-                                   grasp=holding)
+            actions = pick_actions(plan, start, start_hand, approach, params, solve_ik, grasp=holding,
+                                   lift=ctx.skill.params.get("lift", PICK_LIFT))
             return self.executor.run("pick", actions, self.motion_planner, PlanState(start), params)
 
         grasp = run(q_pre, (plan.pre_grasp_pos, plan.pre_grasp_quat), ())
@@ -109,8 +110,7 @@ class ManipulationTools:
                 if ctx.phase == "transport":
                     segments, tail = [], []
                 else:
-                    result = self.executor.run("place", place_actions(ctx.skill.params["actions"], place_plan,
-                                                                      ctx.params, phase="descend"),
+                    result = self.executor.run("place", place_actions(place_plan, ctx.params, phase="descend"),
                                                self.motion_planner, PlanState(start, holding), ctx.params)
                     segments, tail = result.segments, result.trajectory
                 spans = ([Span("transport", 0, len(transit), holding=holding is not None)]

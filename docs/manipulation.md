@@ -21,17 +21,18 @@ agent 写步骤表（pick X、place X on Y…）或 plan 文件给出动作组�
 
 ## 设计一览
 
-**技能是六个 meta action 的组合。** plan 文件的 `actions` 写出组合，运行时按它生成运动：自由段由 RRT-Connect 在仿真几何里搜出，
+**技能是六个 meta action 的组合。** pick 与 place 各是一种固定组合，步骤只选物体、放置目标与 pick 的抬升；
+运行时按组合生成运动：自由段由 RRT-Connect 在仿真几何里搜出，
 接触附近走笛卡尔直线，整条稠密轨迹逐点过同一道执行门，拿到门签发的凭证才走物理步。合法性只有门一个 owner，规划器搜索时问的也是它。
 分工对照 MoveIt Task Constructor 的 Generate（`sample`）/ Connect（`move_to`）/ MoveRelative（`move_linear`）/
 ModifyPlanningScene（`attach` / `detach`）。
 
 ```mermaid
 flowchart LR
-    PF["plan 文件 actions<br/>或步骤表 steps"] --> LD["scenario.load<br/>按 sample 切成 pick / place 段<br/>steps 展开成公开组合的段<br/>check_plan / check_part：绑定或顺序不对即 PlanInvalid"]
+    PF["plan 文件或 agent 的步骤表 steps"] --> LD["scenario.load.steps_to_intents<br/>物体与持物顺序不对即 PlanInvalid"]
     LD --> ER["EpisodeRun._plan<br/>按 SKILL_DEFS 分派技能"]
-    ER --> SK["pick / place 原语<br/>候选顺序、试抓、place 预检"]
-    SK --> MA["meta_actions<br/>段 → 动作列表"]
+    ER --> SK["RulePolicy + ManipulationTools<br/>候选顺序、试抓、place 预检"]
+    SK --> MA["meta_actions<br/>候选与抬升 → 动作列表"]
     MA --> EX["MotionExecutor.run<br/>motion.chain 逐段展开"]
     JP["JointPlanner<br/>move_to 的自由段"] --> EX
     EX --> G["ExecutionGate.verify<br/>逐点 check_point"]
@@ -40,8 +41,8 @@ flowchart LR
 ```
 
 - **一个入口。** episode、certify 与单资产验证都经 `EpisodeRun`；技能分派只在 `EpisodeRun._plan`。
-- **组合直接执行。** 每个 pick / place 技能带着 plan 里属于自己的那段（`Skill.params["actions"]`），`meta_actions` 逐项翻译；
-  段里的参数（如抬升的方向与距离）就是机器人做的。只有 `steps` 时展开成公开组合的同一段。
+- **组合直接构造。** `meta_actions.pick_actions` / `place_actions` 按组合的固定顺序、对一个候选直接构造动作列表；
+  pick 的抬升取步骤的 `lift`（`Skill.params["lift"]`），没写时是世界 +Z 0.10 m。
 - **预测与实测分开。** 规划时持物状态是一份 `PlanState` 上的预测；pick 执行之后，place 从实测的关节与手—物变换重新规划、重新过门。
 - **零步拒绝。** 门拒绝、规划无解都发生在第一个物理步之前，结果带标签与逐候选证据，场景不变。
 
@@ -56,18 +57,18 @@ flowchart LR
 | `attach` | `PlanState` 事件，零运动 | 持物 = 刚体，`T_hand_object` 取自抓取绑定 |
 | `detach` | `PlanState` 事件，零运动 | 持物为空，物体留在放置位姿 |
 
-参数、绑定规则与示例见 [plan 文件用法](../scenarios/AGENT_PROMPT.md#plan-file-optional)。本版只接受一种组合顺序，可变的是物体、放置面、绑定名与直线抬升的向量：
+写法与示例见 [plan 文件用法](../scenarios/AGENT_PROMPT.md#plan-file-optional)。组合只有一种顺序，步骤能选的是物体、放置目标与
+pick 抬升的方向和距离：
 
 ```text
-pick:  sample(grasp) · gripper(open) · move_to(g.pre) · move_linear(g.grasp) · gripper(close, target) · attach(g) · move_linear({direction, dist})
-place: sample(place | g) · move_to(p.pre) · move_linear(p.place) · detach(p) · gripper(open, target) · move_linear(p.retreat)
+pick:  sample(grasp) · gripper(open) · move_to(pre) · move_linear(grasp) · gripper(close) · attach · move_linear(lift)
+place: sample(place) · move_to(pre) · move_linear(place) · detach · gripper(open) · move_linear(retreat)
 ```
 
-公开组合的抬升是世界 +Z 0.10 m。加载时 `scenario/load.py` 的 `check_plan` 核对绑定：每段的位姿与 attach / detach 引用自己那段
-`sample` 的绑定，place 放下的是它的 grasp 抓着的物体，`gripper.target` 是该段的物体（close 必须写出），不一致即 `PlanInvalid`、零物理步；
-`execution/meta_actions.py` 的 `check_part` 确认段内顺序，`pick_actions` / `place_actions`
-把段译成动作列表：运动段是 `RuntimeMotionWaypoint`（`finger_only` 即 `gripper`，`linear` 即 `move_linear`，其余是 `move_to`），
-持物变化是 `Attach` / `Detach` 项。`MotionExecutor.run` 是动作列表进运动链的唯一入口。
+加载时 `scenario/load.py` 的 `steps_to_intents` 是步骤表唯一的检查：物体与放置目标要在场景里，pick 时手里为空、place 时手里有物体
+（agent 续跑时从 `EpisodeRun.held` 开始推），不成立即 `PlanInvalid`、零物理步；步骤可以持物结束。`execution/meta_actions.py`
+的 `pick_actions` / `place_actions` 对一个候选构造动作列表：运动段是 `RuntimeMotionWaypoint`（`finger_only` 即 `gripper`，`linear`
+即 `move_linear`，其余是 `move_to`），持物变化是 `Attach` / `Detach` 项。`MotionExecutor.run` 是动作列表进运动链的唯一入口。
 
 每段带门用的 span 与接触许可：
 
@@ -152,7 +153,7 @@ GPD 的 93%（主动点云，密集杂物清理，真机 Baxter）同样是另�
 | `finger_open`、`tcp_offset`、`pad_below_tcp`、`pad_above_tcp` | 0.04、0.1034、0.008、0.009 m | 夹爪尺寸（Genesis `panda.xml`） | 保留 |
 | `width_margin` | 0.01 m | 经验余量 | 已删 |
 | 侧抓的中心与高度 | 有向包围盒中心、中高 | 由物体几何导出，没有常数 | 不改 |
-| `approach_clearance` | 0.12 m | pre-grasp 的运动距离，不是候选几何；抬升距离由 plan 的 `move_linear` 段给 | 不在本推荐内 |
+| `approach_clearance` | 0.12 m | pre-grasp 的运动距离，不是候选几何；抬升距离由 pick 步骤的 `lift` 给 | 不在本推荐内 |
 | `finger_closed` | 0.01 m | 闭合目标（控制量）；p2 改为 0.0 没有消除离手 | 不在本推荐内；窄于 20 mm 的物体夹不紧时再改 |
 
 删余量前后，本地 `assets/` 里带 `model.urdf` 的 16 个资产直立放置、yaw 0° / 30° / 90° 时，`plan()`（传入质心）给出的候选
@@ -170,9 +171,8 @@ block / mug / F0–F2 的 certified 读数仍是[换掉 die](#换掉-die同一�
 | Genesis 场景状态：快照、构型、状态指纹 | `SimEnv` |
 | 「这条轨迹能不能执行」、持物生命周期与接触许可规则 | `ExecutionGate`（许可规则只在 `permitted` 一处；读实际物理接触的验收用同模块的 `certified`，见 [certified 读数](acceptance.md#被测链路的-certified-读数)） |
 | 候选及其顺序（抓取）、place 的搬运目标 | 技能层（`RulePolicy.pick` / `ManipulationTools.plan_place`） |
-| plan 文件 `actions` 的引用与物体绑定 | `scenario.load.check_plan` |
-| plan 文件的 `actions` 切成 pick / place 段；只有 `steps` 时展开成公开组合的段 | `scenario.load`（`actions_to_intents`；`pick_part` / `place_part`） |
-| 把一段逐项译成动作列表：段的顺序、允许接触与 `Attach` / `Detach` 的位置 | `execution.meta_actions`（`check_part` / `pick_actions` / `place_actions`） |
+| 步骤表的物体与持物顺序 | `scenario.load.steps_to_intents` |
+| 一个候选的动作列表：段的顺序、允许接触、抬升与 `Attach` / `Detach` 的位置 | `execution.meta_actions`（`pick_actions` / `place_actions`） |
 | 动作列表进运动链的入口 | `MotionExecutor.run`（拖拽的段也经它） |
 | 自由段 | `motion.joint_planner.JointPlanner` |
 | 规划中的预测构型与持物绑定 | `motion.plan_state.PlanState`（只经 `attach` / `detach` 改变持物） |

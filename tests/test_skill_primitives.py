@@ -19,7 +19,7 @@ from robotsmith.execution.gate import ExecutionFailed, Refused
 from robotsmith.grasp.transforms import pose_matrix
 from robotsmith.motion.joint_planner import JointPlanner
 from robotsmith.motion.plan_state import Attach, Detach
-from robotsmith.scenario.load import actions_to_intents, check_plan, read_plan_file, steps_to_intents
+from robotsmith.scenario.load import read_plan_file, steps_to_intents
 from robotsmith.grasp.geometric import GeometricGraspPlanner
 from robotsmith.scenario_runtime import runner
 from robotsmith.scenario_runtime.runner import plan_skill
@@ -554,58 +554,29 @@ class TestRegistryDispatch:
         assert len(motions) == 2
 
     @staticmethod
-    def _file_skills(edit=lambda actions: actions):
-        """The public plan's steps and its (edited) actions as skills, placing on a plain ``mat``."""
-        data = read_plan_file(PLANS / "f0_open.yaml")
-        assets = {"die": None, "mat": None}
-        actions = [{"sample": {**a["sample"], "surface": "mat"}} if a.get("sample", {}).get("kind") == "place" else a
-                   for a in edit(data["actions"])]
-        steps = [{"place": {"target": "mat"}} if "place" in s else s for s in data["steps"]]
-        return [[Skill(i.name, i.target, i.category, dict(i.params)) for i in intents.intents]
-                for intents, _ in (steps_to_intents(steps, assets), actions_to_intents(actions, assets))]
+    def _file_skills(lift=None):
+        """The public plan's steps as skills, placing on a plain ``mat``, the pick with ``lift`` when given."""
+        steps = [{"place": {"target": "mat"}} if "place" in s else {**s, **({"lift": lift} if lift else {})}
+                 for s in read_plan_file(PLANS / "f0_open.yaml")["steps"]]
+        intents, _ = steps_to_intents(steps, {"die": None, "mat": None})
+        return [Skill(i.name, i.target, i.category, dict(i.params)) for i in intents.intents]
 
     def _waypoint_run(self, gate, skills):
         state = {**_scene_state(), "positions": {"die": np.array([0.5, 0.0, 0.0]), "mat": np.array([0.4, -0.2, 0.0])}}
         return plan_skills(skills, _FakePlanner(), _WaypointExecutor(), self._ik, state, MotionParams(), gate=gate)
 
-    def test_actions_and_steps_send_the_same_trajectory_to_the_gate(self, gate):
-        from_steps, from_actions = self._file_skills()
-        a, b = self._waypoint_run(gate, from_steps), self._waypoint_run(gate, from_actions)
-        assert len(a) == len(b) == 2
-        for x, y in zip(a, b):
-            assert np.array_equal(np.array(x.trajectory), np.array(y.trajectory)) and x.spans == y.spans
-
-    def test_renamed_bindings_send_the_same_trajectory_to_the_gate(self, gate):
-        names = {"g": "hold", "p": "drop"}
-
-        def rename(actions):
-            out = []
-            for a in actions:
-                (name, arg), = a.items()
-                if name == "sample":
-                    arg = {**arg, "as": names[arg["as"]], **({"grasp": names[arg["grasp"]]} if "grasp" in arg else {})}
-                elif isinstance(arg, str):
-                    key, dot, pose = arg.partition(".")
-                    arg = names[key] + dot + pose
-                out.append({name: arg})
-            return check_plan(out)
-
-        from_steps, renamed = self._file_skills(rename)
-        assert renamed[1].params["actions"][0]["sample"]["as"] == "drop"
-        a, b = self._waypoint_run(gate, from_steps), self._waypoint_run(gate, renamed)
+    def test_the_default_lift_written_out_sends_the_same_trajectory_to_the_gate(self, gate):
+        a = self._waypoint_run(gate, self._file_skills())
+        b = self._waypoint_run(gate, self._file_skills({"direction": [0, 0, 1], "dist": 0.10}))
         assert len(a) == len(b) == 2
         for x, y in zip(a, b):
             assert np.array_equal(np.array(x.trajectory), np.array(y.trajectory)) and x.spans == y.spans
 
     def test_a_changed_lift_changes_the_trajectory_sent_to_the_gate(self, gate):
-        def lower_lift(actions):
-            return [{"move_linear": {**a["move_linear"], "dist": 0.05}} if isinstance(a.get("move_linear"), dict)
-                    else a for a in actions]
-
-        from_steps, lowered = self._file_skills(lower_lift)
-        pick_a, pick_b = self._waypoint_run(gate, from_steps)[0], self._waypoint_run(gate, lowered)[0]
-        assert pick_a.trajectory[-1][2] == pytest.approx(0.12 + 0.10)
-        assert pick_b.trajectory[-1][2] == pytest.approx(0.12 + 0.05)
+        pick_a = self._waypoint_run(gate, self._file_skills())[0]
+        pick_b = self._waypoint_run(gate, self._file_skills({"direction": [1, 0, 1], "dist": 0.05}))[0]
+        assert pick_a.trajectory[-1][:3] == pytest.approx([0.5, 0.0, 0.12 + 0.10])
+        assert pick_b.trajectory[-1][:3] == pytest.approx([0.5 + 0.05 / np.sqrt(2), 0.0, 0.12 + 0.05 / np.sqrt(2)])
 
     def test_unknown_skill_raises(self, gate):
         with pytest.raises(ValueError):
