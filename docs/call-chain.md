@@ -179,8 +179,78 @@ flowchart LR
 ```
 
 动作列表的顺序在 `meta_actions` 里固定为一种，步骤能换的是物体、放置目标与 pick 抬升的方向和距离；五个验收族的
-`steps` 相同。场景与任务另有两套类型：`scenario/specs` 的 `SceneSpec` / `TaskSpec` 经 `adapters.to_legacy_scene_config` /
-`to_legacy_task_spec` 转成运行时的 `SceneConfig` 与 `tasks/task_spec.TaskSpec`（`materialize_candidate`）。
+`steps` 相同。场景与任务另有两套类型，见下一节。
+
+### 一个场景的数据表示：两份并存，目标是一份
+
+现状：`load_scenario` 产出作者侧一套（左），`materialize_candidate` 经 `scenario/adapters.py` 的四个转译函数产出运行时一套（右），
+两套都放进 `ScenarioRuntimePackage`。
+
+```mermaid
+classDiagram
+    class ScenarioRuntimePackage {
+        scenario_scene
+        scenario_task
+        scenario_intents
+        legacy_scene
+        legacy_task
+    }
+    class SceneSpec
+    class ScenarioTaskSpec["TaskSpec (scenario.specs)"]
+    class SuccessSpec["TaskSuccessCfg / AllOf / AnyOf / Not"]
+    class SkillIntentSequenceSpec
+    class SceneConfig
+    class TaskSpec
+    class SuccessNode
+    class Skill
+    ScenarioRuntimePackage --> SceneSpec : scenario_scene
+    ScenarioRuntimePackage --> ScenarioTaskSpec : scenario_task
+    ScenarioRuntimePackage --> SceneConfig : legacy_scene
+    ScenarioRuntimePackage --> TaskSpec : legacy_task
+    ScenarioTaskSpec *-- SuccessSpec
+    TaskSpec *-- SuccessNode
+    TaskSpec *-- Skill
+    SceneSpec ..> SceneConfig : to_legacy_scene_config
+    ScenarioTaskSpec ..> TaskSpec : to_legacy_task_spec
+    SuccessSpec ..> SuccessNode : _lower_success
+    SkillIntentSequenceSpec ..> Skill : to_legacy_skills
+```
+
+- 运行时只读右边：`SimEnv.build(legacy_scene)`、`EpisodeRun(legacy_task)`、`evaluate_scenario_task(legacy_task)`、recorder 的
+  `task_spec.to_dict()`。左边的读者只有 `adapters.target_frames(scenario_scene)`、planner 的 `to_legacy_skills(intents, scenario_task)`，
+  以及 planner 与 `run_generated_scenario.py` 读 `scenario_scene.objects` 的 `name` / `asset` / `yaw_deg`。
+- YAML 场景的物体都是 `fixed_position`，place 目标都带锚点，所以 `adapters.resolved_target_positions` 在这条路径上恒为空字典。
+  按 region 随机摆放只有 `rollout/asset_pick_validation.py` 一处调用，而且每次 reset 重新采样位置。
+- 没有读者的结构：`TaskSpec.contact_objects` 与 `derive_contact_objects`（只写不读），`TaskSpec.episode_length` / `dart_sigma`
+  （只进 `to_dict` / `from_dict`），`SceneConfig.description` / `robot`，`ObjectPlacement.count`（恒为 1），
+  `RegionSpec.min_distance` / `keep_out_radius` 与 `ObjectSpec.pose`（只被 `validators` 检查），
+  `intents.close_`、`predicates.negate`、`scene_api.on_articulated` / `on_articulated_opening`（生产代码无调用）。
+
+目标（拟议，尚未实现）：每个概念保留运行时那一份，作者侧的一份连同转译删除。
+
+| 概念 | owner | 删除 |
+|---|---|---|
+| 一个场景在一个 seed 下的全部运行时输入 | `scenario.load.Scenario`（新增） | `ScenarioCandidate`、`ScenarioRuntimePackage`、`load_candidate`、`materialize_candidate` |
+| 场景（物体、桌子、相机） | `scenes.config.SceneConfig` | `SceneSpec`、`LayoutSpec`、`RegionSpec`、`ObjectSpec`、`to_legacy_scene_config`、`scene_api` |
+| place 目标 | `Scenario.target_frames: dict[str, FrameRef]` | `TargetPositionSpec`、`adapters.target_frames`、`resolved_target_positions` |
+| 成功判定树 | `tasks.task_spec.SuccessNode` | `TaskSuccessCfg` / `AllOf` / `AnyOf` / `Not`、`_lower_success` |
+| 任务 | `tasks.task_spec.TaskSpec` | `scenario.specs.TaskSpec`、`to_legacy_task_spec`、`task_api` |
+| 一步 | `skills.base.Skill` | `SkillIntentSpec` 一族、`to_legacy_skills`；`steps_to_intents` 改为直接返回 `list[Skill]` |
+| 加载期检查 | `scenario.load` | `validators`；YAML 路径上没有的检查移进 `load` |
+
+`Scenario` 的契约：
+
+- `load_scenario(path, *, seed, agent_plan=False)` 是唯一构造者，一次建成，`SimEnv.build` 之前就绪，之后没有写者。
+  certify 改起点写的是 `env.placed_map`，不碰它。加载失败照旧抛 jsonschema `ValidationError`、`SolveError`、`PlanInvalid`、
+  `AssetNotAdmitted`。
+- 字段：`source_path`；`scene: SceneConfig`；`task: TaskSpec`（plan 文件路径下 `skills` 与 `step_bindings` 已填，`agent_plan=True` 时为空）；
+  `target_frames`（`agent_plan=True` 时含全部 place 目标）。
+- 读 `scenario_scene.objects` 的消费者改读 `ObjectPlacement.name_override` / `asset_query` / `yaw_deg`，`scene_objects` 与
+  `render_request` 原样复用。
+- 迁移不改的行为：certify 的 init / stopped / 任务判定分支与 `certified` 的汇总留在 `certify.run_instance`；任务判定照旧传
+  `window=run.window`，不传时 `evaluate_scenario_task` 会再 settle 一次。
+- 等价依据：同一 `(path, seed, agent_plan)` 下新旧两边的场景配置、`task.to_dict()`、`step_bindings`、`target_frames` 与 agent 收到的
+  物体列表和请求文本逐字段相同；动到运行时的一步再加 F0 playground main 与分支逐实例 certify 结果相同。
 
 ## 一个技能：候选、整条轨迹、过门
 
