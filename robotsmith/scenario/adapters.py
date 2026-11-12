@@ -1,8 +1,8 @@
 """Adapters from scenario authoring specs to the current RoboSmith runtime.
 
 These adapters lower scenario authoring objects to the runtime contract:
-SceneConfig and TaskSpec(success: SuccessNode). The scenario success tree
-(TaskSuccessCfg / AllOf / AnyOf / Not) lowers to a runtime SuccessNode tree.
+SceneConfig, Skills and per-step bindings. The task and its SuccessNode tree
+are built once, by scenario.load.
 """
 
 from __future__ import annotations
@@ -10,26 +10,12 @@ from __future__ import annotations
 from robotsmith.scenario.intents import SkillIntentSequenceSpec
 from robotsmith.scenario.load import CONTACT_TOL_M, relation_params
 from robotsmith.scenario.relations import SolveError, place_target, split_ref
-from robotsmith.scenario.specs import (
-    AllOf,
-    AnyOf,
-    FrameRef,
-    Not,
-    SceneSpec,
-    SuccessSpec,
-    TargetPositionSpec,
-    TaskSpec,
-    TaskSuccessCfg,
-)
-from robotsmith.scenario.validators import (
-    validate_scene,
-    validate_skill_intent_sequence,
-    validate_task,
-)
+from robotsmith.scenario.specs import FrameRef, SceneSpec, TargetPositionSpec
+from robotsmith.scenario.validators import validate_scene, validate_skill_intent_sequence
 from robotsmith.skills import Skill
 from robotsmith.skills.frames import resolve_drag_joint
 from robotsmith.scenes.config import ObjectPlacement, SceneConfig
-from robotsmith.tasks.task_spec import SuccessNode, TaskSpec as LegacyTaskSpec
+from robotsmith.tasks.task_spec import SuccessNode
 
 PICK_LIFT_M = 0.02
 
@@ -74,7 +60,6 @@ def to_legacy_scene_config(scene: SceneSpec) -> SceneConfig:
 
     The scenario scene is the authoring object; SceneConfig/ObjectPlacement is the
     legacy runtime contract consumed by the existing resolver and Genesis path.
-    Task semantics are lowered separately with to_legacy_task_spec().
     """
 
     validate_scene(scene)
@@ -109,64 +94,9 @@ def to_legacy_scene_config(scene: SceneSpec) -> SceneConfig:
     )
 
 
-def to_legacy_task_spec(task: TaskSpec) -> LegacyTaskSpec:
-    """Lower a scenario TaskSpec to the current serializable runtime TaskSpec.
-
-    Example:
-        scenario input:
-            TaskSpec(
-                name="cap_pick_die",
-                scene=cap_scene,
-                instruction="Pick up the die",
-                success=TaskSuccessCfg(
-                    predicate="object_above",
-                    params={
-                        "object": "die",
-                        "reference": "table",
-                        "z_margin": 0.05,
-                    },
-                ),
-            )
-
-        Legacy output:
-            LegacyTaskSpec(
-                name="cap_pick_die",
-                scene="cap_pick_die",
-                success=SuccessNode(op="leaf", predicate="object_above", params={...}),
-                skills=[],
-            )
-
-    skills=[] is intentional: scenario task authoring defines task semantics, not
-    expert action sequences.
-    """
-
-    validate_task(task)
-    return LegacyTaskSpec(
-        name=task.name,
-        instruction=task.instruction,
-        scene=task.scene.name,
-        success=_lower_success(task.success),
-        skills=[],
-    )
-
-
-def _lower_success(spec: SuccessSpec) -> SuccessNode:
-    """Lower a scenario success spec tree to a runtime SuccessNode tree."""
-
-    if isinstance(spec, TaskSuccessCfg):
-        return SuccessNode(op="leaf", predicate=spec.predicate, params=dict(spec.params))
-    if isinstance(spec, AllOf):
-        return SuccessNode(op="all", terms=[_lower_success(t) for t in spec.terms])
-    if isinstance(spec, AnyOf):
-        return SuccessNode(op="any", terms=[_lower_success(t) for t in spec.terms])
-    if isinstance(spec, Not):
-        return SuccessNode(op="not", terms=[_lower_success(spec.term)])
-    raise TypeError(f"unsupported success spec: {type(spec)!r}")
-
-
 def to_legacy_skills(
     intents: SkillIntentSequenceSpec,
-    task: TaskSpec,
+    scene: SceneSpec,
 ) -> list[Skill]:
     """Lower scenario task-level skill intents to current runtime Skills.
 
@@ -175,7 +105,7 @@ def to_legacy_skills(
     the runtime.
     """
 
-    validate_skill_intent_sequence(intents, task)
+    validate_skill_intent_sequence(intents, scene)
     return [
         Skill(
             name=intent.name,
@@ -187,13 +117,13 @@ def to_legacy_skills(
     ]
 
 
-def _placement_relations(spec: SuccessSpec) -> tuple[list[dict], bool]:
+def _placement_relations(node: SuccessNode) -> tuple[list[dict], bool]:
     """Positive on / inside relations of a success tree, and whether the tree is a pure conjunction."""
-    if isinstance(spec, TaskSuccessCfg):
-        return ([dict(spec.params)] if spec.predicate == "object_in_box" else []), True
-    if isinstance(spec, AllOf):
+    if node.op == "leaf":
+        return ([dict(node.params)] if node.predicate == "object_in_box" else []), True
+    if node.op == "all":
         found, conj = [], True
-        for term in spec.terms:
+        for term in node.terms:
             rels, term_conj = _placement_relations(term)
             found += rels
             conj &= term_conj
@@ -220,7 +150,7 @@ def _joint_binding(intent, assets: dict) -> dict:
             "params": {"object": intent.target, "joint": drag.joint.name, "threshold": threshold}}
 
 
-def to_step_bindings(intents: SkillIntentSequenceSpec, success: SuccessSpec,
+def to_step_bindings(intents: SkillIntentSequenceSpec, success: SuccessNode,
                      assets: dict | None = None) -> list[dict]:
     """Bind each plan step to the completion condition it can be judged by, one entry per step.
 

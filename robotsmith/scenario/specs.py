@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Union
 
 RegionName = str
 
@@ -153,70 +152,3 @@ class SceneSpec:
     camera_target: tuple[float, float, float] | None = None
     table_size: tuple[float, float, float] | None = None
     table_height: float | None = None
-
-
-@dataclass(frozen=True)
-class TaskSuccessCfg:
-    """Typed success predicate leaf for authoring.
-
-    Args:
-        predicate: Authoring-level predicate name.
-        params: Structured predicate parameters using logical object/target
-            names.
-
-    A single leaf in the success tree. Combine leaves with AllOf / AnyOf / Not.
-    Lowers to a runtime SuccessNode(op="leaf", ...).
-
-    refs are the logical object/target names this leaf references (including
-    fixed references like "table"). The helper that builds the leaf declares
-    them, so ref extraction no longer needs a per-predicate switch.
-    """
-
-    predicate: str
-    params: dict[str, Any]
-    refs: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
-class AllOf:
-    """Success when all terms hold (AND)."""
-
-    terms: tuple["SuccessSpec", ...]
-
-
-@dataclass(frozen=True)
-class AnyOf:
-    """Success when any term holds (OR)."""
-
-    terms: tuple["SuccessSpec", ...]
-
-
-@dataclass(frozen=True)
-class Not:
-    """Success when the inner term does not hold (NOT)."""
-
-    term: "SuccessSpec"
-
-
-SuccessSpec = Union[TaskSuccessCfg, AllOf, AnyOf, Not]
-
-
-@dataclass(frozen=True)
-class TaskSpec:
-    """scenario task authoring artifact.
-
-    Args:
-        name: Task identifier.
-        scene: SceneSpec bound to this task.
-        instruction: Language instruction for the task.
-        success: Success condition; a single predicate leaf (TaskSuccessCfg) or
-            a composite tree built from AllOf / AnyOf / Not.
-
-    TaskSpec intentionally excludes expert action sequences such as pick/place
-    steps; those belong to a separate policy/action layer.
-    """
-
-    name: str
-    scene: SceneSpec
-    instruction: str
-    success: "SuccessSpec"

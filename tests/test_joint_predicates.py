@@ -1,18 +1,16 @@
 """Joint-state success predicates.
 
 Runtime ``joint_opened`` / ``joint_closed`` read ``env_state["joint_positions"]``;
-authoring helpers lower into the composable success tree with self-describing refs
-(no core-loop change). Validated locally against a synthetic env_state.
+authoring helpers build leaves of the composable success tree (no core-loop change). Validated locally against a synthetic env_state.
 """
 
 import pytest
 
 from robotsmith.scenario.predicates import all_of, joint_closed, joint_opened
 from robotsmith.scenario.scene_api import layout, obj, region, scene
-from robotsmith.scenario.task_api import task
-from robotsmith.scenario.adapters import to_legacy_task_spec
-from robotsmith.scenario.validators import ValidationError, validate_task
+from robotsmith.scenario.validators import ValidationError, check_task
 from robotsmith.tasks.predicates import evaluate_predicate, evaluate_success
+from robotsmith.tasks.task_spec import TaskSpec
 
 
 def _env(qpos: float) -> dict:
@@ -33,21 +31,19 @@ class TestRuntimePredicates:
 
 
 class TestAuthoringHelpers:
-    def test_joint_opened_cfg(self):
-        cfg = joint_opened("drawer", "drawer_slide", open_position=0.25)
-        assert cfg.predicate == "joint_opened"
-        assert cfg.params == {
+    def test_joint_opened_leaf(self):
+        node = joint_opened("drawer", "drawer_slide", open_position=0.25)
+        assert (node.op, node.predicate) == ("leaf", "joint_opened")
+        assert node.params == {
             "object": "drawer",
             "joint": "drawer_slide",
             "threshold": 0.25,
         }
-        assert cfg.refs == ("drawer",)
 
-    def test_joint_closed_cfg_default(self):
-        cfg = joint_closed("drawer", "drawer_slide")
-        assert cfg.predicate == "joint_closed"
-        assert cfg.params["threshold"] == 0.02
-        assert cfg.refs == ("drawer",)
+    def test_joint_closed_leaf_default(self):
+        node = joint_closed("drawer", "drawer_slide")
+        assert node.predicate == "joint_closed"
+        assert node.params["threshold"] == 0.02
 
 
 def _drawer_scene():
@@ -58,43 +54,31 @@ def _drawer_scene():
     )
 
 
-class TestRoundTrip:
-    def test_validate_and_lower_and_evaluate(self):
-        cap_task = task(
-            "open_drawer",
-            scene=_drawer_scene(),
-            instruction="Open the drawer",
-            success=joint_opened("drawer", "drawer_slide", open_position=0.25),
-        )
-        validate_task(cap_task)  # refs=("drawer",) resolves to the scene object
+def _task(name, instruction, success):
+    return TaskSpec(name=name, scene="open_drawer", instruction=instruction, success=success)
 
-        node = to_legacy_task_spec(cap_task).success
-        assert evaluate_success(node, _env(0.30)) is True
-        assert evaluate_success(node, _env(0.10)) is False
+
+class TestRoundTrip:
+    def test_check_and_evaluate(self):
+        task = _task("open_drawer", "Open the drawer",
+                     joint_opened("drawer", "drawer_slide", open_position=0.25))
+        check_task(task, _drawer_scene())  # "drawer" resolves to the scene object
+
+        assert evaluate_success(task.success, _env(0.30)) is True
+        assert evaluate_success(task.success, _env(0.10)) is False
 
     def test_composite_open_and_closed_other(self):
         # all_of works the same with joint leaves (no core-loop change).
-        spec = all_of(
+        task = _task("open_drawer_partial", "Open the drawer partway", all_of(
             joint_opened("drawer", "drawer_slide", open_position=0.25),
             joint_closed("drawer", "drawer_slide", closed_position=0.40),
-        )
-        cap_task = task(
-            "open_drawer_partial",
-            scene=_drawer_scene(),
-            instruction="Open the drawer partway",
-            success=spec,
-        )
-        validate_task(cap_task)
-        node = to_legacy_task_spec(cap_task).success
-        assert evaluate_success(node, _env(0.30)) is True
-        assert evaluate_success(node, _env(0.45)) is False
+        ))
+        check_task(task, _drawer_scene())
+        assert evaluate_success(task.success, _env(0.30)) is True
+        assert evaluate_success(task.success, _env(0.45)) is False
 
     def test_unknown_object_ref_rejected(self):
-        cap_task = task(
-            "bad_ref",
-            scene=_drawer_scene(),
-            instruction="Open the missing drawer",
-            success=joint_opened("ghost", "drawer_slide", open_position=0.25),
-        )
-        with pytest.raises(ValidationError):
-            validate_task(cap_task)
+        task = _task("bad_ref", "Open the missing drawer",
+                     joint_opened("ghost", "drawer_slide", open_position=0.25))
+        with pytest.raises(ValidationError, match="ghost"):
+            check_task(task, _drawer_scene())

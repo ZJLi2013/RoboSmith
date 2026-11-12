@@ -166,7 +166,7 @@ def run_agentic_episode(env, package, assets: dict, *, role: str, executor, moti
             record.routing.append(failure)
             continue
         record.plans.append(steps)
-        skills = to_legacy_skills(intents, package.scenario_task)
+        skills = to_legacy_skills(intents, package.scenario_scene)
         start = len(run.skills)
         failed = run.run_steps(skills, bindings, stop_on_fail=True)
         if failed is None:

@@ -7,9 +7,9 @@ import pytest
 from robotsmith.scenario.adapters import to_step_bindings
 from robotsmith.scenario.intents import SkillIntentSequenceSpec, SkillIntentSpec
 from robotsmith.scenario.relations import SolveError
-from robotsmith.scenario.specs import AllOf, AnyOf, TaskSuccessCfg
 from robotsmith.scenario_runtime import materialize_candidate
-from robotsmith.tasks.task_spec import TaskSpec
+from robotsmith.scenario_runtime.loader import load_candidate
+from robotsmith.tasks.task_spec import SuccessNode, TaskSpec
 
 SCENARIOS = Path(__file__).resolve().parents[1] / "scenarios"
 
@@ -19,8 +19,7 @@ def _steps(*pairs):
 
 
 def _on(obj, parent, target, mode="on"):
-    return TaskSuccessCfg(predicate="object_in_box",
-                          params={"object": obj, "parent": parent, "target": target, "mode": mode})
+    return SuccessNode.leaf("object_in_box", {"object": obj, "parent": parent, "target": target, "mode": mode})
 
 
 PICK_PLACE = _steps(("pick", "die"), ("place", "supporter.shelf_lower"))
@@ -48,9 +47,9 @@ def test_drawer_binds_place_inside_and_the_drawer_joint_for_open_and_close():
 
 @pytest.mark.parametrize("success, expected", [
     (_on("die", "supporter", "shelf_lower"), "bound"),
-    (AnyOf(terms=(_on("die", "supporter", "shelf_lower"), _on("die", "supporter", "shelf_upper"))),
+    (SuccessNode(op="any", terms=[_on("die", "supporter", "shelf_lower"), _on("die", "supporter", "shelf_upper")]),
      "success tree is not a conjunction"),
-    (AllOf(terms=(_on("die", "supporter", "shelf_lower"), _on("die", "supporter", "shelf_lower"))),
+    (SuccessNode(op="all", terms=[_on("die", "supporter", "shelf_lower"), _on("die", "supporter", "shelf_lower")]),
      "2 success relations for die"),
     (_on("apple", "supporter", "shelf_lower"), "0 success relations for die"),
 ], ids=["single on", "any_of", "two candidates", "other object"])
@@ -70,3 +69,17 @@ def test_object_placed_twice_stays_unchecked():
                    ("place", "supporter.shelf_lower"))
     bindings = to_step_bindings(steps, _on("die", "supporter", "shelf_lower"))
     assert [b.get("reason") for b in bindings] == [None, "object placed more than once"] * 2
+
+
+@pytest.mark.parametrize("first", [False, True], ids=["plan then agent", "agent then plan"])
+def test_each_materialization_owns_its_task(first):
+    candidate = load_candidate(SCENARIOS / "pick_place_block_on_mat.yaml", seed=0)
+    loaded = candidate.task.to_dict()
+    a = materialize_candidate(candidate, agent_plan=first).legacy_task
+    a_dict = a.to_dict()
+    b = materialize_candidate(candidate, agent_plan=not first).legacy_task
+    assert a.to_dict() == a_dict and candidate.task.to_dict() == loaded
+    assert a is not b and a.success is not b.success
+    plan, agent = (b, a) if first else (a, b)
+    assert [s.name for s in plan.skills] == ["pick", "place"] and len(plan.step_bindings) == 2
+    assert agent.skills == [] and agent.step_bindings == []

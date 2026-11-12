@@ -183,42 +183,47 @@ flowchart LR
 
 ### 一个场景的数据表示：两份并存，目标是一份
 
-现状：`load_scenario` 产出作者侧一套（左），`materialize_candidate` 经 `scenario/adapters.py` 的四个转译函数产出运行时一套（右），
-两套都放进 `ScenarioRuntimePackage`。
+现状：任务与成功树只有运行时一份，`load_scenario` 直接建 `tasks.TaskSpec`（成功树是 `SuccessNode`）；场景与步骤仍是两份，
+`materialize_candidate` 经 `scenario/adapters.py` 的 `to_legacy_scene_config` 与 `to_legacy_skills` 产出运行时那份，两份都放进
+`ScenarioRuntimePackage`。
 
 ```mermaid
 classDiagram
+    class ScenarioCandidate {
+        scene
+        task
+        intents
+    }
     class ScenarioRuntimePackage {
         scenario_scene
-        scenario_task
         scenario_intents
         legacy_scene
         legacy_task
     }
     class SceneSpec
-    class ScenarioTaskSpec["TaskSpec (scenario.specs)"]
-    class SuccessSpec["TaskSuccessCfg / AllOf / AnyOf / Not"]
     class SkillIntentSequenceSpec
     class SceneConfig
     class TaskSpec
     class SuccessNode
     class Skill
+    ScenarioCandidate --> SceneSpec : scene
+    ScenarioCandidate --> TaskSpec : task
     ScenarioRuntimePackage --> SceneSpec : scenario_scene
-    ScenarioRuntimePackage --> ScenarioTaskSpec : scenario_task
     ScenarioRuntimePackage --> SceneConfig : legacy_scene
-    ScenarioRuntimePackage --> TaskSpec : legacy_task
-    ScenarioTaskSpec *-- SuccessSpec
+    ScenarioRuntimePackage --> TaskSpec : legacy_task（task 的深拷贝）
     TaskSpec *-- SuccessNode
     TaskSpec *-- Skill
     SceneSpec ..> SceneConfig : to_legacy_scene_config
-    ScenarioTaskSpec ..> TaskSpec : to_legacy_task_spec
-    SuccessSpec ..> SuccessNode : _lower_success
     SkillIntentSequenceSpec ..> Skill : to_legacy_skills
 ```
 
 - 运行时只读右边：`SimEnv.build(legacy_scene)`、`EpisodeRun(legacy_task)`、`evaluate_scenario_task(legacy_task)`、recorder 的
-  `task_spec.to_dict()`。左边的读者只有 `adapters.target_frames(scenario_scene)`、planner 的 `to_legacy_skills(intents, scenario_task)`，
+  `task_spec.to_dict()`。左边的读者只有 `adapters.target_frames(scenario_scene)`、planner 的 `to_legacy_skills(intents, scenario_scene)`，
   以及 planner 与 `run_generated_scenario.py` 读 `scenario_scene.objects` 的 `name` / `asset` / `yaw_deg`。
+- 任务对象：`load_scenario` 建一次放进 candidate，之后不再写。`materialize_candidate` 每次调用深拷贝出本次的 `legacy_task`，
+  把本次的 `skills` / `step_bindings` 写在拷贝上，所以同一 candidate 按 plan 与 agent 各物化一次，两份结果互不影响。
+- 成功树的名字检查在加载时做（`validators.check_task`）：叶子参数里的 `object` / `objects` / `parent` / `reference` 必须是场景物体、
+  目标或 `table`，否则抛 `ValidationError: success predicate references unknown names: [...]`。
 - YAML 场景的物体都是 `fixed_position`，place 目标都带锚点；判定与诊断用的静态目标点只有 `resolve_static_target_positions`
   按 `target_frames` 对活世界求出的那些。按 region 随机摆放只有 `rollout/asset_pick_validation.py` 一处调用，而且每次 reset 重新采样位置。
 - `ObjectPlacement.count` 在 YAML 场景恒为 1，但 `scenes/backend.py` 按它摆放多份，`tests/test_scenes.py` 用到 5 与 20，所以保留。
@@ -240,6 +245,16 @@ classDiagram
 agent 的物体列表与请求文本）除上面删掉的键外逐字段相同；F0 playground seed 0–4 的 certify 结果逐实例相同。
 按 region 随机摆放的 `rollout/asset_pick_validation.py` 路径不在这两项检查里；它调用 `scene_api.region` / `obj` 时不传被删的参数，也不读被删的字段。
 
+#### 任务与成功树合并为运行时一份
+
+作者侧的 `scenario.specs.TaskSpec`、`TaskSuccessCfg` / `AllOf` / `AnyOf` / `Not`，转译它们的 `to_legacy_task_spec` / `_lower_success`，
+`validators.validate_task` / `success_refs` 与 `scenario/task_api.py` 已删除；`predicates` 的 builder 与 `load` 直接产出 `SuccessNode`。
+`ScenarioRuntimePackage` 不再有 `scenario_task`，`to_legacy_skills` 与 `validate_skill_intent_sequence` 改收场景。
+
+等价范围：上面的 140 份加载结果逐字段相同；另外 `asset_pick_validation._make_task` 对 `die_01` / `mug_02` / `block_01` 的 `to_dict()`，
+any / all-not / 嵌套 all / not-any 四种成功树在两种加载模式下的 `to_dict()` 与 `step_bindings`，not 下嵌未知对象时的报错文本，
+以及同一 candidate 先 plan 后 agent、先 agent 后 plan 两次物化的结果，都与改动前相同。
+
 目标（拟议，尚未实现）：每个概念保留运行时那一份，作者侧的一份连同转译删除。
 
 | 概念 | owner | 删除 |
@@ -247,8 +262,8 @@ agent 的物体列表与请求文本）除上面删掉的键外逐字段相同�
 | 一个场景在一个 seed 下的全部运行时输入 | `scenario.load.Scenario`（新增） | `ScenarioCandidate`、`ScenarioRuntimePackage`、`load_candidate`、`materialize_candidate` |
 | 场景（物体、桌子、相机） | `scenes.config.SceneConfig` | `SceneSpec`、`LayoutSpec`、`RegionSpec`、`ObjectSpec`、`to_legacy_scene_config`、`scene_api` |
 | place 目标 | `Scenario.target_frames: dict[str, FrameRef]` | `TargetPositionSpec`、`adapters.target_frames` |
-| 成功判定树 | `tasks.task_spec.SuccessNode` | `TaskSuccessCfg` / `AllOf` / `AnyOf` / `Not`、`_lower_success` |
-| 任务 | `tasks.task_spec.TaskSpec` | `scenario.specs.TaskSpec`、`to_legacy_task_spec`、`task_api` |
+| 成功判定树 | `tasks.task_spec.SuccessNode` | 已完成 |
+| 任务 | `tasks.task_spec.TaskSpec` | 已完成 |
 | 一步 | `skills.base.Skill` | `SkillIntentSpec` 一族、`to_legacy_skills`；`steps_to_intents` 改为直接返回 `list[Skill]` |
 | 加载期检查 | `scenario.load` | `validators`；YAML 路径上没有的检查移进 `load` |
 

@@ -28,18 +28,14 @@ from robotsmith.scenario.predicates import (
     stacked,
 )
 from robotsmith.scenario.specs import (
-    AllOf,
-    AnyOf,
     FrameRef,
     LayoutSpec,
-    Not,
     ObjectSpec,
     SceneSpec,
-    SuccessSpec,
     TargetPositionSpec,
-    TaskSpec,
-    TaskSuccessCfg,
 )
+from robotsmith.scenario.validators import check_task
+from robotsmith.tasks.task_spec import SuccessNode, TaskSpec
 
 DEFAULT_ASSETS = Path(__file__).resolve().parents[2] / "assets"
 CONTACT_TOL_M = 0.02
@@ -229,10 +225,11 @@ def load_scenario(
     )
     task = TaskSpec(
         name=data["scenario"],
-        scene=scene,
+        scene=scene.name,
         instruction=data["task"]["instruction"],
         success=_success(data["task"]["success"], assets, solved.placements),
     )
+    check_task(task, scene)
     return scene, task, intents
 
 
@@ -314,20 +311,18 @@ def relation_params(mode: str, obj: str, ref: str, assets: dict, yaw_deg: float)
     return params
 
 
-def _success(node: dict, assets: dict, placements: dict) -> SuccessSpec:
+def _success(node: dict, assets: dict, placements: dict) -> SuccessNode:
     (key, val), = node.items()
-    if key == "all_of":
-        return AllOf(terms=tuple(_success(t, assets, placements) for t in val))
-    if key == "any_of":
-        return AnyOf(terms=tuple(_success(t, assets, placements) for t in val))
+    if key in ("all_of", "any_of"):
+        return SuccessNode(op=key[:3], terms=[_success(t, assets, placements) for t in val])
     if key == "not":
-        return Not(term=_success(val, assets, placements))
+        return SuccessNode(op="not", terms=[_success(val, assets, placements)])
     if key in ("inside", "on"):
         obj = val["object"]
         ref = val["container" if key == "inside" else "surface"]
         parent, _ = relations.split_ref(ref)
         params = relation_params(key, obj, ref, assets, placements[parent].yaw_deg)
-        return TaskSuccessCfg(predicate="object_in_box", params=params, refs=(obj, parent))
+        return SuccessNode.leaf("object_in_box", params)
     if key == "lifted":
         return object_lifted(val["object"], z_margin=val["height"])
     if key == "joint":

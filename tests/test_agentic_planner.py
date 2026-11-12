@@ -92,7 +92,7 @@ def _episode(monkeypatch, verdicts, replies, role="baseline", mug=(0.7, 0.0, 0.8
     monkeypatch.setattr(runner.EpisodeRun, "_plan", lambda self, *a: self.gate.ungated([np.zeros(9)]))
     monkeypatch.setattr(runner, "_live_scene_state",
                         lambda *a, **k: {"positions": {}, "joint_positions": {}})
-    monkeypatch.setattr(planner, "to_legacy_skills", lambda intents, task: [Skill(i.name, i.target) for i in intents.intents])
+    monkeypatch.setattr(planner, "to_legacy_skills", lambda intents, scene: [Skill(i.name, i.target) for i in intents.intents])
     verdicts = iter(verdicts)
 
     def judge(env, entry, *a, **k):
@@ -108,7 +108,7 @@ def _episode(monkeypatch, verdicts, replies, role="baseline", mug=(0.7, 0.0, 0.8
     objects = [SimpleNamespace(name=n, asset=n, fixed_position=(0, 0, 0), yaw_deg=0.0) for n in ("die", "mug", "shelf")]
     task = TaskSpec(name="t", scene="t", instruction="put the die on the shelf",
                     success=SuccessNode.leaf("object_above", {"object": "die", "reference": "table"}))
-    package = SimpleNamespace(legacy_task=task, scenario_scene=SimpleNamespace(objects=objects), scenario_task=None)
+    package = SimpleNamespace(legacy_task=task, scenario_scene=SimpleNamespace(objects=objects))
     result, record = planner.run_agentic_episode(
         env, package, ASSETS, role=role, executor=object(), motion_params=object(), dataset=object(),
         record_fn=lambda *a, **k: [], settle_steps=0, target_frames={}, camera_names=(), env_state_names=(), llm=llm)

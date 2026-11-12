@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from robotsmith.assets import AssetLibrary
 from robotsmith.scenario.intents import SkillIntentSequenceSpec
-from robotsmith.scenario.specs import AllOf, AnyOf, Not, SceneSpec, SuccessSpec, TaskSpec, TaskSuccessCfg
+from robotsmith.scenario.specs import SceneSpec
 from robotsmith.tasks.predicates import PREDICATE_REGISTRY
+from robotsmith.tasks.task_spec import SuccessNode, TaskSpec
 
 SUPPORTED_SKILL_INTENTS = {"pick", "place", "open", "close"}
 
@@ -68,32 +69,31 @@ def validate_scene(scene: SceneSpec, *, asset_library: AssetLibrary | None = Non
         )
 
 
-def validate_task(task: TaskSpec, *, asset_library: AssetLibrary | None = None) -> None:
-    validate_scene(task.scene, asset_library=asset_library)
+def check_task(task: TaskSpec, scene: SceneSpec) -> None:
+    """A task's name and instruction are non-empty, and its success tree names registered predicates and only
+    objects or targets of ``scene`` (or the table)."""
+
+    validate_scene(scene)
     _require(task.name.strip(), "TaskSpec.name must be non-empty")
     _require(task.instruction.strip(), "TaskSpec.instruction must be non-empty")
     _validate_success(task.success)
 
-    refs = success_refs(task.success)
-    available_refs = {o.name for o in task.scene.objects} | {
-        t.name for t in task.scene.target_positions
-    }
-    allowed_refs = available_refs | {"table"}
-    missing = [ref for ref in refs if ref not in allowed_refs]
+    allowed_refs = {o.name for o in scene.objects} | {t.name for t in scene.target_positions} | {"table"}
+    missing = [ref for ref in _refs(task.success) if ref not in allowed_refs]
     _require(not missing, f"success predicate references unknown names: {missing}")
 
 
 def validate_skill_intent_sequence(
     intents: SkillIntentSequenceSpec,
-    task: TaskSpec,
+    scene: SceneSpec,
 ) -> None:
-    """Validate task-level skill intents against a scenario task's scene names."""
+    """Validate task-level skill intents against the scene's object and target names."""
 
-    validate_task(task)
+    validate_scene(scene)
     _require(intents.intents, "SkillIntentSequenceSpec.intents must be non-empty")
 
-    object_names = {obj.name for obj in task.scene.objects}
-    target_names = {target.name for target in task.scene.target_positions}
+    object_names = {obj.name for obj in scene.objects}
+    target_names = {target.name for target in scene.target_positions}
     available_place_targets = object_names | target_names
 
     for intent in intents.intents:
@@ -116,40 +116,25 @@ def validate_skill_intent_sequence(
             )
 
 
-def _validate_success(spec: SuccessSpec) -> None:
-    """Recursively validate a success spec tree."""
-
-    if isinstance(spec, TaskSuccessCfg):
-        _require(
-            spec.predicate in PREDICATE_REGISTRY,
-            f"unknown success predicate '{spec.predicate}'",
-        )
+def _validate_success(node: SuccessNode) -> None:
+    if node.op == "leaf":
+        _require(node.predicate in PREDICATE_REGISTRY, f"unknown success predicate '{node.predicate}'")
         return
-    if isinstance(spec, (AllOf, AnyOf)):
-        _require(spec.terms, f"{type(spec).__name__} requires at least one term")
-        for term in spec.terms:
-            _validate_success(term)
-        return
-    if isinstance(spec, Not):
-        _validate_success(spec.term)
-        return
-    raise ValidationError(f"unsupported success spec: {type(spec)!r}")
+    _require(node.op in ("all", "any", "not"), f"unsupported success op: {node.op!r}")
+    _require(len(node.terms) == 1 if node.op == "not" else node.terms,
+             f"{node.op} requires {'one term' if node.op == 'not' else 'at least one term'}")
+    for term in node.terms:
+        _validate_success(term)
 
 
-def success_refs(spec: SuccessSpec) -> list[str]:
-    """Union of object/target references across all leaves of a success spec.
+def _refs(node: SuccessNode) -> list[str]:
+    """Scene names a success tree reads: each leaf's ``object`` / ``objects`` / ``parent`` / ``reference`` params."""
 
-    Each leaf self-describes its refs (TaskSuccessCfg.refs), declared by the
-    authoring helper. Composite nodes recurse and union.
-    """
-
-    if isinstance(spec, TaskSuccessCfg):
-        return list(spec.refs)
-    if isinstance(spec, (AllOf, AnyOf)):
-        return [ref for term in spec.terms for ref in success_refs(term)]
-    if isinstance(spec, Not):
-        return success_refs(spec.term)
-    return []
+    if node.op != "leaf":
+        return [ref for term in node.terms for ref in _refs(term)]
+    p = node.params
+    return ([p["object"]] if "object" in p else []) + list(p.get("objects", ())) + [
+        p[k] for k in ("parent", "reference") if k in p]
 
 
 def _validate_one_placement(

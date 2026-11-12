@@ -178,6 +178,12 @@ All notable user-facing changes are documented here. This project follows Semant
   their static target points from `resolve_static_target_positions` alone. Every scenario loads the same apart from
   the removed keys, and F0 playground seeds 0–4 give the same outcome, certification and per-stage physics steps.
 
+- The second task and success-tree types: `scenario.specs.TaskSpec`, `TaskSuccessCfg` / `AllOf` / `AnyOf` / `Not`,
+  `to_legacy_task_spec`, `validators.validate_task` / `success_refs` and `scenario/task_api.py`. The scenario loader and
+  the `predicates` builders now build `tasks.TaskSpec` and `SuccessNode` directly, and check the tree's names at load
+  (`validators.check_task`, same error text). `to_legacy_skills` and `validate_skill_intent_sequence` take the scene,
+  and `ScenarioRuntimePackage` has no `scenario_task`; each materialization gets its own copy of the loaded task.
+
 - A plan file's `actions` and their item-by-item translation: `actions_to_intents`, `check_plan`, `load_plan`,
   `pick_part` / `place_part`, `meta_actions.check_part` and `Skill.params["actions"]`. They could only spell the one
   composition the steps already run; `pick_actions` / `place_actions` now build the lists from the candidate and the
