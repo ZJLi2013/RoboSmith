@@ -116,7 +116,7 @@ open / close 仍走自己的 `primitive`。
 
 ```mermaid
 flowchart TD
-    CLI["scripts/datagen/run_generated_scenario.py<br/>main → materialize_candidate → run_scenario_smoke"]
+    CLI["scripts/datagen/run_generated_scenario.py<br/>main → load_scenario → run_scenario_smoke"]
 
     subgraph ORCH["编排：做哪几步"]
         T["--planner file（默认）<br/>scenarios/plans/ 下同名 YAML 的 steps<br/>runner.run_scenario_episode"]
@@ -182,21 +182,16 @@ flowchart LR
 
 ### 一个场景的数据表示：两份并存，目标是一份
 
-现状：场景、place 目标、任务、成功树与步骤都只有运行时一份。`load_scenario` 直接建 `SceneConfig`、`dict[str, FrameRef]`、
-`tasks.TaskSpec`（成功树是 `SuccessNode`）与 plan 文件的 `list[Skill]`；还剩 candidate 与 package 两层包装。
+现状：一个场景在一个 seed 下的全部运行时输入是一个 `scenario.load.Scenario`，由 `load_scenario(path, *, seed, agent_plan=False)`
+一次建成；场景、place 目标、任务、成功树与步骤各只有运行时一份。
 
 ```mermaid
 classDiagram
-    class ScenarioCandidate {
+    class Scenario {
+        source_path
         scene
-        target_frames
         task
-        skills
-    }
-    class ScenarioRuntimePackage {
-        legacy_scene
         target_frames
-        legacy_task
     }
     class SceneConfig
     class ObjectPlacement
@@ -204,25 +199,20 @@ classDiagram
     class TaskSpec
     class SuccessNode
     class Skill
-    ScenarioCandidate --> SceneConfig : scene
-    ScenarioCandidate --> FrameRef : target_frames（plan 文件用到的）
-    ScenarioCandidate --> TaskSpec : task
-    ScenarioCandidate --> Skill : skills（plan 文件的步骤）
-    ScenarioRuntimePackage --> SceneConfig : legacy_scene（scene 的深拷贝）
-    ScenarioRuntimePackage --> FrameRef : target_frames（agent 模式为全部 place 目标）
-    ScenarioRuntimePackage --> TaskSpec : legacy_task（task 的深拷贝）
+    Scenario --> SceneConfig : scene
+    Scenario --> TaskSpec : task
+    Scenario --> FrameRef : target_frames（plan 模式为步骤用到的，agent 模式为全部 place 目标）
     SceneConfig *-- ObjectPlacement
     TaskSpec *-- SuccessNode
-    TaskSpec *-- Skill : skills（plan 模式为 candidate.skills 的深拷贝）
+    TaskSpec *-- Skill : skills（plan 模式为 plan 文件的步骤，agent 模式为空）
 ```
 
-- 运行时读 package：`SimEnv.build(legacy_scene)`、`EpisodeRun(legacy_task, target_frames=...)`、
-  `resolve_static_target_positions(env, target_frames)`、`evaluate_scenario_task(legacy_task)`、recorder 的 `task_spec.to_dict()`。
-  planner 与 `run_generated_scenario.py` 从 `legacy_scene.objects` 读 `name_override` / `asset_query` / `yaw_deg`。
-- 场景、任务与步骤：`load_scenario` 各建一次放进 candidate，之后不再写。`materialize_candidate` 每次调用深拷贝出本次的
-  `legacy_scene` 与 `legacy_task`，新建本次的 `target_frames`，plan 模式把 candidate 步骤的深拷贝与按成功树求出的 `step_bindings`
-  写在任务拷贝上（agent 模式不预填），所以同一 candidate 按 plan 与 agent
-  各物化一次，两份结果互不影响，candidate 也不变。
+- 运行时读 `Scenario`：`SimEnv.build(scene)`、`EpisodeRun(task, target_frames=...)`、`resolve_static_target_positions(env, target_frames)`、
+  `evaluate_scenario_task(task)`、recorder 的 `task_spec.to_dict()`。planner 与 `run_generated_scenario.py` 从 `scene.objects` 读
+  `name_override` / `asset_query` / `yaw_deg`。
+- 每次 `load_scenario` 都从文件重建全部对象，两次调用（同模式或一 plan 一 agent）不共享场景、任务、技能参数或目标帧；建成后没有写者，
+  certify 改起点写的是 `env.placed_map`。plan 文件在两种模式下都读并检查（坏的 plan 文件在 agent 模式也报错），只在 plan 模式用：
+  任务填上它的技能与按成功树求出的 `step_bindings`；agent 模式任务不预填，目标帧换成全部 place 目标。
 - 加载期检查：物体 id 不能重复（`validators.check_object_ids`，抛 `ValidationError: duplicate object names: [...]`）；成功树的名字检查
   （`validators.check_task`）要求叶子参数里的 `object` / `objects` / `parent` / `reference` 是场景物体、目标或 `table`，否则抛
   `ValidationError: success predicate references unknown names: [...]`。
@@ -284,17 +274,28 @@ seed 0–4 的 certify 结果逐实例相同。
 路径与异常类型、消息和 cause 都与改动前相同；`_make_task` 对三个资产的任务相同；同一 candidate 两种顺序物化，先得结果与
 candidate 都不变，两次 plan 物化不共享技能或参数；F0 playground seed 0–4 的 certify 结果逐实例相同。
 
-目标（拟议，尚未实现）：每个概念保留运行时那一份，作者侧的一份连同转译删除。
+#### 合并为一个 Scenario
+
+`ScenarioCandidate`、`ScenarioRuntimePackage`、`load_candidate`、`materialize_candidate` 与 `scenario_runtime/loader.py`、
+`materialize.py` 已删除，`legacy_scene` / `legacy_task` 改名 `scene` / `task`。`load_scenario` 直接返回 `Scenario`：plan 模式在加载里
+填技能并求 `to_step_bindings`，agent 模式换上全部 place 目标；`relation_params` 与 `CONTACT_TOL_M` 移到 `scenario/adapters.py`，
+使 `load` 单向依赖它。
+
+等价范围：140 份加载结果逐字段相同；schema 错误、重复物体 id、成功树未知名字、无效步骤、plan 文件多余键、place 与成功树矛盾
+六类坏输入在两种模式下的异常类型、消息与 cause 相同（矛盾只在 plan 模式报 `SolveError`，agent 模式照常加载）；先 plan 后 agent、
+先 agent 后 plan、两次 plan 三种顺序下，先得结果不变、不共享可变对象；F0 playground seed 0–4 的 certify 结果逐实例相同。
+
+目标与各概念的 owner：
 
 | 概念 | owner | 删除 |
 |---|---|---|
-| 一个场景在一个 seed 下的全部运行时输入 | `scenario.load.Scenario`（新增） | `ScenarioCandidate`、`ScenarioRuntimePackage`、`load_candidate`、`materialize_candidate` |
+| 一个场景在一个 seed 下的全部运行时输入 | `scenario.load.Scenario` | 已完成 |
 | 场景（物体、桌子、相机） | `scenes.config.SceneConfig` | 已完成 |
-| place 目标 | `Scenario.target_frames: dict[str, FrameRef]` | 已完成（现由 candidate / package 持有） |
+| place 目标 | `Scenario.target_frames: dict[str, FrameRef]` | 已完成 |
 | 成功判定树 | `tasks.task_spec.SuccessNode` | 已完成 |
 | 任务 | `tasks.task_spec.TaskSpec` | 已完成 |
 | 一步 | `skills.base.Skill` | 已完成 |
-| 加载期检查 | `scenario.load` | `validators`；YAML 路径上没有的检查移进 `load` |
+| 加载期检查 | `scenario.load`（调用只被它使用的 `scenario.validators`） | 已完成：作者侧校验删除，YAML 路径缺的物体 id 检查在加载里 |
 
 `Scenario` 的契约：
 
