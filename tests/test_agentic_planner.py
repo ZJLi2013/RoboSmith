@@ -47,8 +47,8 @@ def test_a_step_refusal_reaches_the_agent_with_its_reason(reply, held, why):
 
 
 def test_place_binds_to_its_own_target_without_the_success_tree():
-    _, intents, bindings = parse_steps(PLAN, ASSETS, YAW)
-    assert [i.name for i in intents.intents] == ["pick", "place"]
+    _, skills, bindings = parse_steps(PLAN, ASSETS, YAW)
+    assert [s.name for s in skills] == ["pick", "place"]
     assert bindings[0]["predicate"] == "grasped"
     params = bindings[1]["params"]
     assert bindings[1]["predicate"] == "object_in_box"
@@ -92,8 +92,6 @@ def _episode(monkeypatch, verdicts, replies, role="baseline", mug=(0.7, 0.0, 0.8
     monkeypatch.setattr(runner.EpisodeRun, "_plan", lambda self, *a: self.gate.ungated([np.zeros(9)]))
     monkeypatch.setattr(runner, "_live_scene_state",
                         lambda *a, **k: {"positions": {}, "joint_positions": {}})
-    monkeypatch.setattr(planner, "to_legacy_skills",
-                        lambda intents, scene, targets: [Skill(i.name, i.target) for i in intents.intents])
     verdicts = iter(verdicts)
 
     def judge(env, entry, *a, **k):

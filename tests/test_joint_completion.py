@@ -7,7 +7,6 @@ import pytest
 
 from robotsmith.assets.schema import UrdfJoint
 from robotsmith.scenario.adapters import to_step_bindings
-from robotsmith.scenario.intents import SkillIntentSequenceSpec, SkillIntentSpec
 from robotsmith.scenario_runtime import runner
 from robotsmith.scenario_runtime.runner import evaluate_scenario_task, run_scenario_episode
 from robotsmith.skills import Skill
@@ -28,8 +27,7 @@ def _drawer(lower=0.0, upper=0.35, extra=()):
 
 
 def _bind(asset, name, params=None):
-    steps = SkillIntentSequenceSpec(intents=(SkillIntentSpec(name=name, target="drawer", params=params or {}),))
-    return to_step_bindings(steps, SuccessNode.leaf("object_above"), {"drawer": asset})[0]
+    return to_step_bindings([Skill(name, "drawer", params=params or {})], SuccessNode.leaf("object_above"), {"drawer": asset})[0]
 
 
 def _drag(asset, name, slide, params=None):

@@ -17,8 +17,8 @@ from typing import Callable
 import numpy as np
 
 from robotsmith.execution.gate import REFUSALS
-from robotsmith.scenario.adapters import bindings_from_steps, to_legacy_skills
-from robotsmith.scenario.load import steps_to_intents
+from robotsmith.scenario.adapters import bindings_from_steps
+from robotsmith.scenario.load import steps_to_skills
 from robotsmith.scenario_runtime.runner import EpisodeRun, collect_object_positions, reset_scene
 
 ROLES = ("certifier", "baseline")
@@ -90,17 +90,17 @@ def call_llm(prompt: str) -> tuple[str, int]:
 
 
 def parse_steps(text: str, assets: dict, yaw_deg: dict, held: str | None = None):
-    """The reply's steps as intents and bindings; ``PlanError`` when they do not fit the scene."""
+    """The reply's steps as skills and bindings; ``PlanError`` when they do not fit the scene."""
     match = re.search(r"\{.*\}", text, re.S)
     if not match:
         raise PlanError("no JSON object in the reply")
     try:
         steps = json.loads(match.group(0))["steps"]
-        intents, _ = steps_to_intents(steps, assets, held=held)
-        bindings = bindings_from_steps(intents, assets, yaw_deg, held=held)
+        skills, _ = steps_to_skills(steps, assets, held=held)
+        bindings = bindings_from_steps(skills, assets, yaw_deg, held=held)
     except Exception as exc:
         raise PlanError(str(exc)) from exc
-    return steps, intents, bindings
+    return steps, skills, bindings
 
 
 def route_failure(entry: dict, positions: dict, binding: dict | None) -> str:
@@ -160,14 +160,13 @@ def run_agentic_episode(env, package, assets: dict, *, role: str, executor, moti
         text, tokens = llm(prompt)
         record.tokens += tokens
         try:
-            steps, intents, bindings = parse_steps(text, assets, yaw_deg, held=run.held)
+            steps, skills, bindings = parse_steps(text, assets, yaw_deg, held=run.held)
         except PlanError as exc:
             record.plans.append([])
             failure = {"route": "plan", "reason": f"invalid reply: {exc}"}
             record.routing.append(failure)
             continue
         record.plans.append(steps)
-        skills = to_legacy_skills(intents, scene, package.target_frames)
         start = len(run.skills)
         failed = run.run_steps(skills, bindings, stop_on_fail=True)
         if failed is None:

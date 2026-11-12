@@ -19,7 +19,6 @@ import yaml
 from robotsmith.assets import store
 from robotsmith.assets.library import AssetLibrary
 from robotsmith.scenario import relations
-from robotsmith.scenario.intents import SkillIntentSequenceSpec, SkillIntentSpec
 from robotsmith.scenario.predicates import (
     joint_closed,
     joint_opened,
@@ -30,6 +29,7 @@ from robotsmith.scenario.predicates import (
 from robotsmith.scenario.specs import FrameRef
 from robotsmith.scenario.validators import check_object_ids, check_task
 from robotsmith.scenes.config import ObjectPlacement, SceneConfig
+from robotsmith.skills import Skill
 from robotsmith.tasks.task_spec import SuccessNode, TaskSpec
 
 DEFAULT_ASSETS = Path(__file__).resolve().parents[2] / "assets"
@@ -167,8 +167,8 @@ def load_scenario(
     *,
     seed: int,
     library: AssetLibrary | None = None,
-) -> tuple[SceneConfig, dict[str, FrameRef], TaskSpec, SkillIntentSequenceSpec | None]:
-    """Scene, the plan file's place-target frames, task and the plan file's intents (None without a plan file)
+) -> tuple[SceneConfig, dict[str, FrameRef], TaskSpec, list[Skill] | None]:
+    """Scene, the plan file's place-target frames, task and the plan file's skills (None without a plan file)
     for one seed."""
     path = Path(path)
     data = _read(path)
@@ -198,9 +198,9 @@ def load_scenario(
     assets = {o["id"]: library.get(o["asset"]) for o in objects}
 
     plan_file = path.parent / "plans" / path.name
-    intents, targets = None, {}
+    skills, targets = None, {}
     if plan_file.exists():
-        intents, targets = _plan_file(plan_file, assets)
+        skills, targets = _plan_file(plan_file, assets)
 
     scene = SceneConfig(
         name=data["scenario"],
@@ -225,7 +225,7 @@ def load_scenario(
         success=_success(data["task"]["success"], assets, solved.placements),
     )
     check_task(task, scene, targets)
-    return scene, targets, task, intents
+    return scene, targets, task, skills
 
 
 def read_plan_file(path: Path) -> dict:
@@ -233,21 +233,21 @@ def read_plan_file(path: Path) -> dict:
     return _read(Path(path))
 
 
-def _plan_file(path: Path, assets: dict) -> tuple[SkillIntentSequenceSpec, dict[str, FrameRef]]:
+def _plan_file(path: Path, assets: dict) -> tuple[list[Skill], dict[str, FrameRef]]:
     data = read_plan_file(path)
     jsonschema.validate(data, PLAN_SCHEMA)
-    return steps_to_intents(data["steps"], assets)
+    return steps_to_skills(data["steps"], assets)
 
 
-def steps_to_intents(steps: list[dict], assets: dict, *, held: str | None = None
-                     ) -> tuple[SkillIntentSequenceSpec, dict[str, FrameRef]]:
-    """Steps -> intents, plus a frame for every place target they use; the one check of a step list (plan file,
-    agent, single-asset validation), and it reads nothing but its arguments.
+def steps_to_skills(steps: list[dict], assets: dict, *, held: str | None = None
+                    ) -> tuple[list[Skill], dict[str, FrameRef]]:
+    """Steps -> skills, plus a frame for every place target they use; the one check of a step list (plan file and
+    agent reply), and it reads nothing but its arguments.
 
     ``held`` is the object in hand when the steps start. A pick needs an empty hand and a place a held object; the
     steps may end holding. A pick's ``lift`` goes into its params."""
     jsonschema.validate(steps, PLAN_SCHEMA["properties"]["steps"])
-    intents, targets = [], {}
+    skills, targets = [], {}
     for i, step in enumerate(steps):
         name, arg = next((k, v) for k, v in step.items() if k != "lift")
         if name == "place":
@@ -258,7 +258,7 @@ def steps_to_intents(steps: list[dict], assets: dict, *, held: str | None = None
                 raise PlanInvalid(f"step {i}: {e}") from e
             if held is None:
                 raise PlanInvalid(f"step {i}: place {ref} with nothing held")
-            intents.append(SkillIntentSpec(name="place", target=ref))
+            skills.append(Skill(name="place", target=ref))
             held = None
             continue
         if arg not in assets:
@@ -267,8 +267,8 @@ def steps_to_intents(steps: list[dict], assets: dict, *, held: str | None = None
             if held is not None:
                 raise PlanInvalid(f"step {i}: pick {arg} while holding {held}")
             held = arg
-        intents.append(SkillIntentSpec(name=name, target=arg, params={"lift": step["lift"]} if "lift" in step else {}))
-    return SkillIntentSequenceSpec(intents=tuple(intents)), targets
+        skills.append(Skill(name=name, target=arg, params={"lift": step["lift"]} if "lift" in step else {}))
+    return skills, targets
 
 
 def _check_place_ref(ref: str, assets: dict, targets: dict) -> None:

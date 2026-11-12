@@ -11,8 +11,6 @@ from typing import Callable
 
 import numpy as np
 
-from robotsmith.scenario.adapters import to_legacy_skills
-from robotsmith.scenario.intents import intent_sequence, pick
 from robotsmith.scenario.predicates import object_lifted
 from robotsmith.scenario_runtime.runner import EpisodeRun
 from robotsmith.sim.world_state import collect_world_state
@@ -22,6 +20,7 @@ from robotsmith.rollout.episode_layout import (
 )
 from robotsmith.rollout.video_export import copy_episode_videos
 from robotsmith.scenes.config import ObjectPlacement, SceneConfig, TASK_WORKSPACE_XY
+from robotsmith.skills import Skill
 from robotsmith.tasks import evaluate_success
 from robotsmith.tasks.task_spec import TaskSpec
 
@@ -66,14 +65,12 @@ def _object_pose_label(env, name: str) -> dict:
 
 def _make_task(asset_name: str) -> TaskSpec:
     category = _asset_category(asset_name)
-    scene = _make_scene(asset_name)
-    intents = intent_sequence([pick("object", category=category)])
     return TaskSpec(
         name=f"pick_{asset_name}",
         instruction=f"Pick up {asset_name}",
-        scene=scene.name,
+        scene=f"pick_{asset_name}",
         success=object_lifted("object", z_margin=0.02),
-        skills=to_legacy_skills(intents, scene, ()),
+        skills=[Skill("pick", "object", category=category)],
     )
 
 

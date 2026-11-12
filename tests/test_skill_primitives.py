@@ -19,7 +19,7 @@ from robotsmith.execution.gate import ExecutionFailed, Refused
 from robotsmith.grasp.transforms import pose_matrix
 from robotsmith.motion.joint_planner import JointPlanner
 from robotsmith.motion.plan_state import Attach, Detach
-from robotsmith.scenario.load import read_plan_file, steps_to_intents
+from robotsmith.scenario.load import read_plan_file, steps_to_skills
 from robotsmith.grasp.geometric import GeometricGraspPlanner
 from robotsmith.scenario_runtime import runner
 from robotsmith.scenario_runtime.runner import plan_skill
@@ -558,8 +558,7 @@ class TestRegistryDispatch:
         """The public plan's steps as skills, placing on a plain ``mat``, the pick with ``lift`` when given."""
         steps = [{"place": {"target": "mat"}} if "place" in s else {**s, **({"lift": lift} if lift else {})}
                  for s in read_plan_file(PLANS / "f0_open.yaml")["steps"]]
-        intents, _ = steps_to_intents(steps, {"die": None, "mat": None})
-        return [Skill(i.name, i.target, i.category, dict(i.params)) for i in intents.intents]
+        return steps_to_skills(steps, {"die": None, "mat": None})[0]
 
     def _waypoint_run(self, gate, skills):
         state = {**_scene_state(), "positions": {"die": np.array([0.5, 0.0, 0.0]), "mat": np.array([0.4, -0.2, 0.0])}}

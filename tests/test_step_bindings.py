@@ -5,17 +5,17 @@ from pathlib import Path
 import pytest
 
 from robotsmith.scenario.adapters import to_step_bindings
-from robotsmith.scenario.intents import SkillIntentSequenceSpec, SkillIntentSpec
 from robotsmith.scenario.relations import SolveError
 from robotsmith.scenario_runtime import materialize_candidate
 from robotsmith.scenario_runtime.loader import load_candidate
+from robotsmith.skills import Skill
 from robotsmith.tasks.task_spec import SuccessNode, TaskSpec
 
 SCENARIOS = Path(__file__).resolve().parents[1] / "scenarios"
 
 
 def _steps(*pairs):
-    return SkillIntentSequenceSpec(intents=tuple(SkillIntentSpec(name=n, target=t) for n, t in pairs))
+    return [Skill(n, t) for n, t in pairs]
 
 
 def _on(obj, parent, target, mode="on"):

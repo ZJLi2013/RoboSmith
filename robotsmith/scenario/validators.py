@@ -1,13 +1,10 @@
-"""Validation for scenario tasks, plan steps and object ids."""
+"""Validation for scenario tasks and object ids; plan steps are checked by ``load.steps_to_skills``."""
 
 from __future__ import annotations
 
-from robotsmith.scenario.intents import SkillIntentSequenceSpec
 from robotsmith.scenes.config import SceneConfig
 from robotsmith.tasks.predicates import PREDICATE_REGISTRY
 from robotsmith.tasks.task_spec import SuccessNode, TaskSpec
-
-SUPPORTED_SKILL_INTENTS = {"pick", "place", "open", "close"}
 
 
 class ValidationError(ValueError):
@@ -29,38 +26,6 @@ def check_task(task: TaskSpec, scene: SceneConfig, target_names) -> None:
     allowed_refs = {o.name_override for o in scene.objects} | set(target_names) | {"table"}
     missing = [ref for ref in _refs(task.success) if ref not in allowed_refs]
     _require(not missing, f"success predicate references unknown names: {missing}")
-
-
-def validate_skill_intent_sequence(
-    intents: SkillIntentSequenceSpec,
-    scene: SceneConfig,
-    target_names,
-) -> None:
-    """Validate task-level skill intents against the scene's object names and the target names."""
-
-    _require(intents.intents, "SkillIntentSequenceSpec.intents must be non-empty")
-
-    object_names = {obj.name_override for obj in scene.objects}
-    available_place_targets = object_names | set(target_names)
-
-    for intent in intents.intents:
-        _require(intent.name in SUPPORTED_SKILL_INTENTS, f"unknown skill intent '{intent.name}'")
-        _require(intent.target.strip(), f"{intent.name} intent target must be non-empty")
-        if intent.name == "pick":
-            _require(
-                intent.target in object_names,
-                f"pick intent references unknown object '{intent.target}'",
-            )
-        elif intent.name == "place":
-            _require(
-                intent.target in available_place_targets,
-                f"place intent references unknown object or target '{intent.target}'",
-            )
-        elif intent.name in ("open", "close"):
-            _require(
-                intent.target in object_names,
-                f"{intent.name} intent references unknown object '{intent.target}'",
-            )
 
 
 def _validate_success(node: SuccessNode) -> None:
