@@ -12,7 +12,6 @@ from robotsmith.execution.executor import MotionExecutor
 from robotsmith.execution.gate import (ExecutionFailed, ExecutionGate, Holding, MotionRejected, Refused, Span,
                                        StaleMotion, VerifiedMotion, certified, permitted, poses_of, spans_of)
 from robotsmith.execution.meta_actions import pick_actions, place_actions
-from robotsmith.scenario.load import pick_part, place_part
 from robotsmith.grasp.planner import GraspPlan
 from robotsmith.grasp.transforms import pose_matrix
 from robotsmith.motion.params import MotionParams
@@ -21,8 +20,6 @@ from robotsmith.motion.planner import GenesisBackend
 from robotsmith.scenario_runtime import runner
 from robotsmith.skills import Skill
 from conftest import pick_skill, plan_skills
-
-PICK, PLACE = pick_part("die"), place_part("die", "mat")
 
 WALL = (("robot", "left_finger"), ("wall", "base"))
 
@@ -133,7 +130,7 @@ GRASP = Holding("die", np.eye(4))
 def _pick(plan, start, params):
     """From the arm at the pre-grasp, so the approach is empty."""
     planner = GenesisBackend(_ik)
-    return MotionExecutor().run("pick", pick_actions(PICK, plan, start, (plan.pre_grasp_pos, plan.pre_grasp_quat), (),
+    return MotionExecutor().run("pick", pick_actions(plan, start, (plan.pre_grasp_pos, plan.pre_grasp_quat), (),
                                                      params, planner.solve_ik, grasp=GRASP),
                                 planner, PlanState(start), params)
 
@@ -280,7 +277,7 @@ def test_the_release_is_checked_with_the_object_placed():
     params, plan, planner, scene = MotionParams(), _pick_plan(), GenesisBackend(_ik), _Scene()
     start = _ik(plan.pre_grasp_pos, plan.pre_grasp_quat, 0.0)
     holding = _holding_at(scene, start)
-    result = MotionExecutor().run("place", place_actions(PLACE, plan, params), planner, PlanState(start, holding), params)
+    result = MotionExecutor().run("place", place_actions(plan, params), planner, PlanState(start, holding), params)
     spans = spans_of(result.segments)
     release = next(s for s in spans if s.label == "release")
     scene.hits = {release.start: [(("robot", "left_finger"), ("die", "base"))]}

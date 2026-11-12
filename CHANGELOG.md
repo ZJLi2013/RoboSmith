@@ -15,10 +15,14 @@ All notable user-facing changes are documented here. This project follows Semant
   state checks or 30 s covers the search and the final `verify` (`verify(..., budget=)`); past it the connect
   issues nothing and raises `Refused("search_exhausted")`. `SimEnv.hold(qpos, name, T)` poses a held object without
   stepping. Pick and place plan their free segments with it.
-- Six meta actions (`sample`, `move_to`, `move_linear`, `gripper`, `attach`, `detach`): a plan file's `actions` drive
-  pick and place through `EpisodeRun`, the only entry. Their bindings are checked at load, so a composition whose
-  steps do not bind (a place referring to the grasp's pre-pose, a close aimed at the mat) is rejected before any
-  physics step.
+- Six meta actions (`sample`, `move_to`, `move_linear`, `gripper`, `attach`, `detach`): each pick and place runs one
+  fixed composition of them through `EpisodeRun`, the only entry. A pick step may give its lift
+  (`lift: {direction, dist}`, world +Z 0.10 m by default). `steps_to_intents` checks a step list against the hand it
+  starts with: an unknown object or place target, a place with nothing held and a pick while holding are each a
+  `PlanInvalid` naming the step, raised before any physics step; YAML and schema errors are raised as they are.
+  The relation solver's `SolveError` becomes `PlanInvalid` (with the `SolveError` as its cause) only at this entry,
+  and the agent path wraps it as `PlanError` with the same message. A valid step list runs as before: only the
+  exception type of an invalid one changed.
 - Acceptance families under `scenarios/acceptance/`, each varying one constraint: F0 open table, F1 wall gap,
   F2 over barrier, F4 caged (unsolvable), and the held-out F5. `scripts/acceptance/witness.py` shows each positive
   instance solvable independently of the chain under test; `scripts/acceptance/certify.py --scenario <yaml>` runs the
@@ -82,8 +86,8 @@ All notable user-facing changes are documented here. This project follows Semant
   `Refused(label, evidence)` (`search_exhausted`, `unsupported`, `infeasible`), and a pick whose trials stepped physics
   and lifted nothing raises `ExecutionFailed`; both replace `Infeasible`. The episode result field `infeasible` is now
   `stopped`, with `cause`, `evidence` and `steps`.
-- Plan files live in `plans/<same name>.yaml` beside the scenario, with the keys `name`, `steps` and `actions` (the
-  meta actions `load_plan` checks); `--planner file` runs their steps (was `teacher`).
+- Plan files live in `plans/<same name>.yaml` beside the scenario, with the keys `name` and `steps` (a `pick`
+  step may carry a `lift`); `--planner file` runs their steps (was `teacher`).
 - Scenario `pick` steps are judged by the new `grasped` predicate: two different finger links touch the target and
   it rose at least 2 cm from the step's own start, read before the step is planned (`step_start_positions` in the
   judged state, separate from the episode start). `collect_world_state` adds `finger_contacts`, the finger links
@@ -164,6 +168,12 @@ All notable user-facing changes are documented here. This project follows Semant
 
 ### Removed
 
+- A plan file's `actions` and their item-by-item translation: `actions_to_intents`, `check_plan`, `load_plan`,
+  `pick_part` / `place_part`, `meta_actions.check_part` and `Skill.params["actions"]`. They could only spell the one
+  composition the steps already run; `pick_actions` / `place_actions` now build the lists from the candidate and the
+  step's `lift`, and the five acceptance plan files keep only their `steps`. A plan file with `actions` is rejected.
+  F0 playground seeds 0–4 give the same outcome, certification and per-stage physics steps before and after.
+
 - Grasp and motion fields nothing read: `GraspPlan.waypoints` and `quality`, `motion.types.Waypoint`,
   `GripperSpec.lift`, the `rng` / `object_height` / `scale` parameters of `GraspPlanner.plan`,
   `GeometricGraspPlanner.last_filter_counts` and the pick trace's `filter_counts`, `RuntimeMotionWaypoint.segment_type`,
@@ -183,7 +193,7 @@ All notable user-facing changes are documented here. This project follows Semant
 - Image-to-3D asset generation (the TRELLIS.2 and Hunyuan3D backends, `generate_asset`), `mesh_to_urdf`, and the
   `robotsmith.assets.catalog` helpers only they called; `scripts/train_smolvla.py` and the `viz` extra. Opaque meshes
   have no parts or joints to build a simulation asset from, and policy training is out of scope.
-- The plan-file keys `teacher` / `plan`; plan files take only `name`, `steps` and `actions`.
+- The plan-file keys `teacher` / `plan`; plan files take only `name` and `steps`.
 - GraspGen and everything built around it: the learned planner and model wrapper, the support-clearance screen,
   feasibility gate and 9-bucket policy, policy onboarding and the metadata-guided rollout orchestrator, the spconv
   checkpoint converter, and the `grasp_policy_bucket` asset field with its `assets/grasp_policy_buckets.json` sidecar.

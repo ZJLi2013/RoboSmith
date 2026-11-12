@@ -6,15 +6,12 @@ import pytest
 from robotsmith.execution.executor import MotionExecutor
 from robotsmith.execution.gate import Holding
 from robotsmith.execution.meta_actions import pick_actions, place_actions
-from robotsmith.scenario.load import pick_part, place_part
 from robotsmith.grasp.planner import GraspPlan
 from robotsmith.motion import move_linear
 from robotsmith.motion.move_linear import MoveLinear, expand
 from robotsmith.motion.params import MotionParams
 from robotsmith.motion.plan_state import PlanState
 from robotsmith.motion.planner import GenesisBackend
-
-PICK, PLACE = pick_part("die"), place_part("die", "mat")
 
 QUAT = np.array([0.0, 1.0, 0.0, 0.0])
 
@@ -92,11 +89,11 @@ def test_pick_place_and_drag_expand_their_lines_through_move_linear(monkeypatch)
     )
     pre = (plan.pre_grasp_pos, plan.pre_grasp_quat)
     q = _ik(*pre, 0.04)
-    exe.run("pick", pick_actions(PICK, plan, q, pre, (), params, planner.solve_ik, grasp=Holding("die", np.eye(4))), planner,
+    exe.run("pick", pick_actions(plan, q, pre, (), params, planner.solve_ik, grasp=Holding("die", np.eye(4))), planner,
             PlanState(q), params)
     assert seen == [("descend", "refuse"), ("lift", "keep")]
     seen.clear()
-    exe.run("place", place_actions(PLACE, plan, params), planner, PlanState(np.zeros(9), Holding("die", np.eye(4))), params)
+    exe.run("place", place_actions(plan, params), planner, PlanState(np.zeros(9), Holding("die", np.eye(4))), params)
     assert seen == [("descend", "keep"), ("retreat", "keep")]
     seen.clear()
     exe.drag_handle(np.array([0.5, 0.0, 0.15]), QUAT, np.array([-0.1, 0.0, 0.0]), planner, np.zeros(9), params)

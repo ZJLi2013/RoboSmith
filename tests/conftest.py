@@ -5,7 +5,6 @@ import pytest
 
 from robotsmith.execution.gate import ExecutionGate
 from robotsmith.motion.planner import GenesisBackend
-from robotsmith.scenario.load import pick_part, place_part
 from robotsmith.scenario_runtime.runner import plan_skill
 from robotsmith.skills import Skill, SkillContext
 from robotsmith.skills.base import _resolve_skill_category
@@ -52,11 +51,11 @@ def gate():
 
 
 def pick_skill(obj):
-    return Skill("pick", obj, params={"actions": pick_part(obj)})
+    return Skill("pick", obj)
 
 
-def place_skill(surface, obj="die"):
-    return Skill("place", surface, params={"actions": place_part(obj, surface)})
+def place_skill(surface):
+    return Skill("place", surface)
 
 
 def plan_skills(skills, planner, executor, solve_ik, scene_state, params, *, gate, trial=None, try_all=False,

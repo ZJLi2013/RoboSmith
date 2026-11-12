@@ -1,11 +1,13 @@
 """Agent planning: replies are validated against the scene, place binds to its own target, the baseline never
 sees the success tree, failures are routed by evidence, and a re-plan continues in the same episode."""
 
+import re
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
+from robotsmith.scenario.load import PlanInvalid
 from robotsmith.scenario_runtime import planner, runner
 from robotsmith.scenario_runtime.planner import PlanError, parse_steps, render_request, route_failure
 from robotsmith.skills import Skill
@@ -15,7 +17,7 @@ BOX = [[-0.15, -0.15, 0.0], [0.15, 0.15, 0.05]]
 
 
 def _asset(fixture=False, targets=()):
-    return SimpleNamespace(is_fixture=fixture, movable_joints=[],
+    return SimpleNamespace(name="asset", is_fixture=fixture, movable_joints=[],
                            metadata=SimpleNamespace(size_cm=[3.0, 3.0, 3.0], place_targets=list(targets)))
 
 
@@ -31,6 +33,17 @@ PLAN = '{"steps": [{"pick": "die"}, {"place": {"target": "shelf.top"}}]}'
 def test_invalid_replies_are_plan_errors(reply):
     with pytest.raises(PlanError):
         parse_steps(reply, ASSETS, YAW)
+
+
+@pytest.mark.parametrize("reply, held, why", [
+    ('{"steps": [{"pick": "cup"}]}', None, "step 0: pick: unknown object 'cup'"),
+    ('{"steps": [{"pick": "mug"}]}', "die", "step 0: pick mug while holding die"),
+    ('{"steps": [{"place": {"target": "shelf.side"}}]}', "die", "step 0: asset 'asset' has no place target 'side'"),
+])
+def test_a_step_refusal_reaches_the_agent_with_its_reason(reply, held, why):
+    with pytest.raises(PlanError, match=re.escape(why)) as e:
+        parse_steps(reply, ASSETS, YAW, held=held)
+    assert isinstance(e.value.__cause__, PlanInvalid)
 
 
 def test_place_binds_to_its_own_target_without_the_success_tree():

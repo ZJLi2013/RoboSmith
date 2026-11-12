@@ -95,12 +95,10 @@ def parse_steps(text: str, assets: dict, yaw_deg: dict, held: str | None = None)
         raise PlanError("no JSON object in the reply")
     try:
         steps = json.loads(match.group(0))["steps"]
-        intents, _ = steps_to_intents(steps, assets)
+        intents, _ = steps_to_intents(steps, assets, held=held)
         bindings = bindings_from_steps(intents, assets, yaw_deg, held=held)
     except Exception as exc:
         raise PlanError(str(exc)) from exc
-    if any(b.get("reason") == "no preceding pick" for b in bindings):
-        raise PlanError("place with nothing held")
     return steps, intents, bindings
 
 

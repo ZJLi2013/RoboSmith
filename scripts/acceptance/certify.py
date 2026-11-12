@@ -2,7 +2,7 @@
 
   python scripts/acceptance/certify.py --scenario scenarios/acceptance/f0_open.yaml --split test --out out/f0_open_test
 
-Each instance runs the scenario's plan file (its ``actions`` when present) once through ``EpisodeRun``
+Each instance runs the scenario's plan file once through ``EpisodeRun``
 (skills, execution gate, executor) on the seed's layout: one scene is built per group of seeds whose scenes differ
 only in where the picked objects start (``scene_groups``), and each instance moves them to its seed's start. Every physics step after the reset is read for the contacts it resolved and judged by
 ``gate.certified`` for the span being executed: trial and replay steps by the verified motion's spans, step
