@@ -38,7 +38,7 @@ RoboSmith 自带的操作是六动作组合：每个 pick / place 步骤执行�
 
 certified = 任务成立，且逐物理步监测的实际执行零违规接触。开发期全程封存的留出族在冻结实现上读了一次：test seed 100–109，
 F5 10/10 certified（[验收](docs/acceptance.md)、[结果](docs/manipulation.md#结果)）。[`scenarios/`](scenarios/) 里的其他
-scenario 能在这条链路上加载，但在它上面没有读数。
+scenario 能在这条链路上加载，但在它上面没有读数。certified 只对表中的场景族、seed 与预算成立，不证明其他场景可解或负例一般不可解（[适用边界](docs/acceptance.md#certified-的适用边界)）。
 
 每个场景族在当前链路上录了一个 episode（点图看 mp4）。录制不做逐步接触监测，不是 certified 读数，表里的数字来自 `certify`。
 F2 没放录像：这个机位下 20 cm 高墙挡住了 die 和抓取。
