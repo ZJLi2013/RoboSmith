@@ -12,8 +12,7 @@ import pytest
 from robotsmith.assets import derive, store
 from robotsmith.assets.library import AssetLibrary
 from robotsmith.scenario import relations
-from robotsmith.scenario.load import SCHEMA, _read, load_scenario
-from robotsmith.scenario.validators import ValidationError
+from robotsmith.scenario.load import SCHEMA, ValidationError, _read, load_scenario
 from robotsmith.scenario.load import load_scenario
 from robotsmith.tasks import evaluate_success
 

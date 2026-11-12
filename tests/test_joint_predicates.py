@@ -7,7 +7,7 @@ authoring helpers build leaves of the composable success tree (no core-loop chan
 import pytest
 
 from robotsmith.scenario.predicates import all_of, joint_closed, joint_opened
-from robotsmith.scenario.validators import ValidationError, check_task
+from robotsmith.scenario.load import ValidationError, check_task
 from robotsmith.scenes.config import ObjectPlacement, SceneConfig
 from robotsmith.tasks.predicates import evaluate_predicate, evaluate_success
 from robotsmith.tasks.task_spec import TaskSpec
