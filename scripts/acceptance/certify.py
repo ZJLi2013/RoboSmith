@@ -92,7 +92,7 @@ def _content(trajectory) -> bytes:
 def run_instance(env, pkg, family, mon, record_episode):
     from robotsmith.execution import MotionExecutor
     from robotsmith.motion import MotionParams
-    from robotsmith.scenario.adapters import resolved_target_positions, target_frames
+    from robotsmith.scenario.adapters import target_frames
     from robotsmith.scenario_runtime.runner import (EpisodeRun, evaluate_scenario_task, reset_scene,
                                                     resolve_static_target_positions)
     from robotsmith.sim.sim_env import SceneInvalid
@@ -158,9 +158,7 @@ def run_instance(env, pkg, family, mon, record_episode):
             success, judged = False, None
         else:
             mon.enter("judge", _settle_ctx(last[0]) if last[0] else None)
-            targets = {n: np.asarray(x, dtype=np.float32)
-                       for n, x in resolved_target_positions(pkg.scenario_scene).items()}
-            targets.update(resolve_static_target_positions(env, target_frames(pkg.scenario_scene)))
+            targets = resolve_static_target_positions(env, target_frames(pkg.scenario_scene))
             success, judged = evaluate_scenario_task(env, task, initial_positions=run.initial_positions,
                                                      reference_positions=targets, hold=run.qpos, window=run.window)
     finally:

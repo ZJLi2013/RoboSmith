@@ -16,16 +16,11 @@ class RegionSpec:
         name: Logical region name, e.g. "left_reachable".
         xy_bounds: XY min/max corners in world/table coordinates.
         z: Optional placement Z used when lowering to legacy ranges.
-        min_distance: Optional semantic spacing hint between placements.
-        keep_out_radius: Optional semantic keep-out radius for goal/container
-            areas; not a raw Genesis/runtime knob.
     """
 
     name: str
     xy_bounds: tuple[tuple[float, float], tuple[float, float]]
     z: float | None = None
-    min_distance: float | None = None
-    keep_out_radius: float | None = None
 
 
 @dataclass(frozen=True)
@@ -51,8 +46,6 @@ class ObjectSpec:
         name: Logical object name used by instructions, predicates, and later
             skills.
         asset: Asset query or asset id in the RoboSmith asset catalog.
-        pose: Asset metadata pose key. Current authoring helpers expect
-            "upright".
         region: Optional named region reference for semantic placement.
         fixed_position: Optional exact XYZ world position for fixture/debug
             scenes. region and fixed_position are layout hints, not task
@@ -70,7 +63,6 @@ class ObjectSpec:
 
     name: str
     asset: str
-    pose: str = "upright"
     region: RegionName | None = None
     fixed_position: tuple[float, float, float] | None = None
     joint_init: dict[str, float] = field(default_factory=dict)

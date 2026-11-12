@@ -78,16 +78,6 @@ def open_(target: str, *, category: str | None = None) -> SkillIntentSpec:
     return SkillIntentSpec(name="open", target=target, category=category)
 
 
-def close_(target: str, *, category: str | None = None) -> SkillIntentSpec:
-    """Create a close intent over an articulated scene object.
-
-    Example:
-        close_("drawer")
-    """
-
-    return SkillIntentSpec(name="close", target=target, category=category)
-
-
 def intent_sequence(
     intents: list[SkillIntentSpec] | tuple[SkillIntentSpec, ...],
 ) -> SkillIntentSequenceSpec:

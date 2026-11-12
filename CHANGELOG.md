@@ -168,6 +168,15 @@ All notable user-facing changes are documented here. This project follows Semant
 
 ### Removed
 
+- Scenario and runtime fields nothing read: `TaskSpec.contact_objects` / `episode_length` / `dart_sigma` (so
+  `TaskSpec.to_dict()`, and the task metadata a recorded dataset carries, no longer has these keys; `from_dict`
+  ignores them in older files), `derive_contact_objects`, `SceneConfig.description` / `robot`,
+  `RegionSpec.min_distance` / `keep_out_radius` and `ObjectSpec.pose` (with the `scene_api.region` / `obj` parameters
+  and the checks on them), and the uncalled builders `intents.close_`, `predicates.negate`,
+  `scene_api.on_articulated` / `on_articulated_opening`. `adapters.resolved_target_positions` is gone too: every YAML
+  scenario's place target is anchored, so it was always empty, and `certify.py` and `run_generated_scenario.py` take
+  their static target points from `resolve_static_target_positions` alone.
+
 - A plan file's `actions` and their item-by-item translation: `actions_to_intents`, `check_plan`, `load_plan`,
   `pick_part` / `place_part`, `meta_actions.check_part` and `Skill.params["actions"]`. They could only spell the one
   composition the steps already run; `pick_actions` / `place_actions` now build the lists from the candidate and the

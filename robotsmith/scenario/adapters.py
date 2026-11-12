@@ -22,7 +22,6 @@ from robotsmith.scenario.specs import (
     TaskSuccessCfg,
 )
 from robotsmith.scenario.validators import (
-    success_refs,
     validate_scene,
     validate_skill_intent_sequence,
     validate_task,
@@ -90,7 +89,6 @@ def to_legacy_scene_config(scene: SceneSpec) -> SceneConfig:
         camera_overrides["table_height"] = scene.table_height
     return SceneConfig(
         name=scene.name,
-        description="Generated from scenario SceneSpec",
         objects=[
             ObjectPlacement(
                 asset_query=obj.asset,
@@ -134,7 +132,6 @@ def to_legacy_task_spec(task: TaskSpec) -> LegacyTaskSpec:
             LegacyTaskSpec(
                 name="cap_pick_die",
                 scene="cap_pick_die",
-                contact_objects=["die", "table"],
                 success=SuccessNode(op="leaf", predicate="object_above", params={...}),
                 skills=[],
             )
@@ -148,7 +145,6 @@ def to_legacy_task_spec(task: TaskSpec) -> LegacyTaskSpec:
         name=task.name,
         instruction=task.instruction,
         scene=task.scene.name,
-        contact_objects=derive_contact_objects(task),
         success=_lower_success(task.success),
         skills=[],
     )
@@ -299,38 +295,6 @@ def bindings_from_steps(intents: SkillIntentSequenceSpec, assets: dict, yaw_deg:
         else:
             bindings.append(_unchecked("no preceding pick"))
     return bindings
-
-
-def derive_contact_objects(task: TaskSpec) -> list[str]:
-    """Derive the legacy tracking list from success predicate references.
-
-    contact_objects is a runtime tracking contract. Authors should reference
-    logical object/target names in predicates instead of writing this list.
-    """
-
-    refs = success_refs(task.success)
-    ordered = []
-    for ref in refs + ["table"]:
-        if ref not in ordered:
-            ordered.append(ref)
-    return ordered
-
-
-def resolved_target_positions(scene: SceneSpec) -> dict[str, tuple[float, float, float]]:
-    """Resolve static target positions to xyz points for predicate/success eval.
-
-    Region-based targets resolve to the region center; fixed targets are trusted
-    as provided. Articulated-anchored targets are motion anchors resolved live by
-    the runtime (see ``target_frames``), not static success markers, so they are
-    excluded here. This does not create physical scene objects.
-    """
-
-    validate_scene(scene)
-    return {
-        target.name: _target_position(scene, target)
-        for target in scene.target_positions
-        if target.anchor is None
-    }
 
 
 def target_frames(scene: SceneSpec) -> dict[str, FrameRef]:

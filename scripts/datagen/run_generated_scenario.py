@@ -16,7 +16,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from robotsmith.assets.library import AssetLibrary
-from robotsmith.scenario.adapters import resolved_target_positions, target_frames
+from robotsmith.scenario.adapters import target_frames
 from robotsmith.scenario.load import DEFAULT_ASSETS
 from robotsmith.rollout.video_export import copy_episode_videos
 from robotsmith.scenario_runtime import handoff, materialize_candidate
@@ -89,16 +89,11 @@ def run_scenario_smoke(
         env_state_names=env_state_names,
     )
     # Frames (live-resolved each segment by the runtime) for motion anchoring;
-    # static xyz markers for success/diagnostics. Anchorless targets resolve from
-    # the scene spec; asset-anchored *static* targets (placement affordances on a
-    # fixture) are resolved against the live world so they too become success
-    # markers (articulated/opening anchors stay excluded — they move with a joint).
+    # static xyz markers for success/diagnostics: asset-anchored *static* targets
+    # (placement affordances on a fixture) are resolved against the live world
+    # (articulated/opening anchors stay excluded — they move with a joint).
     scene_frames = target_frames(package.scenario_scene)
-    target_positions = {
-        name: np.asarray(xyz, dtype=np.float32)
-        for name, xyz in resolved_target_positions(package.scenario_scene).items()
-    }
-    target_positions.update(resolve_static_target_positions(env, scene_frames))
+    target_positions = resolve_static_target_positions(env, scene_frames)
 
     episodes = []
     episode_frame_counts: dict[int, int] = {}
