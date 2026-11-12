@@ -29,7 +29,7 @@ ModifyPlanningScene（`attach` / `detach`）。
 
 ```mermaid
 flowchart LR
-    PF["plan 文件或 agent 的步骤表 steps"] --> LD["scenario.load.steps_to_intents<br/>物体与持物顺序不对即 PlanInvalid"]
+    PF["plan 文件或 agent 的步骤表 steps"] --> LD["scenario.load.steps_to_skills<br/>物体与持物顺序不对即 PlanInvalid"]
     LD --> ER["EpisodeRun._plan<br/>按 SKILL_DEFS 分派技能"]
     ER --> SK["RulePolicy + ManipulationTools<br/>候选顺序、试抓、place 预检"]
     SK --> MA["meta_actions<br/>候选与抬升 → 动作列表"]
@@ -65,7 +65,7 @@ pick:  sample(grasp) · gripper(open) · move_to(pre) · move_linear(grasp) · g
 place: sample(place) · move_to(pre) · move_linear(place) · detach · gripper(open) · move_linear(retreat)
 ```
 
-加载时 `scenario/load.py` 的 `steps_to_intents` 是步骤表唯一的检查：物体与放置目标要在场景里，pick 时手里为空、place 时手里有物体
+加载时 `scenario/load.py` 的 `steps_to_skills` 是步骤表唯一的检查：物体与放置目标要在场景里，pick 时手里为空、place 时手里有物体
 （agent 续跑时从 `EpisodeRun.held` 开始推），不成立即 `PlanInvalid`、零物理步；步骤可以持物结束。`execution/meta_actions.py`
 的 `pick_actions` / `place_actions` 对一个候选构造动作列表：运动段是 `RuntimeMotionWaypoint`（`finger_only` 即 `gripper`，`linear`
 即 `move_linear`，其余是 `move_to`），持物变化是 `Attach` / `Detach` 项。`MotionExecutor.run` 是动作列表进运动链的唯一入口。
@@ -171,7 +171,7 @@ block / mug / F0–F2 的 certified 读数仍是[换掉 die](#换掉-die同一�
 | Genesis 场景状态：快照、构型、状态指纹 | `SimEnv` |
 | 「这条轨迹能不能执行」、持物生命周期与接触许可规则 | `ExecutionGate`（许可规则只在 `permitted` 一处；读实际物理接触的验收用同模块的 `certified`，见 [certified 读数](acceptance.md#被测链路的-certified-读数)） |
 | 候选及其顺序（抓取）、place 的搬运目标 | 技能层（`RulePolicy.pick` / `ManipulationTools.plan_place`） |
-| 步骤表的物体与持物顺序 | `scenario.load.steps_to_intents` |
+| 步骤表的物体与持物顺序 | `scenario.load.steps_to_skills` |
 | 一个候选的动作列表：段的顺序、允许接触、抬升与 `Attach` / `Detach` 的位置 | `execution.meta_actions`（`pick_actions` / `place_actions`） |
 | 动作列表进运动链的入口 | `MotionExecutor.run`（拖拽的段也经它） |
 | 自由段 | `motion.joint_planner.JointPlanner` |

@@ -159,7 +159,7 @@ flowchart TD
 ```
 
 技能内部见下一张图。file 与 agent 两条路径共用 `EpisodeRun`，只是步骤表的来源不同：plan 文件的 `steps`，或 agent 回复里的
-`steps`，都经 `scenario/load.steps_to_intents` 变成技能，pick 的 `lift` 进 `Skill.params["lift"]`。物体或放置目标不在场景里、pick 时手里
+`steps`，都经 `scenario/load.steps_to_skills` 变成技能，pick 的 `lift` 进 `Skill.params["lift"]`。物体或放置目标不在场景里、pick 时手里
 已有物体、place 时手里为空（agent 续跑从 `EpisodeRun.held` 推起）即加载时 `PlanInvalid`，消息以 `step <i>:` 开头
 （[写法与报错](../scenarios/AGENT_PROMPT.md#plan-file-optional)）；关系求解的 `SolveError` 只在这个入口转成 `PlanInvalid`（保留为 cause），
 YAML 与 schema 错误原样抛出。agent 路径的 `parse_steps` 把它包成 `PlanError`、消息不变，作为可修正的原因回给 agent。pick 已走过物理步之后组合即提交，place 仍从实测状态重新规划，这时它被拒就记 `execution_failed`。agent 路径上零步拒绝（`Refused` 的标签）按
@@ -169,8 +169,7 @@ plan 类失败重写剩余步骤，`execution_failed` 按 physical 失败上报�
 
 ```mermaid
 flowchart LR
-    Y["plan YAML steps"] -->|steps_to_intents| I["SkillIntentSpec"]
-    I -->|to_legacy_skills| S["Skill<br/>params lift"]
+    Y["plan YAML steps"] -->|steps_to_skills| S["Skill<br/>params lift"]
     S -->|EpisodeRun._plan → plan_skill| C["SkillContext"]
     C -->|pick_actions / place_actions<br/>候选与抬升| A["RuntimeMotionWaypoint<br/>与 Attach / Detach"]
     A -->|execute_motion_chain| M["MotionChainExecution<br/>segments"]
@@ -179,13 +178,12 @@ flowchart LR
 ```
 
 动作列表的顺序在 `meta_actions` 里固定为一种，步骤能换的是物体、放置目标与 pick 抬升的方向和距离；五个验收族的
-`steps` 相同。场景与任务另有两套类型，见下一节。
+`steps` 相同。plan 文件与 agent 回复都经 `load.steps_to_skills` 直接解析成 `Skill`。
 
 ### 一个场景的数据表示：两份并存，目标是一份
 
-现状：场景、place 目标、任务与成功树都只有运行时一份。`load_scenario` 直接建 `SceneConfig`、`dict[str, FrameRef]` 与
-`tasks.TaskSpec`（成功树是 `SuccessNode`）；步骤仍是两份，`materialize_candidate` 经 `scenario/adapters.py` 的 `to_legacy_skills`
-把 plan 文件的 `SkillIntentSequenceSpec` 转成 `Skill`。candidate 与 package 两层包装还在。
+现状：场景、place 目标、任务、成功树与步骤都只有运行时一份。`load_scenario` 直接建 `SceneConfig`、`dict[str, FrameRef]`、
+`tasks.TaskSpec`（成功树是 `SuccessNode`）与 plan 文件的 `list[Skill]`；还剩 candidate 与 package 两层包装。
 
 ```mermaid
 classDiagram
@@ -193,15 +191,13 @@ classDiagram
         scene
         target_frames
         task
-        intents
+        skills
     }
     class ScenarioRuntimePackage {
-        scenario_intents
         legacy_scene
         target_frames
         legacy_task
     }
-    class SkillIntentSequenceSpec
     class SceneConfig
     class ObjectPlacement
     class FrameRef
@@ -211,20 +207,21 @@ classDiagram
     ScenarioCandidate --> SceneConfig : scene
     ScenarioCandidate --> FrameRef : target_frames（plan 文件用到的）
     ScenarioCandidate --> TaskSpec : task
+    ScenarioCandidate --> Skill : skills（plan 文件的步骤）
     ScenarioRuntimePackage --> SceneConfig : legacy_scene（scene 的深拷贝）
     ScenarioRuntimePackage --> FrameRef : target_frames（agent 模式为全部 place 目标）
     ScenarioRuntimePackage --> TaskSpec : legacy_task（task 的深拷贝）
     SceneConfig *-- ObjectPlacement
     TaskSpec *-- SuccessNode
-    TaskSpec *-- Skill
-    SkillIntentSequenceSpec ..> Skill : to_legacy_skills
+    TaskSpec *-- Skill : skills（plan 模式为 candidate.skills 的深拷贝）
 ```
 
 - 运行时读 package：`SimEnv.build(legacy_scene)`、`EpisodeRun(legacy_task, target_frames=...)`、
   `resolve_static_target_positions(env, target_frames)`、`evaluate_scenario_task(legacy_task)`、recorder 的 `task_spec.to_dict()`。
   planner 与 `run_generated_scenario.py` 从 `legacy_scene.objects` 读 `name_override` / `asset_query` / `yaw_deg`。
-- 场景与任务：`load_scenario` 各建一次放进 candidate，之后不再写。`materialize_candidate` 每次调用深拷贝出本次的 `legacy_scene` 与
-  `legacy_task`，新建本次的 `target_frames`，把本次的 `skills` / `step_bindings` 写在拷贝上，所以同一 candidate 按 plan 与 agent
+- 场景、任务与步骤：`load_scenario` 各建一次放进 candidate，之后不再写。`materialize_candidate` 每次调用深拷贝出本次的
+  `legacy_scene` 与 `legacy_task`，新建本次的 `target_frames`，plan 模式把 candidate 步骤的深拷贝与按成功树求出的 `step_bindings`
+  写在任务拷贝上（agent 模式不预填），所以同一 candidate 按 plan 与 agent
   各物化一次，两份结果互不影响，candidate 也不变。
 - 加载期检查：物体 id 不能重复（`validators.check_object_ids`，抛 `ValidationError: duplicate object names: [...]`）；成功树的名字检查
   （`validators.check_task`）要求叶子参数里的 `object` / `objects` / `parent` / `reference` 是场景物体、目标或 `table`，否则抛
@@ -273,6 +270,20 @@ any / all-not / 嵌套 all / not-any 四种成功树在两种加载模式下的 
 对 `die_01` / `mug_02` / `block_01` 的场景配置逐字段相同；同一 candidate 两种顺序物化，先得结果与 candidate 都不变；F0 playground
 seed 0–4 的 certify 结果逐实例相同。
 
+#### 步骤合并为运行时一份
+
+`SkillIntentSpec` / `SkillIntentSequenceSpec`、`scenario/intents.py` 的 builder、`to_legacy_skills` 与
+`validators.validate_skill_intent_sequence` 已删除；`steps_to_intents` 改名 `steps_to_skills`，直接返回 `list[Skill]` 与目标帧。
+`validate_skill_intent_sequence` 的检查在 plan 文件与 agent 两条路径上都已由 `steps_to_skills` 先做（schema、未知物体与目标、
+持物顺序），所以删除它不改变任何输入的结果；`asset_pick_validation._make_task` 直接建 `Skill`。`ScenarioRuntimePackage` 不再有
+`scenario_intents`（没有读者），candidate 的 `intents` 改为 `skills`。`to_step_bindings`（plan，按成功树）与 `bindings_from_steps`
+（agent，按步骤与当前持物）改收 `list[Skill]`，算法不变。
+
+等价范围：140 份加载结果逐字段相同；10 组固定步骤输入（pick / place / open / close、显式抬升、带物续跑、放到物体上、未知物体与
+目标、连续 pick、空手 place、schema 错误）的技能字段、目标帧、两种绑定规则（含 on / any / not / 嵌套 all 四种成功树）、agent 回复
+路径与异常类型、消息和 cause 都与改动前相同；`_make_task` 对三个资产的任务相同；同一 candidate 两种顺序物化，先得结果与
+candidate 都不变，两次 plan 物化不共享技能或参数；F0 playground seed 0–4 的 certify 结果逐实例相同。
+
 目标（拟议，尚未实现）：每个概念保留运行时那一份，作者侧的一份连同转译删除。
 
 | 概念 | owner | 删除 |
@@ -282,7 +293,7 @@ seed 0–4 的 certify 结果逐实例相同。
 | place 目标 | `Scenario.target_frames: dict[str, FrameRef]` | 已完成（现由 candidate / package 持有） |
 | 成功判定树 | `tasks.task_spec.SuccessNode` | 已完成 |
 | 任务 | `tasks.task_spec.TaskSpec` | 已完成 |
-| 一步 | `skills.base.Skill` | `SkillIntentSpec` 一族、`to_legacy_skills`；`steps_to_intents` 改为直接返回 `list[Skill]` |
+| 一步 | `skills.base.Skill` | 已完成 |
 | 加载期检查 | `scenario.load` | `validators`；YAML 路径上没有的检查移进 `load` |
 
 `Scenario` 的契约：

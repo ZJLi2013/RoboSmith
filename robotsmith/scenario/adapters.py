@@ -1,44 +1,17 @@
-"""Adapters from scenario plan steps to the current RoboSmith runtime: Skills and per-step bindings.
+"""Per-step completion bindings for a list of plan Skills.
 
-The scene, its target frames, the task and its SuccessNode tree are built once, by scenario.load.
+The scene, its target frames, the task, its SuccessNode tree and the plan's Skills are built once, by scenario.load.
 """
 
 from __future__ import annotations
 
-from robotsmith.scenario.intents import SkillIntentSequenceSpec
 from robotsmith.scenario.load import CONTACT_TOL_M, relation_params
 from robotsmith.scenario.relations import SolveError, place_target, split_ref
-from robotsmith.scenario.validators import validate_skill_intent_sequence
 from robotsmith.skills import Skill
 from robotsmith.skills.frames import resolve_drag_joint
-from robotsmith.scenes.config import SceneConfig
 from robotsmith.tasks.task_spec import SuccessNode
 
 PICK_LIFT_M = 0.02
-
-
-def to_legacy_skills(
-    intents: SkillIntentSequenceSpec,
-    scene: SceneConfig,
-    target_names,
-) -> list[Skill]:
-    """Lower scenario task-level skill intents to current runtime Skills.
-
-    This is the Feature 2 boundary: scenario intent selects an existing scripted
-    expert primitive, while planner, IK, MotionExecutor, and recorder stay in
-    the runtime.
-    """
-
-    validate_skill_intent_sequence(intents, scene, target_names)
-    return [
-        Skill(
-            name=intent.name,
-            target=intent.target,
-            category=intent.category,
-            params=dict(intent.params),
-        )
-        for intent in intents.intents
-    ]
 
 
 def _placement_relations(node: SuccessNode) -> tuple[list[dict], bool]:
@@ -59,22 +32,22 @@ def _unchecked(reason: str) -> dict:
     return {"status": "unchecked", "reason": reason}
 
 
-def _joint_binding(intent, assets: dict) -> dict:
+def _joint_binding(skill, assets: dict) -> dict:
     """``open`` / ``close`` bind to the joint the executor drags and the endpoint it drags to, within the
     task loader's tolerance: opened past ``end - tol``, closed below ``lower + tol``."""
-    asset = assets.get(intent.target)
+    asset = assets.get(skill.target)
     if asset is None:
-        raise SolveError(f"plan step {intent.name} {intent.target!r} has no asset")
-    drag = resolve_drag_joint(asset, intent.name, dict(intent.params))
-    if intent.name == "open":
+        raise SolveError(f"plan step {skill.name} {skill.target!r} has no asset")
+    drag = resolve_drag_joint(asset, skill.name, dict(skill.params))
+    if skill.name == "open":
         predicate, threshold = "joint_opened", drag.end - CONTACT_TOL_M
     else:
         predicate, threshold = "joint_closed", drag.lower + CONTACT_TOL_M
     return {"status": "bound", "predicate": predicate,
-            "params": {"object": intent.target, "joint": drag.joint.name, "threshold": threshold}}
+            "params": {"object": skill.target, "joint": drag.joint.name, "threshold": threshold}}
 
 
-def to_step_bindings(intents: SkillIntentSequenceSpec, success: SuccessNode,
+def to_step_bindings(skills: list[Skill], success: SuccessNode,
                      assets: dict | None = None) -> list[dict]:
     """Bind each plan step to the completion condition it can be judged by, one entry per step.
 
@@ -88,27 +61,27 @@ def to_step_bindings(intents: SkillIntentSequenceSpec, success: SuccessNode,
     assets = assets or {}
     relations, conjunction = _placement_relations(success)
     bindings, held, place_count = [], None, {}
-    for intent in intents.intents:
-        if intent.name == "pick":
-            held = intent.target
-        elif intent.name == "place" and held is not None:
+    for skill in skills:
+        if skill.name == "pick":
+            held = skill.target
+        elif skill.name == "place" and held is not None:
             place_count[held] = place_count.get(held, 0) + 1
             held = None
     held = None
-    for i, intent in enumerate(intents.intents):
-        if intent.name == "pick":
-            held = intent.target
+    for i, skill in enumerate(skills):
+        if skill.name == "pick":
+            held = skill.target
             bindings.append({"status": "bound", "predicate": "grasped",
-                             "params": {"object": intent.target, "lift": PICK_LIFT_M}})
+                             "params": {"object": skill.target, "lift": PICK_LIFT_M}})
             continue
-        if intent.name in ("open", "close"):
-            bindings.append(_joint_binding(intent, assets))
+        if skill.name in ("open", "close"):
+            bindings.append(_joint_binding(skill, assets))
             continue
-        if intent.name != "place":
+        if skill.name != "place":
             bindings.append(_unchecked("not migrated"))
             continue
         obj, held = held, None
-        parent, target = split_ref(intent.target)
+        parent, target = split_ref(skill.target)
         candidates = [r for r in relations if r["object"] == obj]
         if obj is None:
             bindings.append(_unchecked("no preceding pick"))
@@ -121,30 +94,30 @@ def to_step_bindings(intents: SkillIntentSequenceSpec, success: SuccessNode,
         else:
             rel = candidates[0]
             if (rel["parent"], rel.get("target")) != (parent, target):
-                raise SolveError(f"plan step {i} places {obj} at {intent.target}, but success wants "
+                raise SolveError(f"plan step {i} places {obj} at {skill.target}, but success wants "
                                  f"{rel['mode']} {rel['parent']}.{rel.get('target')}")
             bindings.append({"status": "bound", "predicate": "object_in_box", "params": rel})
     return bindings
 
 
-def bindings_from_steps(intents: SkillIntentSequenceSpec, assets: dict, yaw_deg: dict[str, float],
+def bindings_from_steps(skills: list[Skill], assets: dict, yaw_deg: dict[str, float],
                         held: str | None = None) -> list[dict]:
     """Bind each step to its own completion condition, without reading the success tree: a ``place`` binds to
     the object held at that point being on its target (inside when the target opens on a joint). ``held`` is
     the object already in hand when the steps start."""
     bindings = []
-    for intent in intents.intents:
-        if intent.name == "pick":
-            held = intent.target
+    for skill in skills:
+        if skill.name == "pick":
+            held = skill.target
             bindings.append({"status": "bound", "predicate": "grasped",
-                             "params": {"object": intent.target, "lift": PICK_LIFT_M}})
-        elif intent.name in ("open", "close"):
-            bindings.append(_joint_binding(intent, assets))
-        elif intent.name == "place" and held is not None:
-            parent, target = split_ref(intent.target)
+                             "params": {"object": skill.target, "lift": PICK_LIFT_M}})
+        elif skill.name in ("open", "close"):
+            bindings.append(_joint_binding(skill, assets))
+        elif skill.name == "place" and held is not None:
+            parent, target = split_ref(skill.target)
             mode = "inside" if "joint" in place_target(assets[parent], target) else "on"
             bindings.append({"status": "bound", "predicate": "object_in_box",
-                             "params": relation_params(mode, held, intent.target, assets, yaw_deg.get(parent, 0.0))})
+                             "params": relation_params(mode, held, skill.target, assets, yaw_deg.get(parent, 0.0))})
             held = None
         else:
             bindings.append(_unchecked("no preceding pick"))

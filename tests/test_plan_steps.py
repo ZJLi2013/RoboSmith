@@ -8,7 +8,7 @@ from pathlib import Path
 import jsonschema
 import pytest
 
-from robotsmith.scenario.load import PlanInvalid, load_scenario, steps_to_intents
+from robotsmith.scenario.load import PlanInvalid, load_scenario, steps_to_skills
 
 ACCEPTANCE = Path(__file__).resolve().parents[1] / "scenarios" / "acceptance"
 PLANS = ACCEPTANCE / "plans"
@@ -17,7 +17,7 @@ ASSETS = {"die": None, "mat": None, "drawer": None}
 
 
 def _steps(*steps):
-    return [(i.name, i.target) for i in steps_to_intents(list(steps), ASSETS)[0].intents]
+    return [(i.name, i.target) for i in steps_to_skills(list(steps), ASSETS)[0]]
 
 
 def _pair(tmp_path, plan_text: str) -> Path:
@@ -27,8 +27,8 @@ def _pair(tmp_path, plan_text: str) -> Path:
     return tmp_path / "f0_open.yaml"
 
 
-def _intents(scenario: Path):
-    return load_scenario(scenario, seed=100)[3].intents
+def _skills(scenario: Path):
+    return load_scenario(scenario, seed=100)[3]
 
 
 @pytest.mark.parametrize("family", FAMILIES)
@@ -38,14 +38,14 @@ def test_each_development_family_runs_the_same_steps(family):
 
 
 def test_the_public_plan_picks_the_die_and_places_it_on_the_mat_with_the_default_lift():
-    intents = _intents(ACCEPTANCE / "f0_open.yaml")
-    assert [(i.name, i.target, i.params) for i in intents] == [("pick", "die", {}), ("place", "mat.top", {})]
+    skills = _skills(ACCEPTANCE / "f0_open.yaml")
+    assert [(i.name, i.target, i.params) for i in skills] == [("pick", "die", {}), ("place", "mat.top", {})]
 
 
 def test_a_pick_carries_its_lift(tmp_path):
     text = (PLANS / "f0_open.yaml").read_text(encoding="utf-8")
     lifted = text.replace("  - pick: die\n", "  - pick: die\n    lift: {direction: [1, 0, 1], dist: 0.05}\n")
-    assert _intents(_pair(tmp_path, lifted))[0].params == {"lift": {"direction": [1, 0, 1], "dist": 0.05}}
+    assert _skills(_pair(tmp_path, lifted))[0].params == {"lift": {"direction": [1, 0, 1], "dist": 0.05}}
 
 
 @pytest.mark.parametrize("lift", ["{direction: [0, 0, 1], dist: 0}", "{direction: [0, 1], dist: 0.1}",
@@ -65,8 +65,8 @@ def test_a_plan_file_with_meta_actions_is_refused(tmp_path):
 
 def test_steps_may_end_holding_and_may_start_holding():
     assert _steps({"pick": "die"}) == [("pick", "die")]
-    intents, _ = steps_to_intents([{"place": {"target": "mat"}}], ASSETS, held="die")
-    assert [(i.name, i.target) for i in intents.intents] == [("place", "mat")]
+    skills, _ = steps_to_skills([{"place": {"target": "mat"}}], ASSETS, held="die")
+    assert [(i.name, i.target) for i in skills] == [("place", "mat")]
     assert _steps({"open": "drawer"}, {"pick": "die"}, {"place": {"target": "mat"}}, {"close": "drawer"}) == [
         ("open", "drawer"), ("pick", "die"), ("place", "mat"), ("close", "drawer")]
 
@@ -80,14 +80,14 @@ def test_steps_may_end_holding_and_may_start_holding():
 ])
 def test_steps_that_cannot_run_from_the_hand_they_start_with_are_refused(steps, held, why):
     with pytest.raises(PlanInvalid, match=re.escape(why)):
-        steps_to_intents(steps, ASSETS, held=held)
+        steps_to_skills(steps, ASSETS, held=held)
 
 
 @pytest.mark.parametrize("steps", [[{"pick": "cup"}], [{"pick": "die"}, {"place": {"target": "tray"}}],
                                    [{"open": "cabinet"}], [{"close": "cabinet"}]])
 def test_an_unknown_object_is_refused(steps):
     with pytest.raises(PlanInvalid, match="unknown object"):
-        steps_to_intents(steps, ASSETS)
+        steps_to_skills(steps, ASSETS)
 
 
 def test_an_unknown_place_target_is_refused_at_load(tmp_path):
@@ -99,5 +99,5 @@ def test_an_unknown_place_target_is_refused_at_load(tmp_path):
 def test_the_usage_example_loads_as_the_public_plan(tmp_path):
     doc = (ACCEPTANCE.parents[0] / "AGENT_PROMPT.md").read_text(encoding="utf-8")
     example = re.search(r"<!-- example: f0_open -->\n```yaml\n(.*?)```", doc, re.S)[1]
-    assert _intents(_pair(tmp_path, example))[1:] == _intents(ACCEPTANCE / "f0_open.yaml")[1:]
-    assert _intents(_pair(tmp_path, example))[0].params == {"lift": {"direction": [0, 0, 1], "dist": 0.10}}
+    assert _skills(_pair(tmp_path, example))[1:] == _skills(ACCEPTANCE / "f0_open.yaml")[1:]
+    assert _skills(_pair(tmp_path, example))[0].params == {"lift": {"direction": [0, 0, 1], "dist": 0.10}}

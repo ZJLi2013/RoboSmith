@@ -17,7 +17,7 @@ All notable user-facing changes are documented here. This project follows Semant
   stepping. Pick and place plan their free segments with it.
 - Six meta actions (`sample`, `move_to`, `move_linear`, `gripper`, `attach`, `detach`): each pick and place runs one
   fixed composition of them through `EpisodeRun`, the only entry. A pick step may give its lift
-  (`lift: {direction, dist}`, world +Z 0.10 m by default). `steps_to_intents` checks a step list against the hand it
+  (`lift: {direction, dist}`, world +Z 0.10 m by default). `steps_to_skills` checks a step list against the hand it
   starts with: an unknown object or place target, a place with nothing held and a pick while holding are each a
   `PlanInvalid` naming the step, raised before any physics step; YAML and schema errors are raised as they are.
   The relation solver's `SolveError` becomes `PlanInvalid` (with the `SolveError` as its cause) only at this entry,
@@ -191,6 +191,13 @@ All notable user-facing changes are documented here. This project follows Semant
   `scenario_scene`, and each materialization gets its own copy of the loaded scene. `check_task`, `to_legacy_skills`
   and `validate_skill_intent_sequence` take the scene and the target names. All 14 scenarios at seeds 0–4 in both
   load modes load the same, and F0 playground seeds 0–4 give the same outcome, certification and per-stage physics steps.
+
+- The second step type: `SkillIntentSpec` / `SkillIntentSequenceSpec`, the `scenario/intents.py` builders,
+  `to_legacy_skills` and `validators.validate_skill_intent_sequence`, whose checks `steps_to_intents` already made on
+  every path. `steps_to_intents` is now `steps_to_skills` and returns `list[Skill]`; `load_scenario` returns the plan's
+  skills, `ScenarioCandidate.intents` is `skills`, and `ScenarioRuntimePackage` has no `scenario_intents`.
+  `to_step_bindings` and `bindings_from_steps` take `list[Skill]`. Fixed step inputs give the same skills, bindings and
+  errors, the 14 scenarios load the same, and F0 playground seeds 0–4 give the same outcome, certification and steps.
 
 - A plan file's `actions` and their item-by-item translation: `actions_to_intents`, `check_plan`, `load_plan`,
   `pick_part` / `place_part`, `meta_actions.check_part` and `Skill.params["actions"]`. They could only spell the one
