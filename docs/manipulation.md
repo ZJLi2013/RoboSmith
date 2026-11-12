@@ -54,7 +54,7 @@ flowchart LR
 | `move_to` | `JointPlanner.connect`，关节空间 RRT-Connect | 到目标构型，持物不变 |
 | `move_linear` | `motion.move_linear.expand`，笛卡尔直线逐点 IK | 末端沿直线到达，持物不变 |
 | `gripper` | `motion.gripper.expand`：臂锁定，指关节取该位姿 IK 解的指关节 | 开到全宽或合到被物体挡住 |
-| `attach` | `PlanState` 事件，零运动 | 持物 = 刚体，`T_hand_object` 取自抓取绑定 |
+| `attach` | `PlanState` 事件，零运动 | 持物 = 刚体，`t_hand_object` 取自抓取绑定 |
 | `detach` | `PlanState` 事件，零运动 | 持物为空，物体留在放置位姿 |
 
 写法与示例见 [plan 文件用法](../scenarios/AGENT_PROMPT.md#plan-file-optional)。组合只有一种顺序，步骤能选的是物体、放置目标与
