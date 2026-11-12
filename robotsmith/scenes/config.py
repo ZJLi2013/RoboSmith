@@ -44,12 +44,10 @@ class SceneConfig:
     """A scene layout configuration (simulator-agnostic)."""
 
     name: str
-    description: str = ""
     objects: list[ObjectPlacement] = field(default_factory=list)
 
     table_size: list[float] = field(default_factory=lambda: [1.2, 0.8, 0.05])
     table_height: float = 0.75
-    robot: str = "franka_panda"
 
     workspace_xy: list[list[float]] = field(
         default_factory=lambda: list(DEFAULT_WORKSPACE_XY)

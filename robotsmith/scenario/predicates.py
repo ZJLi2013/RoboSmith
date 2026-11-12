@@ -1,14 +1,14 @@
 """Authoring-level success predicate helpers.
 
 Leaf predicates: lifted, joint open / closed, alignment, stacking; YAML\nscenarios lower ``on`` / ``inside`` in ``scenario.load``. These
-compose via all_of / any_of / negate into a success tree. Still not a full
+compose via all_of / any_of into a success tree. Still not a full
 TerminationCfg system: multiple done terms, timeouts, subtasks, contact /
 gripper-detached / local-frame containment checks are future extensions.
 """
 
 from __future__ import annotations
 
-from robotsmith.scenario.specs import AllOf, AnyOf, Not, SuccessSpec, TaskSuccessCfg
+from robotsmith.scenario.specs import AllOf, AnyOf, SuccessSpec, TaskSuccessCfg
 
 
 def object_lifted(object: str, *, z_margin: float = 0.05) -> TaskSuccessCfg:
@@ -128,9 +128,3 @@ def any_of(*terms: SuccessSpec) -> AnyOf:
     """
 
     return AnyOf(terms=tuple(terms))
-
-
-def negate(term: SuccessSpec) -> Not:
-    """Success when the inner term does not hold (NOT)."""
-
-    return Not(term=term)

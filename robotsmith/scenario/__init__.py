@@ -1,8 +1,6 @@
 """Scenario authoring: YAML scenarios lowered to the scene / task runtime."""
 
 from robotsmith.scenario.adapters import (
-    derive_contact_objects,
-    resolved_target_positions,
     target_frames,
     to_legacy_scene_config,
     to_legacy_skills,
@@ -33,8 +31,6 @@ from robotsmith.scenario.validators import (
 )
 
 __all__ = [
-    "derive_contact_objects",
-    "resolved_target_positions",
     "target_frames",
     "to_legacy_scene_config",
     "to_legacy_skills",

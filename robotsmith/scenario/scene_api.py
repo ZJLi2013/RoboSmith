@@ -12,56 +12,10 @@ from robotsmith.scenario.specs import (
 )
 
 
-def on_articulated(
-    asset: str,
-    joint: str,
-    *,
-    local_offset: tuple[float, float, float] = (0.0, 0.0, 0.0),
-) -> FrameRef:
-    """Anchor a target to an articulated asset's joint (e.g. a drawer tray).
-
-    The runtime resolves the world point each segment from the asset's live pose
-    plus the joint's live travel, so the target tracks the part as it moves.
-
-    Example:
-        target_position(
-            "drawer_open_slot",
-            anchor=on_articulated("drawer", "drawer_slide",
-                                  local_offset=(0.0245, 0.0, 0.0952)),
-        )
-    """
-
-    return FrameRef(
-        kind="articulated",
-        parent=asset,
-        joint=joint,
-        local_offset=local_offset,
-    )
-
-
-def on_articulated_opening(asset: str, opening: str = "drawer_opening") -> FrameRef:
-    """Anchor a place target to the live midpoint of an articulated opening.
-
-    Unlike ``on_articulated`` (a fixed point that rides the full joint travel and
-    retracts under the carcass when the part recoils), this resolves to the
-    *currently exposed* opening's midpoint — ``lip + open_dir*(live_slide*frac)``
-    at tray-floor height. All geometry (lip, tray floor, travel fraction) comes
-    from the asset's ``place_targets`` metadata, so the scene carries no numbers.
-
-    Example::
-
-        target_position("drawer_open_slot",
-                        anchor=on_articulated_opening("drawer", "drawer_opening"))
-    """
-
-    return FrameRef(kind="articulated_opening", parent=asset, opening=opening)
-
-
 def on_placement(asset: str, name: str) -> FrameRef:
     """Anchor a target to a named static placement affordance on any asset.
 
-    The general (jointless) counterpart to ``on_articulated_opening``: the named
-    ``place_targets`` entry (e.g. a shelf surface on a fixture) carries its own
+    The named ``place_targets`` entry (e.g. a shelf surface on a fixture) carries its own
     local drop point — and optionally its approach direction — in the asset frame.
     The runtime resolves both against the asset's live pose each segment, so the
     drop point and approach track the asset (including yaw) with no per-scene
@@ -80,8 +34,6 @@ def region(
     xy_bounds: tuple[tuple[float, float], tuple[float, float]],
     *,
     z: float | None = None,
-    min_distance: float | None = None,
-    keep_out_radius: float | None = None,
 ) -> RegionSpec:
     """Create a named tabletop region for agent-friendly layout authoring.
 
@@ -89,13 +41,7 @@ def region(
         region("left_reachable", ((0.42, -0.14), (0.50, -0.06)))
     """
 
-    return RegionSpec(
-        name=name,
-        xy_bounds=xy_bounds,
-        z=z,
-        min_distance=min_distance,
-        keep_out_radius=keep_out_radius,
-    )
+    return RegionSpec(name=name, xy_bounds=xy_bounds, z=z)
 
 
 def layout(
@@ -116,7 +62,6 @@ def obj(
     name: str,
     *,
     asset: str,
-    pose: str = "upright",
     region: str | None = None,
     fixed_position: tuple[float, float, float] | None = None,
     joint_init: dict[str, float] | None = None,
@@ -139,7 +84,6 @@ def obj(
     return ObjectSpec(
         name=name,
         asset=asset,
-        pose=pose,
         region=region,
         fixed_position=fixed_position,
         joint_init=dict(joint_init) if joint_init else {},
@@ -157,7 +101,7 @@ def target_position(
     """Create a non-physical target position referenced by skills/predicates.
 
     A point is either a static world value (``fixed_position``/``region``) or
-    anchored to a moving part via ``anchor`` (see ``on_articulated``); a moving
+    anchored to a moving part via ``anchor`` (a ``FrameRef``); a moving
     part requires an explicit anchor, so a constant can't silently ride on it.
 
     Example:

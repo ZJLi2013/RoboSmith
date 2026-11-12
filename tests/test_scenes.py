@@ -13,7 +13,6 @@ from robotsmith.scenes.backend import ProgrammaticSceneBackend
 
 tabletop_simple = SceneConfig(
     name="tabletop_simple",
-    description="Simple tabletop with several blocks",
     objects=[ObjectPlacement(asset_query="die_01", count=5)],
     table_size=[1.2, 0.8, 0.05],
     table_height=0.75,

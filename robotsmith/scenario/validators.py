@@ -29,18 +29,10 @@ def validate_scene(scene: SceneSpec, *, asset_library: AssetLibrary | None = Non
     for name, region in scene.layout.regions.items():
         _require(name == region.name, f"region key '{name}' must match RegionSpec.name")
         _validate_xy_bounds(region.xy_bounds, f"region '{name}'")
-        if region.min_distance is not None:
-            _require(region.min_distance >= 0, f"region '{name}' min_distance must be >= 0")
-        if region.keep_out_radius is not None:
-            _require(
-                region.keep_out_radius >= 0,
-                f"region '{name}' keep_out_radius must be >= 0",
-            )
 
     for obj in scene.objects:
         _require(obj.name.strip(), "ObjectSpec.name must be non-empty")
         _require(obj.asset.strip(), f"ObjectSpec.asset must be non-empty for '{obj.name}'")
-        _require(obj.pose == "upright", f"unsupported pose '{obj.pose}' for '{obj.name}'")
         _validate_one_placement(
             region=obj.region,
             fixed_position=obj.fixed_position,
