@@ -8,58 +8,49 @@ gripper-detached / local-frame containment checks are future extensions.
 
 from __future__ import annotations
 
-from robotsmith.scenario.specs import AllOf, AnyOf, SuccessSpec, TaskSuccessCfg
+from robotsmith.tasks.task_spec import SuccessNode
 
 
-def object_lifted(object: str, *, z_margin: float = 0.05) -> TaskSuccessCfg:
+def object_lifted(object: str, *, z_margin: float = 0.05) -> SuccessNode:
     """Define lifted-object success without executing the predicate.
 
     Example:
         object_lifted("die", z_margin=0.05)
 
-    This lowers to the legacy runtime predicate "object_above".
+    The runtime predicate is "object_above".
     """
 
-    return TaskSuccessCfg(
-        predicate="object_above",
-        params={"object": object, "reference": "table", "z_margin": z_margin},
-        refs=(object, "table"),
+    return SuccessNode.leaf(
+        "object_above", {"object": object, "reference": "table", "z_margin": z_margin}
     )
 
 
-def joint_opened(object: str, joint: str, *, open_position: float) -> TaskSuccessCfg:
+def joint_opened(object: str, joint: str, *, open_position: float) -> SuccessNode:
     """Define joint-opened success for an articulated object.
 
     Example:
         joint_opened("drawer", "drawer_slide", open_position=0.25)
 
     ``open_position`` is the absolute joint position (meters for prismatic,
-    radians for revolute) past which the joint counts as open. Lowers to the
-    runtime predicate "joint_opened".
+    radians for revolute) past which the joint counts as open.
     """
 
-    return TaskSuccessCfg(
-        predicate="joint_opened",
-        params={"object": object, "joint": joint, "threshold": open_position},
-        refs=(object,),
+    return SuccessNode.leaf(
+        "joint_opened", {"object": object, "joint": joint, "threshold": open_position}
     )
 
 
 def joint_closed(
     object: str, joint: str, *, closed_position: float = 0.02
-) -> TaskSuccessCfg:
+) -> SuccessNode:
     """Define joint-closed success for an articulated object.
 
     Example:
         joint_closed("drawer", "drawer_slide")
-
-    Lowers to the runtime predicate "joint_closed".
     """
 
-    return TaskSuccessCfg(
-        predicate="joint_closed",
-        params={"object": object, "joint": joint, "threshold": closed_position},
-        refs=(object,),
+    return SuccessNode.leaf(
+        "joint_closed", {"object": object, "joint": joint, "threshold": closed_position}
     )
 
 
@@ -68,21 +59,16 @@ def objects_aligned(
     *,
     axis: str = "y",
     xy_threshold: float = 0.06,
-) -> TaskSuccessCfg:
+) -> SuccessNode:
     """Define alignment success for a group of named objects.
 
     Example:
         objects_aligned(["die", "mug", "apple"], axis="x", xy_threshold=0.12)
     """
 
-    return TaskSuccessCfg(
-        predicate="objects_aligned",
-        params={
-            "objects": list(objects),
-            "axis": axis,
-            "xy_threshold": xy_threshold,
-        },
-        refs=tuple(objects),
+    return SuccessNode.leaf(
+        "objects_aligned",
+        {"objects": list(objects), "axis": axis, "xy_threshold": xy_threshold},
     )
 
 
@@ -90,21 +76,17 @@ def stacked(
     objects: list[str] | tuple[str, ...],
     *,
     z_tolerance: float = 0.02,
-) -> TaskSuccessCfg:
+) -> SuccessNode:
     """Define stacking success for ordered named objects.
 
     Example:
         stacked(["block_a", "block_b", "block_c"])
     """
 
-    return TaskSuccessCfg(
-        predicate="stacked",
-        params={"objects": list(objects), "z_tolerance": z_tolerance},
-        refs=tuple(objects),
-    )
+    return SuccessNode.leaf("stacked", {"objects": list(objects), "z_tolerance": z_tolerance})
 
 
-def all_of(*terms: SuccessSpec) -> AllOf:
+def all_of(*terms: SuccessNode) -> SuccessNode:
     """Success when all terms hold (AND).
 
     Example:
@@ -114,10 +96,10 @@ def all_of(*terms: SuccessSpec) -> AllOf:
         )
     """
 
-    return AllOf(terms=tuple(terms))
+    return SuccessNode(op="all", terms=list(terms))
 
 
-def any_of(*terms: SuccessSpec) -> AnyOf:
+def any_of(*terms: SuccessNode) -> SuccessNode:
     """Success when any term holds (OR).
 
     Example:
@@ -127,4 +109,4 @@ def any_of(*terms: SuccessSpec) -> AnyOf:
         )
     """
 
-    return AnyOf(terms=tuple(terms))
+    return SuccessNode(op="any", terms=list(terms))

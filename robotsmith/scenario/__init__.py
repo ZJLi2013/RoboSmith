@@ -4,7 +4,6 @@ from robotsmith.scenario.adapters import (
     target_frames,
     to_legacy_scene_config,
     to_legacy_skills,
-    to_legacy_task_spec,
 )
 from robotsmith.scenario.intents import (
     SkillIntentSequenceSpec,
@@ -20,21 +19,18 @@ from robotsmith.scenario.specs import (
     RegionSpec,
     SceneSpec,
     TargetPositionSpec,
-    TaskSpec,
-    TaskSuccessCfg,
 )
 from robotsmith.scenario.validators import (
     ValidationError,
+    check_task,
     validate_scene,
     validate_skill_intent_sequence,
-    validate_task,
 )
 
 __all__ = [
     "target_frames",
     "to_legacy_scene_config",
     "to_legacy_skills",
-    "to_legacy_task_spec",
     "SkillIntentSequenceSpec",
     "SkillIntentSpec",
     "intent_sequence",
@@ -46,10 +42,8 @@ __all__ = [
     "RegionSpec",
     "SceneSpec",
     "TargetPositionSpec",
-    "TaskSpec",
-    "TaskSuccessCfg",
     "ValidationError",
+    "check_task",
     "validate_scene",
     "validate_skill_intent_sequence",
-    "validate_task",
 ]

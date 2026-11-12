@@ -11,15 +11,10 @@ from typing import Callable
 
 import numpy as np
 
-from robotsmith.scenario.adapters import (
-    to_legacy_scene_config,
-    to_legacy_skills,
-    to_legacy_task_spec,
-)
+from robotsmith.scenario.adapters import to_legacy_scene_config, to_legacy_skills
 from robotsmith.scenario.intents import intent_sequence, pick
 from robotsmith.scenario.predicates import object_lifted
 from robotsmith.scenario.scene_api import layout, obj, region, scene
-from robotsmith.scenario.task_api import task
 from robotsmith.scenario_runtime.runner import EpisodeRun
 from robotsmith.sim.world_state import collect_world_state
 from robotsmith.rollout.episode_layout import (
@@ -73,16 +68,14 @@ def _object_pose_label(env, name: str) -> dict:
 def _make_task(asset_name: str) -> TaskSpec:
     category = _asset_category(asset_name)
     cap_scene = _make_cap_scene(asset_name)
-    cap_task = task(
-        name=f"pick_{asset_name}",
-        scene=cap_scene,
-        instruction=f"Pick up {asset_name}",
-        success=object_lifted("object", z_margin=0.02),
-    )
     intents = intent_sequence([pick("object", category=category)])
-    legacy_task = to_legacy_task_spec(cap_task)
-    legacy_task.skills = to_legacy_skills(intents, cap_task)
-    return legacy_task
+    return TaskSpec(
+        name=f"pick_{asset_name}",
+        instruction=f"Pick up {asset_name}",
+        scene=cap_scene.name,
+        success=object_lifted("object", z_margin=0.02),
+        skills=to_legacy_skills(intents, cap_scene),
+    )
 
 
 def _make_scene(asset_name: str) -> SceneConfig:

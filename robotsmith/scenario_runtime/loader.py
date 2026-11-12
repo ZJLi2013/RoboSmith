@@ -7,7 +7,8 @@ from pathlib import Path
 
 from robotsmith.scenario.intents import SkillIntentSequenceSpec
 from robotsmith.scenario.load import load_scenario
-from robotsmith.scenario.specs import SceneSpec, TaskSpec
+from robotsmith.scenario.specs import SceneSpec
+from robotsmith.tasks.task_spec import TaskSpec
 
 
 @dataclass(frozen=True)
