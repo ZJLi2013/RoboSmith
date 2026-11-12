@@ -36,7 +36,7 @@
 [plan 文件用法](../scenarios/AGENT_PROMPT.md#plan-file-optional)。split：`playground` 0–9，`test` 100–119。
 
 `read_plan_file` 是读 plan 文件的唯一入口，只认 `name` / `steps` 两个键。它只读文件，不回写、不跨调用缓存，YAML 与 schema
-错误原样抛出；物体、放置目标与持物顺序这类步骤语义错误由 `steps_to_intents` 报 `PlanInvalid`。F5 的 plan 文件解封后两次改写：先从旧键 `teacher` / `plan` 迁到新键，后去掉与 `steps` 等价的六动作 `actions`，
+错误原样抛出；物体、放置目标与持物顺序这类步骤语义错误由 `steps_to_skills` 报 `PlanInvalid`。F5 的 plan 文件解封后两次改写：先从旧键 `teacher` / `plan` 迁到新键，后去掉与 `steps` 等价的六动作 `actions`，
 每次 seed 100–119 加载出的技能与动作逐个不变；它的 sha256 因此不再等于封存 manifest 里的值。
 
 ### `offset_from`
