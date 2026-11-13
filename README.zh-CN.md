@@ -4,8 +4,11 @@
 
 **在你自己场景的仿真孪生里测试 agentic 机器人与 VLA；运行在 AMD ROCm 上。**
 
-标准 benchmark 用的是精选场景。RoboSmith 要回答：agent 或 VLA 进了*你的*场景，还能不能完成任务。做法是把场景变成可交互的孪生，
-在上面写任务，先用 RoboSmith 自带的操作证明每道任务可解，再让被测方去跑，报告它在哪里失败。
+标准 benchmark 用的是精选场景。RoboSmith 要回答：agent 或 VLA 进了*你的*场景，还能不能完成任务。
+RoboSmith 负责出题：场景的孪生、被测方看不到成功判定的任务，以及每道题可解的证明。你的策略经 [Inspect Robots](https://github.com/robocurve/inspect-robots) 的接口接入，不用改代码；
+RoboSmith 读仿真判卷：终态是否完成任务，每个物理步有没有违规接触。
+
+现在的场景用 YAML 描述；手机视频变成孪生还在开发中。
 
 | 杯子放到垫子上 | 方块放到垫子上 | 越过两道矮墙（开发期未见过的布局） |
 |---|---|---|
@@ -15,13 +18,14 @@
 
 | | |
 |---|---|
+| **评测你的 agent** | 外部策略经 Inspect Robots 的接口接入；RoboSmith 读仿真判任务与每一次接触，保存的日志可离线复判。一个外部 LLM agent 在空桌面任务上 certified（[结果](docs/evaluation.md#已测结果)）。还没有：VLA、按里程碑归因失败、多场景报告。 |
 | **资产** | agent 用 Blender 程序生成物体（含铰接件）；独立的 LLM 评审在仿真里取证后才准入。准入资产按 hash 发布到 Hugging Face。 |
 | **场景与任务** | 一个 YAML 文件：物体、空间关系，以及机器人看不到的成功判定。求解器按 seed 摆放物体。 |
 | **证明任务可解** | Franka 抓放：动作在关节空间规划，执行前对照场景检查，执行时逐物理步监测有无违规接触。 |
 | **真实视频孪生** | 进行中：在仿真视频上跑过，真实视频还没有。 |
-| **评测你的 agent 或 VLA** | 最小版本已有：外部策略经 Inspect Robots 的接口接入，按物理判卷，日志可离线复判；一个外部 LLM agent 在空桌面 seed 0 上 certified（[已测结果](docs/evaluation.md#已测结果)）。还没有：按里程碑归因失败、多场景报告、VLA。 |
 
-单卡 MI300X 上证明可解的任务，每项 10 个 seed。*certified* = 任务成立，且没有任何物理步发生违规接触。
+每道题在拿来考之前，先由 RoboSmith 自己证明可解。下表是 RoboSmith 自己的运行，单卡 MI300X，每项 10 个 seed；
+*certified* = 任务成立，且没有任何物理步发生违规接触。
 
 | 场景 | 物体 | certified |
 |---|---|---|
@@ -52,6 +56,16 @@ python -m pytest tests -q
 
 在装好 ROCm 与 Docker 的 AMD GPU 节点上，[Quick start](docs/quick-start.md) 带你构建镜像、证明一个实例、录出上面的杯子视频。
 
+要考一个策略，在同一个镜像里：
+
+```shell
+python -m pip install -e ".[eval]"
+python scripts/eval/run_exam.py --scenario scenarios/acceptance/f0_open.yaml --split playground --limit 1 --out out/exam
+```
+
+这会让 Inspect Robots 的 LLM agent 考空桌面任务；先设好指向你的模型端点的 `ROBOSMITH_LLM_*` 变量。策略看到什么、怎么判分、
+怎么换成你自己的策略：[评测](docs/evaluation.md)。
+
 ## 路线图
 
 目标是一个真实桌面场景、几道任务、一个被测方、一份报告：
@@ -72,9 +86,8 @@ task                 certified  success  failures
 
 ## 致谢
 
-评测层的接口与第一个被测方来自 [Inspect Robots](https://github.com/robocurve/inspect-robots)（robocurve，MIT）：RoboSmith
-实现它的 `Embodiment` 协议，把场景变成考场；它的 `agent` 策略原样作为第一个外部被测方。判卷由 RoboSmith 读仿真完成，不用它的
-评分。使用的版本钉在 `7720195`，见[评测](docs/evaluation.md#inspect-robots-在-robosmith-里的位置)。
+评测接口与第一个被测方来自 [Inspect Robots](https://github.com/robocurve/inspect-robots)（robocurve，MIT）。RoboSmith 实现它的 `Embodiment` 协议，原样运行它的 `agent` 策略；
+判卷由 RoboSmith 自己完成。版本钉在 `7720195`（[说明](docs/evaluation.md#inspect-robots-在-robosmith-里的位置)）。
 
 ## 文档
 
