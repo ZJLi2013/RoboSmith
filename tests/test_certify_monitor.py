@@ -93,8 +93,8 @@ ACCEPTANCE = SCENARIOS / "acceptance"
 
 
 def _packages(path, seeds):
-    from robotsmith.scenario_runtime import materialize_candidate
-    return {s: materialize_candidate(path, seed=s) for s in seeds}
+    from robotsmith.scenario.load import load_scenario
+    return {s: load_scenario(path, seed=s) for s in seeds}
 
 
 def test_a_family_whose_fixtures_stay_put_builds_one_scene():
@@ -111,7 +111,7 @@ def test_seeds_that_differ_only_in_where_the_picked_object_starts_share_a_scene(
     packages = _packages(SCENARIOS / "pick_place_block_on_mat.yaml", range(10))
 
     def start(seed):
-        return next(o.fixed_position for o in packages[seed].legacy_scene.objects if o.name_override == "block")
+        return next(o.fixed_position for o in packages[seed].scene.objects if o.name_override == "block")
 
     assert len({tuple(np.round(start(s), 5)) for s in range(10)}) > 1
     assert certify.scene_groups(packages) == [list(range(10))]
@@ -127,7 +127,7 @@ def test_a_fixture_that_moves_between_seeds_gets_a_scene_of_its_own(tmp_path):
     groups = certify.scene_groups(packages)
 
     def mat(seed):
-        return next(o.fixed_position for o in packages[seed].legacy_scene.objects if o.name_override == "mat")
+        return next(o.fixed_position for o in packages[seed].scene.objects if o.name_override == "mat")
 
     assert len(groups) == 2 and sorted(s for g in groups for s in g) == list(range(8))
     for group in groups:

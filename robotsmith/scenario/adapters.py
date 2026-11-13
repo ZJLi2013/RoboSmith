@@ -5,13 +5,28 @@ The scene, its target frames, the task, its SuccessNode tree and the plan's Skil
 
 from __future__ import annotations
 
-from robotsmith.scenario.load import CONTACT_TOL_M, relation_params
+from robotsmith.scenario import relations
 from robotsmith.scenario.relations import SolveError, place_target, split_ref
 from robotsmith.skills import Skill
 from robotsmith.skills.frames import resolve_drag_joint
 from robotsmith.tasks.task_spec import SuccessNode
 
 PICK_LIFT_M = 0.02
+CONTACT_TOL_M = 0.02
+
+
+def relation_params(mode: str, obj: str, ref: str, assets: dict, yaw_deg: float) -> dict:
+    """``object_in_box`` params for ``obj`` on / inside the place target ``ref``."""
+    parent, target = relations.split_ref(ref)
+    if target is None:
+        raise relations.SolveError(f"{mode}: '{parent}' must name a place target as <id>.<target>")
+    spec = relations.place_target(assets[parent], target)
+    params = {"object": obj, "parent": parent, "box": spec["box"], "target": target,
+              "yaw_deg": yaw_deg, "mode": mode, "tol": CONTACT_TOL_M}
+    if "joint" in spec:
+        params["joint"] = spec["joint"]
+        params["axis"] = list(assets[parent].get_joint(spec["joint"]).axis)
+    return params
 
 
 def _placement_relations(node: SuccessNode) -> tuple[list[dict], bool]:

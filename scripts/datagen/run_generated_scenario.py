@@ -16,10 +16,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from robotsmith.assets.library import AssetLibrary
-from robotsmith.scenario.load import DEFAULT_ASSETS
+from robotsmith.scenario.load import DEFAULT_ASSETS, Scenario, load_scenario
 from robotsmith.rollout.video_export import copy_episode_videos
-from robotsmith.scenario_runtime import handoff, materialize_candidate
-from robotsmith.scenario_runtime.materialize import ScenarioRuntimePackage
+from robotsmith.scenario_runtime import handoff
 from robotsmith.scenario_runtime.planner import run_agentic_episode
 from robotsmith.tasks import failed_leaves
 from robotsmith.scenario_runtime.runner import (
@@ -56,7 +55,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def run_scenario_smoke(
-    package: ScenarioRuntimePackage,
+    package: Scenario,
     config: ScenarioSmokeConfig,
 ) -> dict:
     """Run a lightweight scenario smoke with videos and diagnostics."""
@@ -71,10 +70,10 @@ def run_scenario_smoke(
     from robotsmith.motion import MotionParams
 
     ensure_display()
-    env = SimEnv.build(package.legacy_scene, seed=config.seed, fps=config.fps)
+    env = SimEnv.build(package.scene, seed=config.seed, fps=config.fps)
     executor = MotionExecutor()
     motion_params = MotionParams()
-    repo_id = f"local/robotsmith-scenario-{package.legacy_task.name}"
+    repo_id = f"local/robotsmith-scenario-{package.task.name}"
     cache_root = Path.home() / ".cache" / "huggingface" / "lerobot" / repo_id
     if cache_root.exists():
         shutil.rmtree(cache_root)
@@ -101,7 +100,7 @@ def run_scenario_smoke(
         if config.role is not None:
             library = AssetLibrary(DEFAULT_ASSETS)
             result, planner_record = run_agentic_episode(
-                env, package, {o.name_override: library.get(o.asset_query) for o in package.legacy_scene.objects},
+                env, package, {o.name_override: library.get(o.asset_query) for o in package.scene.objects},
                 role=config.role, executor=executor, motion_params=motion_params, dataset=dataset,
                 record_fn=record_episode, settle_steps=config.settle_steps, target_frames=scene_frames,
                 camera_names=camera_names, env_state_names=env_state_names,
@@ -109,7 +108,7 @@ def run_scenario_smoke(
         else:
             result = run_scenario_episode(
                 env,
-                package.legacy_task,
+                package.task,
                 executor=executor,
                 motion_params=motion_params,
                 dataset=dataset,
@@ -126,7 +125,7 @@ def run_scenario_smoke(
         else:
             success, judge_state = evaluate_scenario_task(
                 env,
-                package.legacy_task,
+                package.task,
                 initial_positions=result.initial_positions,
                 reference_positions=target_positions,
                 hold=result.final_qpos,
@@ -147,7 +146,7 @@ def run_scenario_smoke(
             "handoffs": _json_safe(result.handoffs),
             "failed_step": None if success else _json_safe(handoff.first_failure(result.handoffs)),
             "failed_leaves": ([] if success or result.stopped is not None
-                              else failed_leaves(package.legacy_task.success, judge_state)),
+                              else failed_leaves(package.task.success, judge_state)),
             **({"planner": planner_record.to_dict()} if planner_record is not None else {}),
         })
         if result.frame_count:
@@ -162,7 +161,7 @@ def run_scenario_smoke(
         dataset_root,
         [ep["episode_index"] for ep in episodes if ep["frame_count"]],
         config.output_dir / "videos",
-        package.legacy_task.name,
+        package.task.name,
         None,
         episode_frame_counts,
         config.fps,
@@ -172,15 +171,15 @@ def run_scenario_smoke(
         env.get_joint_positions() if hasattr(env, "get_joint_positions") else {}
     )
     summary = {
-        "scenario": package.legacy_task.name,
+        "scenario": package.task.name,
         "source_path": str(package.source_path),
         "status": "datagen_success"
         if all(ep["success"] for ep in episodes)
         else "datagen_failed",
         "n_episodes": config.n_episodes,
         "success_count": sum(1 for ep in episodes if ep["success"]),
-        "success_tree": package.legacy_task.success.to_dict(),
-        "step_bindings": _json_safe(package.legacy_task.step_bindings),
+        "success_tree": package.task.success.to_dict(),
+        "step_bindings": _json_safe(package.task.step_bindings),
         "output_dir": str(config.output_dir),
         "dataset_root": str(dataset_root),
         "env_state_names": list(env_state_names),
@@ -211,15 +210,15 @@ def episode_diagnostics(
     return diagnostics
 
 
-def _materialize_summary(package: ScenarioRuntimePackage) -> dict:
+def _materialize_summary(package: Scenario) -> dict:
     return {
-        "scenario": package.legacy_task.name,
+        "scenario": package.task.name,
         "source_path": str(package.source_path),
-        "scene": package.legacy_scene.name,
-        "objects": [obj.name_override for obj in package.legacy_scene.objects],
-        "task": package.legacy_task.name,
-        "success": package.legacy_task.success.to_dict(),
-        "skills": [skill.to_dict() for skill in package.legacy_task.skills],
+        "scene": package.scene.name,
+        "objects": [obj.name_override for obj in package.scene.objects],
+        "task": package.task.name,
+        "success": package.task.success.to_dict(),
+        "skills": [skill.to_dict() for skill in package.task.skills],
     }
 
 
@@ -245,7 +244,7 @@ def _json_safe(value):
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
     args = parse_args()
-    package = materialize_candidate(args.scenario, seed=args.seed, agent_plan=args.planner == "agent")
+    package = load_scenario(args.scenario, seed=args.seed, agent_plan=args.planner == "agent")
     if args.materialize_only:
         print(json.dumps(_materialize_summary(package), indent=2))
         return

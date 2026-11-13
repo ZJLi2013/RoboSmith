@@ -97,8 +97,8 @@ def run_instance(env, pkg, family, mon, record_episode):
     from robotsmith.sim.sim_env import SceneInvalid
     from witness import FAMILIES, caged, difficulty
 
-    task = pkg.legacy_task
-    placed = {o.name_override: np.asarray(o.fixed_position, dtype=float) for o in pkg.legacy_scene.objects}
+    task = pkg.task
+    placed = {o.name_override: np.asarray(o.fixed_position, dtype=float) for o in pkg.scene.objects}
     picked = movers(pkg)
     for name in picked:
         env.placed_map[name] = dataclasses.replace(env.placed_map[name], position=list(placed[name]))
@@ -193,7 +193,7 @@ class _NoDataset:
 
 def movers(pkg) -> set[str]:
     """The objects the plan picks: the ones whose start differs between seeds of one built scene."""
-    return {s.target for s in pkg.legacy_task.skills if s.name == "pick"}
+    return {s.target for s in pkg.task.skills if s.name == "pick"}
 
 
 def scene_groups(packages: dict) -> list[list[int]]:
@@ -201,7 +201,7 @@ def scene_groups(packages: dict) -> list[list[int]]:
     objects start, the one thing ``run_instance`` changes between instances."""
     groups: dict[str, list[int]] = {}
     for seed, pkg in packages.items():
-        scene, picked = pkg.legacy_scene, movers(pkg)
+        scene, picked = pkg.scene, movers(pkg)
         objects = [(o.name_override, o.asset_query, o.yaw_deg, sorted((o.joint_init or {}).items()),
                     None if o.name_override in picked else _tolist(o.fixed_position)) for o in scene.objects]
         groups.setdefault(repr((objects, _tolist(scene.table_size), scene.table_height)), []).append(seed)
@@ -227,7 +227,7 @@ def main() -> None:
         args.out.mkdir(parents=True, exist_ok=True)
         sys.exit(supervise([sys.executable, __file__, *sys.argv[1:], "--worker"], log, failed={"certified": False}))
 
-    from robotsmith.scenario_runtime import materialize_candidate
+    from robotsmith.scenario.load import load_scenario
     from robotsmith.sim.recorder import record_episode
     from robotsmith.sim.sim_env import SimEnv
 
@@ -238,7 +238,7 @@ def main() -> None:
     args.out.mkdir(parents=True, exist_ok=True)
     shutil.copy(path, args.out / path.name)
     shutil.copy(plan_file, args.out / f"plan_{path.name}")
-    packages = {s: materialize_candidate(path, seed=s) for s in seeds}
+    packages = {s: load_scenario(path, seed=s) for s in seeds}
     groups = scene_groups(packages)
     built = {}
 
@@ -249,7 +249,7 @@ def main() -> None:
                 import genesis as gs  # one Genesis session per process: a new scene needs the old one torn down
                 gs.destroy()
                 built.clear()
-            env = SimEnv.build(packages[group[0]].legacy_scene, seed=group[0])
+            env = SimEnv.build(packages[group[0]].scene, seed=group[0])
             built.update(group=group, env=env, mon=Monitor(env))
         built["mon"].start()
         return {"split": args.split,

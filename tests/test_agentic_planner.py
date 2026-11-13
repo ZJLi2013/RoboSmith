@@ -108,7 +108,7 @@ def _episode(monkeypatch, verdicts, replies, role="baseline", mug=(0.7, 0.0, 0.8
                for n in ("die", "mug", "shelf")]
     task = TaskSpec(name="t", scene="t", instruction="put the die on the shelf",
                     success=SuccessNode.leaf("object_above", {"object": "die", "reference": "table"}))
-    package = SimpleNamespace(legacy_task=task, legacy_scene=SimpleNamespace(objects=objects), target_frames={})
+    package = SimpleNamespace(task=task, scene=SimpleNamespace(objects=objects), target_frames={})
     result, record = planner.run_agentic_episode(
         env, package, ASSETS, role=role, executor=object(), motion_params=object(), dataset=object(),
         record_fn=lambda *a, **k: [], settle_steps=0, target_frames={}, camera_names=(), env_state_names=(), llm=llm)

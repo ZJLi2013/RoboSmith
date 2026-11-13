@@ -199,6 +199,15 @@ All notable user-facing changes are documented here. This project follows Semant
   `to_step_bindings` and `bindings_from_steps` take `list[Skill]`. Fixed step inputs give the same skills, bindings and
   errors, the 14 scenarios load the same, and F0 playground seeds 0–4 give the same outcome, certification and steps.
 
+- The candidate / package wrappers: `ScenarioCandidate`, `ScenarioRuntimePackage`, `load_candidate`,
+  `materialize_candidate` and `scenario_runtime/loader.py` / `materialize.py`. `load_scenario(path, *, seed,
+  agent_plan=False)` returns one `Scenario` (`source_path`, `scene`, `task`, `target_frames`); plan mode fills the
+  task's skills and step bindings at load, agent mode leaves them empty and carries every place target. The plan file
+  is still read and checked in both modes. `relation_params` and `CONTACT_TOL_M` moved to `scenario.adapters`, and
+  `scenario/validators.py` is merged into `scenario.load` (`ValidationError`, `check_object_ids`, `check_task`).
+  The 14 scenarios load the same, six kinds of bad input raise the same errors in both modes, loads share no mutable
+  objects, and F0 playground seeds 0–4 give the same outcome, certification and steps.
+
 - A plan file's `actions` and their item-by-item translation: `actions_to_intents`, `check_plan`, `load_plan`,
   `pick_part` / `place_part`, `meta_actions.check_part` and `Skill.params["actions"]`. They could only spell the one
   composition the steps already run; `pick_actions` / `place_actions` now build the lists from the candidate and the

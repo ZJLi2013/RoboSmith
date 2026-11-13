@@ -6,8 +6,7 @@ import pytest
 
 from robotsmith.scenario.adapters import to_step_bindings
 from robotsmith.scenario.relations import SolveError
-from robotsmith.scenario_runtime import materialize_candidate
-from robotsmith.scenario_runtime.loader import load_candidate
+from robotsmith.scenario.load import load_scenario
 from robotsmith.skills import Skill
 from robotsmith.tasks.task_spec import SuccessNode, TaskSpec
 
@@ -27,13 +26,13 @@ PICK_PLACE = _steps(("pick", "die"), ("place", "supporter.shelf_lower"))
 
 @pytest.mark.parametrize("name", sorted(p.stem for p in SCENARIOS.glob("*.yaml")))
 def test_every_scenario_binds_one_entry_per_step(name):
-    task = materialize_candidate(SCENARIOS / f"{name}.yaml", seed=0).legacy_task
+    task = load_scenario(SCENARIOS / f"{name}.yaml", seed=0).task
     assert len(task.step_bindings) == len(task.skills)
     assert TaskSpec.from_dict(task.to_dict()).step_bindings == task.step_bindings
 
 
 def test_drawer_binds_place_inside_and_the_drawer_joint_for_open_and_close():
-    task = materialize_candidate(SCENARIOS / "pick_place_into_drawer.yaml", seed=0).legacy_task
+    task = load_scenario(SCENARIOS / "pick_place_into_drawer.yaml", seed=0).task
     by_skill = {s.name: b for b, s in zip(task.step_bindings, task.skills)}
     assert {k: by_skill["place"]["params"][k] for k in ("object", "parent", "target", "mode")} == {
         "object": "die", "parent": "drawer", "target": "drawer_opening", "mode": "inside"}
@@ -72,13 +71,12 @@ def test_object_placed_twice_stays_unchecked():
 
 
 @pytest.mark.parametrize("first", [False, True], ids=["plan then agent", "agent then plan"])
-def test_each_materialization_owns_its_task(first):
-    candidate = load_candidate(SCENARIOS / "pick_place_block_on_mat.yaml", seed=0)
-    loaded = candidate.task.to_dict()
-    a = materialize_candidate(candidate, agent_plan=first).legacy_task
+def test_each_load_owns_its_task(first):
+    path = SCENARIOS / "pick_place_block_on_mat.yaml"
+    a = load_scenario(path, seed=0, agent_plan=first).task
     a_dict = a.to_dict()
-    b = materialize_candidate(candidate, agent_plan=not first).legacy_task
-    assert a.to_dict() == a_dict and candidate.task.to_dict() == loaded
+    b = load_scenario(path, seed=0, agent_plan=not first).task
+    assert a.to_dict() == a_dict
     assert a is not b and a.success is not b.success
     plan, agent = (b, a) if first else (a, b)
     assert [s.name for s in plan.skills] == ["pick", "place"] and len(plan.step_bindings) == 2

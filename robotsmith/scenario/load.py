@@ -1,4 +1,5 @@
-"""Load a YAML scenario: validate, apply variations, solve relations, lower to specs.
+"""Load a YAML scenario into one ``Scenario``: validate, apply variations, solve relations, build the runtime
+scene, task, plan skills and target frames.
 
 A scenario file holds the scene (objects and their relations) and the task
 (instruction + success tree, hidden from the executor). The scene is written
@@ -11,6 +12,7 @@ from __future__ import annotations
 
 import random
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 import jsonschema
@@ -19,6 +21,7 @@ import yaml
 from robotsmith.assets import store
 from robotsmith.assets.library import AssetLibrary
 from robotsmith.scenario import relations
+from robotsmith.scenario.adapters import CONTACT_TOL_M, relation_params, to_step_bindings
 from robotsmith.scenario.predicates import (
     joint_closed,
     joint_opened,
@@ -27,13 +30,12 @@ from robotsmith.scenario.predicates import (
     stacked,
 )
 from robotsmith.scenario.specs import FrameRef
-from robotsmith.scenario.validators import check_object_ids, check_task
 from robotsmith.scenes.config import ObjectPlacement, SceneConfig
 from robotsmith.skills import Skill
+from robotsmith.tasks.predicates import PREDICATE_REGISTRY
 from robotsmith.tasks.task_spec import SuccessNode, TaskSpec
 
 DEFAULT_ASSETS = Path(__file__).resolve().parents[2] / "assets"
-CONTACT_TOL_M = 0.02
 
 
 class _Loader(yaml.SafeLoader):
@@ -162,14 +164,79 @@ class PlanInvalid(ValueError):
     """Steps that cannot run from the hand they start with: a pick while holding, or a place with nothing held."""
 
 
+class ValidationError(ValueError):
+    """Raised when a scenario authoring spec is invalid."""
+
+
+def check_object_ids(ids: list[str]) -> None:
+    _require_unique(ids, "object names")
+
+
+def check_task(task: TaskSpec, scene: SceneConfig, target_names) -> None:
+    """A task's name and instruction are non-empty, and its success tree names registered predicates and only
+    objects of ``scene``, ``target_names`` or the table."""
+
+    _require(task.name.strip(), "TaskSpec.name must be non-empty")
+    _require(task.instruction.strip(), "TaskSpec.instruction must be non-empty")
+    _validate_success(task.success)
+
+    allowed_refs = {o.name_override for o in scene.objects} | set(target_names) | {"table"}
+    missing = [ref for ref in _refs(task.success) if ref not in allowed_refs]
+    _require(not missing, f"success predicate references unknown names: {missing}")
+
+
+def _validate_success(node: SuccessNode) -> None:
+    if node.op == "leaf":
+        _require(node.predicate in PREDICATE_REGISTRY, f"unknown success predicate '{node.predicate}'")
+        return
+    _require(node.op in ("all", "any", "not"), f"unsupported success op: {node.op!r}")
+    _require(len(node.terms) == 1 if node.op == "not" else node.terms,
+             f"{node.op} requires {'one term' if node.op == 'not' else 'at least one term'}")
+    for term in node.terms:
+        _validate_success(term)
+
+
+def _refs(node: SuccessNode) -> list[str]:
+    """Scene names a success tree reads: each leaf's ``object`` / ``objects`` / ``parent`` / ``reference`` params."""
+
+    if node.op != "leaf":
+        return [ref for term in node.terms for ref in _refs(term)]
+    p = node.params
+    return ([p["object"]] if "object" in p else []) + list(p.get("objects", ())) + [
+        p[k] for k in ("parent", "reference") if k in p]
+
+
+def _require(condition: object, message: str) -> None:
+    if not condition:
+        raise ValidationError(message)
+
+
+def _require_unique(values: list[str], label: str) -> None:
+    duplicates = sorted({v for v in values if values.count(v) > 1})
+    _require(not duplicates, f"duplicate {label}: {duplicates}")
+
+
+@dataclass(frozen=True)
+class Scenario:
+    """One scenario at one seed, built once before ``SimEnv.build`` and not written afterwards.
+
+    Plan mode: ``task`` carries the plan file's skills and their step bindings, ``target_frames`` the place targets
+    those steps use. Agent mode: ``task`` has no skills or bindings and ``target_frames`` holds every place target."""
+
+    source_path: Path
+    scene: SceneConfig
+    task: TaskSpec
+    target_frames: dict[str, FrameRef]
+
+
 def load_scenario(
     path: str | Path,
     *,
     seed: int,
+    agent_plan: bool = False,
     library: AssetLibrary | None = None,
-) -> tuple[SceneConfig, dict[str, FrameRef], TaskSpec, list[Skill] | None]:
-    """Scene, the plan file's place-target frames, task and the plan file's skills (None without a plan file)
-    for one seed."""
+) -> Scenario:
+    """The scenario at ``seed``; the plan file is read and checked in both modes, and used only in plan mode."""
     path = Path(path)
     data = _read(path)
     jsonschema.validate(data, SCHEMA)
@@ -225,7 +292,12 @@ def load_scenario(
         success=_success(data["task"]["success"], assets, solved.placements),
     )
     check_task(task, scene, targets)
-    return scene, targets, task, skills
+    if agent_plan:
+        targets = all_place_target_frames(assets)
+    elif skills is not None:
+        task.skills = skills
+        task.step_bindings = to_step_bindings(skills, task.success, assets)
+    return Scenario(source_path=path, scene=scene, task=task, target_frames=targets)
 
 
 def read_plan_file(path: Path) -> dict:
@@ -290,20 +362,6 @@ def place_target_frame(ref: str, assets: dict) -> FrameRef:
     spec = relations.place_target(assets[parent], target)
     kind = "articulated_opening" if "joint" in spec else "placement"
     return FrameRef(kind=kind, parent=parent, opening=target)
-
-
-def relation_params(mode: str, obj: str, ref: str, assets: dict, yaw_deg: float) -> dict:
-    """``object_in_box`` params for ``obj`` on / inside the place target ``ref``."""
-    parent, target = relations.split_ref(ref)
-    if target is None:
-        raise relations.SolveError(f"{mode}: '{parent}' must name a place target as <id>.<target>")
-    spec = relations.place_target(assets[parent], target)
-    params = {"object": obj, "parent": parent, "box": spec["box"], "target": target,
-              "yaw_deg": yaw_deg, "mode": mode, "tol": CONTACT_TOL_M}
-    if "joint" in spec:
-        params["joint"] = spec["joint"]
-        params["axis"] = list(assets[parent].get_joint(spec["joint"]).axis)
-    return params
 
 
 def _success(node: dict, assets: dict, placements: dict) -> SuccessNode:
