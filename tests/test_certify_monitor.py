@@ -138,7 +138,7 @@ def test_a_fixture_that_moves_between_seeds_gets_a_scene_of_its_own(tmp_path):
 def test_a_crashed_instance_is_retried_once_and_both_rows_are_kept(tmp_path):
     calls = []
 
-    def one(seed):
+    def one(seed, attempt):
         calls.append(seed)
         if len(calls) == 1:
             raise RuntimeError("boom")
@@ -156,7 +156,7 @@ def test_a_resumed_batch_retries_only_the_seed_that_hung(tmp_path):
              {"seed": 2, "attempt": 1, "outcome": "error", "certified": False, "why": "no result after 600 s"}]
     ran = []
 
-    def one(seed):
+    def one(seed, attempt):
         ran.append(seed)
         return {"outcome": "certified", "certified": True}
 
@@ -177,7 +177,7 @@ resume = "--resume" in sys.argv
 prior = [json.loads(line) for line in log.read_text().splitlines()] if resume else []
 
 
-def one(seed):
+def one(seed, attempt):
     if seed == 2:
         time.sleep(600)
     return {{"outcome": "certified", "certified": True}}
@@ -213,5 +213,5 @@ def test_the_mark_is_replaced_while_the_supervisor_reads_it(tmp_path, monkeypatc
     monkeypatch.setattr(batch.os, "replace", busy)
     running = tmp_path / "rows.running"
     with (tmp_path / "rows.jsonl").open("w", encoding="utf-8") as fh:
-        rows = certify.run_batch([1], lambda seed: {"outcome": "certified"}, fh, running=running)
+        rows = certify.run_batch([1], lambda seed, attempt: {"outcome": "certified"}, fh, running=running)
     assert [r["outcome"] for r in rows] == ["certified"] and len(calls) == 3 and not running.exists()

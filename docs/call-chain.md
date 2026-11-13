@@ -418,3 +418,262 @@ pick 的手指闭合段允许手指碰目标（`grip`），其后的直线抬升
 
 `GraspPlan` 的 `retreat_pos` / `retreat_quat` 只有 `plan_place` 填（放下后退回的位姿，`place_actions` 读）；pick 候选不带它们，
 抬升由 pick 步骤的 `lift` 给（缺省世界 +Z 0.10 m）。
+
+## 评测考场
+
+外部策略经 [Inspect Robots](https://github.com/robocurve/inspect-robots) 的 `Embodiment` 协议进 RoboSmith 的场景，
+**判卷只读仿真记录，不经执行门、不读被测方写的任何字段**。要保证什么见
+[design 的评测一节](design.md#评测被测方跑任务判定并归因失败)。选这个协议是因为它的 `agent` 策略（前沿 LLM 经工具调用驱动
+机器人）不看图也能跑，同一协议也接 VLA 与 code-as-policy，RoboSmith 只实现 embodiment 一侧。`robotsmith/eval/` 与
+`scripts/eval/run_exam.py` 已实现；里程碑、certify 写判卷日志与多族报告还是设计，见本节末尾。
+
+### 被测方：Inspect Robots 的 `agent` 策略
+
+`inspect_robots_agent.LLMAgentPolicy`，[robocurve/inspect-robots](https://github.com/robocurve/inspect-robots) 钉在
+`7720195`（MIT，alpha，API 会变），按原样安装（`pip install -e ".[eval]"`），不打补丁。接口依据是该提交的
+[policies-and-embodiments](https://github.com/robocurve/inspect-robots/blob/7720195/docs/guide/policies-and-embodiments.md) 与
+[agent 插件 README](https://github.com/robocurve/inspect-robots/blob/7720195/plugins/inspect-robots-agent/README.md)：
+
+- `Embodiment` 是 runtime-checkable Protocol：`info`（`EmbodimentInfo`）、`reset(scene, *, seed) -> Observation`、
+  `step(action) -> StepResult`、`close() -> None`。`eval(task, policy, embodiment)` 开跑前检查双方的动作空间与观测是否匹配；
+  rollout 不加墙钟节拍，模型思考时仿真停着；调用方构造的 embodiment 由调用方关闭。
+- agent 按 embodiment 声明的动作空间生成工具：绝对模式下 `move_to`，以每维量程 10%/s 插值成 `ActionChunk` 逐步下发，另有
+  `sleep`、`done`、`give_up`。目标命令在被测方自己的适配层里，RoboSmith 只收逐步的绝对目标。
+- `observation.state` 的每个键都以 `state[key]: …` 打进给模型的观测；不声明相机时观测里没有图像（`images=on_demand` 要求至少
+  一个相机，所以用默认值）。
+- LLM 走 `responses` wire。RoboSmith 的网关要 `Ocp-Apim-Subscription-Key` 头与 `api-version` 查询参数，wire 只会发
+  `Authorization: Bearer`；`run_exam.py` 经构造参数 `transport` 交给它一个补这两项的 httpx transport，`api_key_env` 指向
+  未设置的变量，所以不发 bearer。端点与模型用 agent planner 读的同一组 `ROBOSMITH_LLM_*` 变量。
+
+不选的同类开源 agent：ORA、CaPtain、uni-robot-agent、AgenticRoboRL（RPent）、ASPIRE、RoboRSI 都靠 RGB 加 SAM3 或 VLM 看图
+感知，无图像观测下要换掉它们的感知模块，等于改策略抽象；RoboSkills、Embodied First Exam 绑在各自的 benchmark 环境上。
+
+### embodiment 给被测方的接口
+
+`RoboSmithEmbodiment(scenario, *, seed, attempt, log_path)` 是一个场景在一个 seed 上的一次尝试：
+
+- 动作：4 维 `eef_abs_pose`，世界系，`dim_labels` 为 x、y、z、gripper。x、y、z 是两指尖中点（TCP），手始终竖直朝下、yaw 取
+  home 构型的值；gripper 0 闭合、1 张开（每指 `GripperSpec.finger_open`）。上下界 x 0.2–0.8、y −0.5–0.5、z 从桌面到桌面上
+  0.5 m。每个动作经 `SimEnv.solve_ik`（初值为上一关节目标）变成关节目标，再步进 3 个物理步（`control_hz` 10，仿真 30 Hz）。
+  IK 解不到时下发最近解，不另报；agent 从读数与设定值的差看到没到位。
+- 观测：`eef_state`（TCP 位置与夹爪开度，对齐动作维，是 `move_to` 的读数）与 `object_pos.<物体>`（仿真读的物体中心，
+  `EmbodimentInfo.docs` 与报告都标为特权观测）；没有相机。
+- 对被测方隐藏：成功树只在场景 YAML 里，被测方看得到的任务文本只有指令。
+- 被测方能调的工具只有 agent 自带的四个；embodiment 不提供 `contribute_tools`，判卷与日志没有对外入口。
+
+F0 一个实例（`acc_f0_open` playground seed 0）被测方看到与发出的东西（手写示意，`<home>` 是 home 构型的读数）：
+
+```text
+system:  Inspect Robots agent 的系统提示
+         + Embodiment notes（RoboSmith 写）：手竖直朝下、yaw 固定；x / y / z 是指尖中点，米；gripper 0 闭合、1 张开；
+           桌面 z；state[object_pos.*] 是仿真读数（特权信息）；物体 die、mat
+         + Embodiment bounds、Environment step budget
+user (env step 0):
+  Put the die on the mat.
+  state[eef_state]: x=<home> y=<home> z=<home> gripper=1.0
+  state[object_pos.die]: [0.5409, 0.1763, 0.8011]
+  state[object_pos.mat]: [0.45, -0.22, 0.775]
+assistant → tool call:
+  move_to {"targets": {"x": 0.5409, "y": 0.1763, "z": 0.9}, "note": "Move above the die before descending."}
+policy → embodiment:
+  ActionChunk，每个 Action.data = [x, y, z, gripper]，逐个进 step(action)
+```
+
+### 接触许可：每个物理步从物理状态给出 `gate.certified` 的上下文
+
+外部动作没有门签发的凭证，原样复用 `certify.Monitor` 会把每一步记成 unmapped。规则本身不另写一份：
+
+- **owner**：许可规则仍是 `gate.certified` / `gate.permitted`；上下文由 `judge.exam_context`、`judge.held` 给出，
+  `judge.violations` 用它们调 `gate.certified`。在线的 `ExamMonitor` 与离线的 `eval.judge.judge` 调同一组函数。
+- **上下文**：`target` = 成功树里唯一被搬动的物体（叶子的 `object`，F0 是 die；不止一个就拒绝出题）；`rest` = 支撑面 `env`
+  加成功树叶子的 `parent`（F0 是 mat）；`held` = 这一步有两个不同的手指连杆碰 target。每步合成
+  `Span("exam", 0, 1, holding=held, allow="rest" if held else "grip")`，对这一步的每对接触调 `gate.certified`。
+- **被测方自报不改变许可**：判卷只读 `header` 与 `physics` 行的接触、`final` 行的世界状态；`control` 行里的动作和被测方的
+  任何字段都不进判卷。
+
+三个样例（实体名同 `SimEnv.contacts_now`，`env` 是桌面）：
+
+| 样例 | 这一步的接触 | held | 判定 |
+|---|---|---|---|
+| F0 合指：两指夹住桌上的 die | (robot/left_finger, die)、(robot/right_finger, die)、(die, env) | 是 | 合法：手指碰持物；持物碰 rest 里的 env |
+| 搬运中持物碰障碍（F0 没有 rest 以外的障碍，取 F1 `acc_f1_wall_gap`）：夹着 die 横移时擦到墙 | (robot/left_finger, die)、(robot/right_finger, die)、(die, wall) | 是 | 违规：wall 不在 rest |
+| F0 正常松手：die 落在 mat 上，手指张开时右指还挨着 | (robot/right_finger, die)、(die, mat) | 否 | 合法：未持物时手指可碰 target（grip）；自由的 target 只碰 rest 里的 mat |
+
+同一规则下，机器人任何连杆碰 mat、桌面或墙都违规（门对技能轨迹也这样判），未持物的 die 被推去碰墙也违规。
+
+### 对象
+
+```mermaid
+classDiagram
+    class Embodiment {
+        <<interface>>
+        info
+        +reset(scene, seed)
+        +step(action)
+        +close()
+    }
+    class LLMAgentPolicy {
+        +act(observation)
+    }
+    class RoboSmithEmbodiment {
+        info
+        +reset(scene, seed)
+        +step(action)
+        +close(ended)
+    }
+    class ExamMonitor {
+        violating
+    }
+    class JudgeLog {
+        +header(seed, attempt, scenario, success, target, rest)
+        +physics(k, contacts, held)
+        +control(step, action, world)
+        +final(ended, success, state)
+    }
+    class Verdict {
+        ended
+        success
+        certified
+        violating_steps
+        env_error
+    }
+    class SimEnv
+    class Scenario
+    LLMAgentPolicy ..> Embodiment : inspect_robots eval 驱动
+    Embodiment <|.. RoboSmithEmbodiment
+    RoboSmithEmbodiment --> Scenario : load_scenario(agent_plan=True)
+    RoboSmithEmbodiment *-- SimEnv : reset 时建
+    RoboSmithEmbodiment *-- JudgeLog
+    RoboSmithEmbodiment *-- ExamMonitor
+    ExamMonitor --> SimEnv : 唯一的 on_step 读者
+    ExamMonitor --> JudgeLog : physics
+    JudgeLog ..> Verdict : eval.judge.judge
+```
+
+| 概念 | owner | 复用 |
+|---|---|---|
+| 机器人层接口与观测 | `RoboSmithEmbodiment`（`eval/embodiment.py`） | `load.load_scenario`、`SimEnv.build`、`runner.reset_scene`、`SimEnv.solve_ik`、`GripperSpec` |
+| 逐物理步监测 | `ExamMonitor`（同上） | `SimEnv.on_step`、`SimEnv.contacts_now`、`gate.certified` |
+| 判卷日志 | `JudgeLog`（`eval/log.py`） | 与 LeRobot 录制分开、不可关；考场不调 `recorder.record_episode` |
+| 终态判定 | `RoboSmithEmbodiment.close` | `runner.evaluate_scenario_task`（静置 0.5 s 后判成功树），判过的状态写进 `final` |
+| 判卷与复判 | `eval.judge.judge`（`eval/judge.py`） | 纯函数，日志进、`Verdict` 出；`predicates.evaluate_success` |
+| 运行与尝试 | `scripts/eval/run_exam.py` | `batch.run_batch` 给 attempt 编号，`batch.supervise` 做进程外超时（每次尝试 1800 s） |
+
+`EpisodeRun`、`ExecutionGate.verify` 与技能不在考场路径上；它们照旧做出题人。
+
+### 一次外部 episode：agent 走 `move_to` 到判卷
+
+```mermaid
+sequenceDiagram
+    participant R as run_exam
+    participant P as LLMAgentPolicy
+    participant B as RoboSmithEmbodiment
+    participant E as SimEnv
+    participant M as ExamMonitor
+    participant L as JudgeLog
+
+    R->>B: 构造（scenario、seed、run_batch 给的 attempt、日志路径）
+    R->>P: inspect_robots eval(task, policy, embodiment, before_scoring)
+    P->>B: reset(scene, seed)
+    B->>E: build → reset_scene
+    B->>L: header（seed、attempt、成功树、target、rest、sha256）
+    B->>M: 挂到 on_step
+    B-->>P: Observation（eef_state、object_pos.*，无图像）
+    loop 直到 done / give_up / 步数上限
+        P->>P: LLM 调用 → move_to → 插值成 ActionChunk
+        loop chunk 里每个 Action
+            P->>B: step(action)
+            B->>E: solve_ik → 关节目标 → step × 3
+            E->>M: on_step（每个物理步）
+            M->>L: physics（接触对、held）
+            B->>L: control（动作、collect_world_state）
+            B-->>P: StepResult（观测）
+        end
+    end
+    P-->>R: 返回；before_scoring 记下结束原因
+    R->>B: close(ended)
+    B->>E: evaluate_scenario_task（静置 0.5 s，静置的物理步也进 physics）
+    B->>L: final（ended、success、判过的世界状态）
+    R->>R: eval.judge.judge(日志) → Verdict，写进 instances.jsonl 的这一行
+```
+
+### 模块契约
+
+#### 日志布局与生命周期
+
+- 一次运行一个目录（`--out`）：`run.json`（场景、seed、RoboSmith commit、被测方身份：策略名、两个包的版本与 Inspect Robots
+  的 commit、模型、effort、调用与时长上限、特权观测）；`instances.jsonl`（每次尝试一行，带 `verdict`）；`report.txt`。
+- 每次尝试一个目录 `trials/<seed>/attempt-<n>/`：`judge.jsonl` 与被测方自己的日志 `inspect/`（eval log、transcript、
+  wire capture）。attempt 编号由 `batch.run_batch` 给出，与 `instances.jsonl` 里同一 attempt 的行对应；重试不追加、不覆盖。
+  `JudgeLog` 以独占方式新建文件，路径已存在就报错。
+- `judge.jsonl` 每行一个 JSON，写完即 flush：第一行 `header`，之后 `physics`（每个物理步，含终态静置）与 `control`
+  （每个控制步）交错，最后一行 `final`。进程中途死掉时已写的行仍可读。
+- 运行结束后日志不再改写；复判只读不写。运行目录不进 git。
+
+#### 读写方
+
+- 写：`RoboSmithEmbodiment`（`header`、`control`、`final`）与它创建的 `ExamMonitor`（`physics`），同一进程同一线程。
+- 读：`eval.judge.judge`，在线由 `run_exam.py` 在 `close` 之后调，离线用 `python -m robotsmith.eval.rejudge <judge.jsonl>...`；
+  它只 import 判卷所需的纯 Python 模块，不启动 Genesis、torch、Inspect Robots 或 LLM。被测方读不到判卷日志。
+- `Verdict`：seed、attempt、ended、success、certified（成功且零违规步）、physics_steps、violating_steps、first_violation、
+  env_error。`instances.jsonl` 另记 `ExamMonitor` 在线数出的违规步与被测方的 LLM 请求数（数 wire capture 的行）。
+
+#### 不变量
+
+| 不变量 | 测试 |
+|---|---|
+| 三个接触样例按 `gate.certified` 判：合指与正常松手合法，持物擦墙违规 | test_eval_judge.py::test_contact_samples_closing_scraping_a_wall_and_releasing |
+| 被测方写的字段（动作、note）改成任何值，`Verdict` 不变 | test_eval_judge.py::test_evaluatee_fields_do_not_change_the_verdict |
+| 四种正常结束（done、give_up、horizon、policy_error）都写 `final`，成败只看判过的状态 | test_eval_judge.py::test_endings_all_write_a_final_and_are_judged_by_the_physics |
+| 缺 `final` 判 `env_error`，不算被测方失败 | test_eval_judge.py::test_a_missing_final_is_an_environment_error |
+| 同 seed 两次尝试各自一个日志、各自判卷；`run_batch` 把 attempt 交给写入方 | test_eval_judge.py::test_attempts_keep_separate_logs、test_run_batch_names_the_attempt_it_runs |
+| 离线入口与 `judge` 给出同一 `Verdict` | test_eval_judge.py::test_rejudge_prints_the_same_verdict |
+| embodiment 过 Inspect Robots 的 conformance kit，被测方的工具里没有判卷入口 | test_eval_embodiment.py |
+
+#### 结束路径
+
+- `done` / `give_up`：agent 的终止工具；`horizon`：Inspect Robots 的步数上限（`--max-seconds` 仿真秒）；`policy_error`：
+  试验出错（如 LLM 调用在 agent 自己的重试后仍失败），或 `before_scoring` 没被调到。四种都由 `close` 静置、判成功树、写 `final`。
+- 仿真报错或进程被 `supervise` 超时杀掉：日志缺 `final`，`Verdict.env_error` 为 `no final line`，`run_batch` 重试一次，新尝试
+  写新目录。
+- 被测方调 `done` 不等于成功。
+
+#### 不做
+
+- 不对外部动作做执行门预检，也不接 Inspect Robots 的 `pre_check` 钩子。
+- 一题只有一个搬动物体（`gate.certified` 只接一个 target）。
+- 不录 LeRobot 数据、不声明相机、不接 VLA，不报 IK 或接触回执。
+- 不做 skill / API 工具赛道，不归因到责任方。
+
+### 还是设计：里程碑、certify 判卷日志与报告
+
+由第一次外部 episode 暴露的需要决定做不做、怎么做：
+
+- **里程碑**写在场景 YAML 的 `task.milestones`，按顺序；每项一个 `name` 加一个成功树叶子（与 `success` 同一套语法），另加
+  `held`（与 `judge.held` 同一判据）。F0 的写法：
+
+  ```yaml
+  milestones:
+    - {name: grasped, held: {object: die}}
+    - {name: lifted, lifted: {object: die, height: 0.03}}
+    - {name: "on", on: {object: die, surface: mat.top}}
+  ```
+
+  `on` 加引号：`load._Loader` 把裸 `on` 读成字符串，通用的 YAML 1.1 读法（如 PyYAML 的 `safe_load`）读成布尔真。
+  判法：第 i 个在它之前的都已达到、且首次成立的控制步记为达到；不成功的实例设最后达到的是第 k 个，一个都没达到记
+  `never: <第 0 个>`，第 k 个在 `final` 里仍成立记 `never: <第 k+1 个>`，不再成立记 `lost: <第 k 个>`（抬起后掉回桌面是
+  `lost: lifted`）。成功的实例不记失败标签。
+- **certify 写判卷日志**：`physics` 行带凭证给的上下文，试抓阶段的物理步不算里程碑进展；`run.stopped`（拒绝或执行失败、跳过
+  任务判定）也写 `final`，标停止原因，离线按原停止分支得 success = False，不另做静置。
+- **报告** `eval.report`：按场景族汇总 `Verdict`，并列出同一批实例的 certify 结果。
+
+### 新增名字
+
+还没有实现的名字：
+
+| 名字 | 归属 | 是什么 |
+|---|---|---|
+| `Milestone` | RoboSmith，设计 | `TaskSpec.milestones` 的元素 |
+| `TaskSpec.milestones` | RoboSmith，设计 | 题目的里程碑 |
+| `task.milestones` | 场景 YAML，设计 | 里程碑的写法 |
+| `eval.report` | RoboSmith，设计 | 多族报告 |

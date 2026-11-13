@@ -254,7 +254,7 @@ def main() -> None:
                    for o in scene.objects if o.name_override != "die"), "fixtures move between seeds"
         assert tuple(scene.table_size) == tuple(first.table_size), "table size changes between seeds"
 
-    def one(seed):
+    def one(seed, attempt):
         pkg = packages[seed]
         placed = {o.name_override: np.asarray(o.fixed_position, dtype=float) for o in pkg.scene.objects}
         row = {**head, "die_xyz": placed["die"].round(4).tolist()}
