@@ -20,7 +20,7 @@ then run the system under test and report where it fails.
 | **Scenes and tasks** | One YAML file: objects, spatial relations, and a success test the robot never sees. A solver places the objects for each seed. |
 | **Proving a task solvable** | A Franka picks and places: motions are planned in joint space, checked against the scene before they run, and every physics step is monitored for illegal contact. |
 | **Real-video twins** | In progress: run on simulator footage, not yet on a real video. |
-| **Evaluating your agent or VLA** | Planned: an interface tied to no framework, failures attributed to milestones never reached or lost, a report. |
+| **Evaluating your agent or VLA** | A minimal version: an external policy joins through Inspect Robots' interface, is judged from the physics, and its log re-judges offline; one external LLM agent certified on the empty-desk seed 0 ([measured result](docs/call-chain.md#已测结果)). Not yet: failures attributed to milestones, multi-scene reports, VLAs. |
 
 Tasks proved solvable on one MI300X, ten seeds each. *Certified* means the task holds and no physics step made an
 illegal contact.
@@ -72,7 +72,7 @@ put the pen into the holder   10/10      2/10     never: grasped ×5 · never: i
    check, the planner and trial grasps as its tools.
 2. **More primitives:** press, push, rotate, hinged doors.
 3. **A real scene:** a phone video of a desk turned into a twin.
-4. **The evaluation layer:** interface, failure attribution, report.
+4. **The evaluation layer:** failures attributed to milestones, multi-scene reports, VLAs (the interface and physical judging exist in a minimal form).
 
 Results are measured in a twin, not on a real robot. Out of scope: curated benchmark suites, policy training,
 sim-to-real research.

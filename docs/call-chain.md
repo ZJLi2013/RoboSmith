@@ -427,6 +427,17 @@ pick 的手指闭合段允许手指碰目标（`grip`），其后的直线抬升
 机器人）不看图也能跑，同一协议也接 VLA 与 code-as-policy，RoboSmith 只实现 embodiment 一侧。`robotsmith/eval/` 与
 `scripts/eval/run_exam.py` 已实现；里程碑、certify 写判卷日志与多族报告还是设计，见本节末尾。
 
+### 已测结果
+
+一个实例：Inspect Robots `agent` 策略（`7720195`，原样安装）以 gpt-5.6-sol（effort low）在 `acc_f0_open` playground seed 0 上，
+经 11 次 LLM 调用把 die 放到 mat 上后自己调 `done`；物理判卷 success，900 个物理步零违规，certified。保存的判卷日志用
+`python -m robotsmith.eval.rejudge` 离线复判，`Verdict` 与在线逐字段相同。RoboSmith `29bec14`，单卡 MI300X（gfx942），
+ROCm 6.4.4 镜像加 Genesis 0.4.5。
+
+边界：观测无图像，物体位置来自特权状态 `object_pos.*`（被测方不必自己感知），手竖直朝下、yaw 固定；这是单个实例、单个模型的
+一次运行，LLM 输出不保证可复现，不代表 F0 全族或其他场景的表现。复现：`pip install -e ".[eval]"`，设好 `ROBOSMITH_LLM_*`，
+`python scripts/eval/run_exam.py --scenario scenarios/acceptance/f0_open.yaml --split playground --limit 1 --out <dir>`。
+
 ### 被测方：Inspect Robots 的 `agent` 策略
 
 `inspect_robots_agent.LLMAgentPolicy`，[robocurve/inspect-robots](https://github.com/robocurve/inspect-robots) 钉在
