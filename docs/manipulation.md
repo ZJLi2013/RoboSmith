@@ -1,6 +1,6 @@
 # 操作：规则化的抓放管线证明任务可解
 
-总体设计见 [design](design.md)，函数级的调用链见 [call-chain](call-chain.md)，验收场景与 plan 文件格式见
+总体设计见 [design](design.md)，函数级的代码路径见 [architecture](architecture.md)，验收场景与 plan 文件格式见
 [acceptance](acceptance.md)。
 
 ## 要保证什么

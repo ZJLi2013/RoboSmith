@@ -10,7 +10,7 @@
 | 本文 | 目标、原则、三块各自要保证什么、做到哪 | 所有人 |
 | [manipulation](manipulation.md) | 操作层的设计：六动作组合、执行门契约、规划器、结果与限制 | 改操作层或要判断「任务可解」证明力的人 |
 | [evaluation](evaluation.md) | 评测考场：考生看到什么、怎么判分、判卷日志、已测结果与限制、怎么接入 | 接入被测方或读评测结果的人 |
-| [call-chain](call-chain.md) | 一次 episode 在代码里怎么走，粒度到函数与签名 | 开发者；改了这条链的 PR 同时改它 |
+| [architecture](architecture.md) | 一次 episode 在代码里怎么走，粒度到函数与签名 | 开发者；改了这条链的 PR 同时改它 |
 | [acceptance](acceptance.md) | 验收场景族、plan 文件格式、certified 口径与读数 | 跑或改验收的人 |
 | [quick-start](quick-start.md) | 从一台 GPU 节点到跑出一个 episode | 新用户 |
 
@@ -70,7 +70,7 @@ AHa-3D 快照导入。数据生成时代留下的录制还在：scenario 运行�
 ## 操作：规则化的抓放管线证明任务可解
 
 plan 文件（或 agent 写的步骤表）给出六动作组合，技能执行，每步判定。任务判定成立，且实际执行的每个动作都事先在仿真几何里验证过，
-才算证明可解；不可行就带原因零步失败。设计见 [manipulation](manipulation.md)，代码路径见 [call-chain](call-chain.md)，
+才算证明可解；不可行就带原因零步失败。设计见 [manipulation](manipulation.md)，代码路径见 [architecture](architecture.md)，
 验收见 [acceptance](acceptance.md)。
 
 **现在的操作层是规则化的抓放管线，不是 agentic manipulation。** 怎么抓、怎么放都由固定规则决定，episode 里没有 agent 参与：

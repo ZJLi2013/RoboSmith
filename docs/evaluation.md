@@ -3,7 +3,7 @@
 RoboSmith 把一个场景变成考场：外部的机器人策略（agentic 系统、code-as-policy 或 VLA）不改自己的代码进来跑任务，
 **判卷只看仿真里实际发生了什么，不经执行门、不读被测方写的任何字段**；判卷日志事后可以离线重判，结果必须一样。
 现在有最小版本：一个外部 LLM agent 在空桌面场景的一个实例上跑通并 certified（[已测结果](#已测结果)）。代码怎么走见
-[call-chain 的评测考场](call-chain.md#评测考场)。
+[architecture 的评测考场](architecture.md#评测考场)。
 
 ## 四个角色
 
