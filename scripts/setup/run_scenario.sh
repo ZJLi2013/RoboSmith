@@ -5,13 +5,13 @@ set -eu
 # This script is the canonical launcher that fills in a scenario payload.
 #
 # Only the IMAGE tag differs per GPU arch. Defaults target MI300 / gfx942; for MI350 (gfx950) swap the image:
-#   NAME=f1_m5 IMAGE=robotsmith:rocm-headless bash scripts/setup/run_scenario.sh
+#   NAME=block SCENARIO=scenarios/pick_place_block_on_mat.yaml IMAGE=robotsmith:rocm-headless bash scripts/setup/run_scenario.sh
 #
 # `--smoke` is the only implemented rollout path in run_generated_scenario.py
 # (it still runs the full episode + video + LeRobot dataset; the name is legacy).
 
-NAME="${NAME:-f1_m1}"
-SCENARIO="${SCENARIO:-scenarios/pick_place_onto_supporter.yaml}"
+NAME="${NAME:-mug_on_mat}"
+SCENARIO="${SCENARIO:-scenarios/pick_place_mug_on_mat.yaml}"
 IMAGE="${IMAGE:-robotsmith:gfx942-rocm6.4.3-genesis0.4.5}"
 SEED="${SEED:-0}"
 EPISODES="${EPISODES:-1}"

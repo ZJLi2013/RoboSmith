@@ -2,99 +2,86 @@
 
 English | [中文](README.zh-CN.md)
 
-**Evaluate agentic robots and VLAs in a simulated twin of a real scene, on AMD ROCm.**
-
-v0.1.0 (2026-10-20) was a synthetic-data pipeline; development now targets evaluation. A scenario run still records a
-LeRobot dataset.
-
-## Goal
+**Test agentic robots and VLAs in a simulated twin of your own scene, on AMD ROCm.**
 
 Standard benchmarks use curated scenes. RoboSmith asks whether an agent or a VLA can do the task in *your* scene:
+turn the scene into an interactive twin, write tasks on it, prove each task solvable with RoboSmith's own manipulation,
+then run the system under test and report where it fails.
 
-1. **World:** a video of a real scene becomes an interactive twin in Genesis: objects rest, and movable objects are
-   graspable assets.
-2. **Tasks:** an agent writes tasks on that scene; RoboSmith's own basic agentic manipulation proves each one solvable.
-3. **Evaluation:** the system under test runs through an interface tied to no framework. The judge reads the
-   simulator state against a success tree hidden from the system under test, and each failure names the milestone that
-   was never reached or was lost.
+| Mug onto the mat | Block onto the mat | Past two low walls (unseen layout) |
+|---|---|---|
+| [![Mug onto the mat](videos/mug_on_mat_seed0.gif)](videos/mug_on_mat_seed0.mp4) | [![Block onto the mat](videos/block_on_mat_seed0.gif)](videos/block_on_mat_seed0.mp4) | [![Die past two low walls](videos/f5_clutter_seed100.gif)](videos/f5_clutter_seed100.mp4) |
 
-Results are measured in a twin. No twin-versus-real-robot comparison has been run, so they are not real-robot claims.
-Out of scope: curated benchmark suites, policy training, sim-to-real research.
+## What works today
 
-**MVP:** one real tabletop scene, 3–5 tasks, one system under test, one report:
+| | |
+|---|---|
+| **Assets** | Agents build objects, including articulated ones, as Blender programs; an LLM reviewer probes each in simulation before it is admitted. Admitted assets are published by hash to Hugging Face. |
+| **Scenes and tasks** | One YAML file: objects, spatial relations, and a success test the robot never sees. A solver places the objects for each seed. |
+| **Proving a task solvable** | A Franka picks and places: motions are planned in joint space, checked against the scene before they run, and every physics step is monitored for illegal contact. |
+| **Real-video twins** | In progress: run on simulator footage, not yet on a real video. |
+| **Evaluating your agent or VLA** | Planned: an interface tied to no framework, failures attributed to milestones never reached or lost, a report. |
+
+Tasks proved solvable on one MI300X, ten seeds each. *Certified* means the task holds and no physics step made an
+illegal contact.
+
+| Scene | Object | Certified |
+|---|---|---|
+| Open table | die · mug · block | 10/10 · 10/10 · 9/10 |
+| Object against a low wall | die | 10/10 |
+| A 20 cm wall between object and mat | die | 10/10 |
+| Two low walls, held out during development | die | 10/10 |
+
+These hold only for the scenes and seeds listed ([scope](docs/acceptance.md#certified-的适用边界)). Not yet: placing
+onto shelves, objects heavier than about 0.2 kg, grasps chosen by an agent rather than fixed rules, and rendering good
+enough for VLAs (MI300X renders in software).
+
+## How it works
+
+![RoboSmith pipeline](docs/images/pipeline.svg)
+
+An agent-built asset library feeds YAML scenarios; the solver lays each one out in Genesis; the robot runs the
+scenario's steps, each motion passing one safety check before it executes; the same predicates judge every step and
+the task from the simulator state, and the state is saved so any run can be re-judged offline.
+
+## Try it
+
+Without a GPU, the package and its tests run anywhere:
+
+```shell
+python -m pip install -e ".[dev]"
+python -m robotsmith.assets.fetch   # asset meshes are downloaded by hash, not stored in git
+python -m pytest tests -q
+```
+
+On an AMD GPU node with ROCm and Docker, [Quick start](docs/quick-start.md) builds the image, certifies one instance,
+and records the mug run above.
+
+## Roadmap
+
+The goal is one real tabletop scene, a few tasks, one system under test and one report:
 
 ```text
-RoboSmith eval  scene: <your desk> (video → twin, median geometry residual x cm)  evaluatee: <agentic baseline>
+RoboSmith eval  scene: <your desk>  evaluatee: <agentic baseline>
 task                          certified  success  failures
 put the cup on the tray       10/10      6/10     never: grasped ×3 · lost: on ×1
 put the pen into the holder   10/10      2/10     never: grasped ×5 · never: inside ×3
 ```
 
-## Where it stands
+1. **Agentic manipulation:** an agent chooses and corrects grasps and placements inside an episode, with the safety
+   check, the planner and trial grasps as its tools.
+2. **More primitives:** press, push, rotate, hinged doors.
+3. **A real scene:** a phone video of a desk turned into a twin.
+4. **The evaluation layer:** interface, failure attribution, report.
 
-RoboSmith's own manipulation is a composition of six meta actions: each pick and place step runs one fixed
-composition, free segments are planned by a joint-space RRT-Connect, and every point to be executed passes one execution gate before any
-physics step; what cannot pass is refused with a reason and zero steps ([design](docs/manipulation.md)). On the public
-acceptance families, `main`, playground seeds 0–9, one MI300X:
+Results are measured in a twin, not on a real robot. Out of scope: curated benchmark suites, policy training,
+sim-to-real research.
 
-| Family | Constraint | Certified |
-|---|---|---|
-| F0 open table | — | 10/10 |
-| F1 wall gap | a low wall 1 cm taller than the object on one side | 10/10 |
-| F2 over barrier | a 20 cm wall between the object and the mat | 10/10 |
+## Docs
 
-Certified = the task holds and the executed motion, monitored at every physics step, makes no illegal contact. On the
-held-out family F5, sealed throughout development and read once on the frozen implementation: test seeds 100–109,
-F5 10/10 certified ([acceptance](docs/acceptance.md), [results](docs/manipulation.md#结果)). The other scenarios in
-[`scenarios/`](scenarios/) load on this chain but have no readings on it. Certified holds only for the families,
-seeds and budgets listed; it does not show that other scenes are solvable or that a negative is unsolvable in general
-([scope](docs/acceptance.md#certified-的适用边界)).
+[Quick start](docs/quick-start.md) · [Design](docs/design.md) · [Call chain](docs/call-chain.md) ·
+[Writing scenarios](scenarios/README.md) · [Acceptance](docs/acceptance.md)
 
-One recorded episode per family on the current chain (click for the mp4). A recording runs without the per-step contact
-monitor, so it is not a certified reading; the numbers in the table come from `certify`. F2 has no clip: from this
-camera the 20 cm wall hides the die and the grasp.
-
-| F0 open table · playground seed 0 | F1 wall gap · playground seed 0 | F5 two low walls (held out) · test seed 100 |
-|---|---|---|
-| [![F0 open table, playground seed 0](videos/f0_open_seed0.gif)](videos/f0_open_seed0.mp4) | [![F1 wall gap, playground seed 0](videos/f1_wall_gap_seed0.gif)](videos/f1_wall_gap_seed0.mp4) | [![F5 two low walls, test seed 100](videos/f5_clutter_seed100.gif)](videos/f5_clutter_seed100.mp4) |
-
-What the MVP needs, in order:
-
-1. **Basic agentic manipulation.** An agent writes the step list, the existing skills execute it, each step is judged;
-   plan-level failures go back to the agent, physical ones to the repair loop. No cross-episode memory (use an
-   external framework such as RPent for that). Pick and place are now gated six-action compositions with no
-   collision-blind segments, and the held-out reading after the freeze is F5 10/10; what remains is reliable grasps of
-   regular objects in clutter.
-2. **Primitive coverage** for about 80% of indoor tabletop tasks: press, push, rotate, revolute open / close.
-3. **A real scene:** a real video reconstructed into a twin that rests, with openings and handles annotated by an
-   agent and verified in simulation.
-4. **The evaluation layer:** task package, interface, never / lost attribution, report.
-
-## How it works today
-
-![RoboSmith pipeline](docs/images/pipeline.svg)
-
-- **Assets:** generated by agents (Blender scripts by default), admitted after an LLM reviewer probes them in
-  simulation; published by hash to Hugging Face.
-- **Scenarios:** YAML with objects, relations, a success tree hidden from the executor, and playground / test seeds.
-- **Manipulation:** pick and place compose six meta actions (`sample`, `move_to`, `move_linear`, `gripper`, `attach`,
-  `detach`) in one fixed order, the step choosing the object, the place target and the lift; free segments are planned by a joint-space RRT-Connect and the whole
-  trajectory passes the execution gate point by point before it runs. Fixed rules choose the grasp and the
-  placement, and pick tries geometric candidates in simulation; no agent corrects them inside an episode (the agent
-  repair loop runs only in offline asset admission). Drawer open / close still drags the handle, ungated.
-- **Verification:** each step and the task are judged by the same predicates on the simulator state, re-judgeable
-  offline.
-
-Main limits: one Franka at a table; position-controlled fingers (objects above about 0.2 kg slip); software rendering
-on MI300X, not yet suitable for VLAs; one scene per process. Details in [`docs/design.md`](docs/design.md), which maps the other docs.
-
-After the MVP: room-scale scenes with mobile manipulation, appearance fidelity for VLAs, adapters for external agent
-frameworks, one twin-versus-real comparison when a robot is available, other embodiments.
-
-## Get started
-
-[Quick start](docs/quick-start.md) · [Design](docs/design.md) · [Call chain](docs/call-chain.md) · [Writing scenarios](scenarios/README.md) ·
-[Blog post](https://andyluo7.github.io/rocm/amd/mi300x/robotics/embodiedai/sdg/2026/07/01/robosmith-rocm-native-synthetic-data-pipeline/) (from the data-pipeline days)
-
-Changes land through pull requests: [CONTRIBUTING.md](CONTRIBUTING.md), [AI_POLICY.md](AI_POLICY.md),
-[SECURITY.md](SECURITY.md). License: Apache-2.0.
+v0.1.0 (2026-10-20) was a synthetic-data pipeline; scenario runs still record a LeRobot dataset. Changes land through
+pull requests: [CONTRIBUTING.md](CONTRIBUTING.md), [AI_POLICY.md](AI_POLICY.md), [SECURITY.md](SECURITY.md).
+License: Apache-2.0.
