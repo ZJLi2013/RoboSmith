@@ -1,6 +1,6 @@
 # 验收场景：操作链路在什么上算「能证明可解」
 
-总体设计见 [design](design.md)，当前调用链见 [call-chain](call-chain.md)。
+总体设计见 [design](design.md)，当前代码路径见 [architecture](architecture.md)。
 
 操作链路（技能层以下：抓取、可行性、运动、执行）的验收只用 `scenarios/acceptance/` 下的场景族。一族只变一个约束，
 可解性在构造时已知，所以一次失败能直接归到被测链路，而不是归到场景、资产或判据。

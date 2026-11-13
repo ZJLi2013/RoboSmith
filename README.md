@@ -98,7 +98,7 @@ The evaluation interface and the first policy under test come from [Inspect Robo
 
 ## Docs
 
-[Quick start](docs/quick-start.md) · [Design](docs/design.md) · [Evaluation](docs/evaluation.md) · [Call chain](docs/call-chain.md) ·
+[Quick start](docs/quick-start.md) · [Design](docs/design.md) · [Evaluation](docs/evaluation.md) · [Architecture](docs/architecture.md) ·
 [Writing scenarios](scenarios/README.md) · [Acceptance](docs/acceptance.md)
 
 v0.1.0 (2026-10-20) was a synthetic-data pipeline; scenario runs still record a LeRobot dataset. Changes land through

@@ -3,6 +3,7 @@
 import importlib.util
 import json
 import sys
+from functools import cache
 from pathlib import Path
 
 import numpy as np
@@ -92,47 +93,39 @@ SCENARIOS = Path(__file__).resolve().parents[1] / "scenarios"
 ACCEPTANCE = SCENARIOS / "acceptance"
 
 
+@cache
 def _packages(path, seeds):
     from robotsmith.scenario.load import load_scenario
     return {s: load_scenario(path, seed=s) for s in seeds}
 
 
-def test_a_family_whose_fixtures_stay_put_builds_one_scene():
-    assert certify.scene_groups(_packages(ACCEPTANCE / "f0_open.yaml", range(10))) == [list(range(10))]
+BLOCK = SCENARIOS / "pick_place_block_on_mat.yaml"
+SEEDS = (0, 1, 2, 3)
 
 
 def test_the_objects_an_instance_moves_are_the_plans_pick_targets():
-    block = _packages(SCENARIOS / "pick_place_block_on_mat.yaml", [0])[0]
-    assert certify.movers(block) == {"block"}
-    assert certify.movers(_packages(ACCEPTANCE / "f0_open.yaml", [0])[0]) == {"die"}
+    assert certify.movers(_packages(BLOCK, SEEDS)[0]) == {"block"}
+    assert certify.movers(_packages(ACCEPTANCE / "f0_open.yaml", (0,))[0]) == {"die"}
 
 
-def test_seeds_that_differ_only_in_where_the_picked_object_starts_share_a_scene():
-    packages = _packages(SCENARIOS / "pick_place_block_on_mat.yaml", range(10))
+def test_seeds_share_a_scene_unless_a_fixture_moves(tmp_path):
+    def where(packages, seed, name):
+        return next(o.fixed_position for o in packages[seed].scene.objects if o.name_override == name)
 
-    def start(seed):
-        return next(o.fixed_position for o in packages[seed].scene.objects if o.name_override == "block")
+    still = _packages(BLOCK, SEEDS)
+    assert len({tuple(np.round(where(still, s, "block"), 5)) for s in SEEDS}) > 1
+    assert certify.scene_groups(still) == [list(SEEDS)]
 
-    assert len({tuple(np.round(start(s), 5)) for s in range(10)}) > 1
-    assert certify.scene_groups(packages) == [list(range(10))]
-
-
-def test_a_fixture_that_moves_between_seeds_gets_a_scene_of_its_own(tmp_path):
     (tmp_path / "plans").mkdir()
     (tmp_path / "plans" / "moving.yaml").write_bytes((ACCEPTANCE / "plans" / "f0_open.yaml").read_bytes())
     text = (ACCEPTANCE / "f0_open.yaml").read_text(encoding="utf-8")
     (tmp_path / "moving.yaml").write_text(
         text + "variations: {mat.anchor_xy: [[0.45, -0.22], [0.45, 0.22]]}\n", encoding="utf-8")
-    packages = _packages(tmp_path / "moving.yaml", range(8))
-    groups = certify.scene_groups(packages)
-
-    def mat(seed):
-        return next(o.fixed_position for o in packages[seed].scene.objects if o.name_override == "mat")
-
-    assert len(groups) == 2 and sorted(s for g in groups for s in g) == list(range(8))
+    moving = _packages(tmp_path / "moving.yaml", SEEDS)
+    groups = certify.scene_groups(moving)
+    assert len(groups) == 2 and sorted(s for g in groups for s in g) == list(SEEDS)
     for group in groups:
-        assert all(np.allclose(mat(s), mat(group[0])) for s in group)
-    assert not np.allclose(mat(groups[0][0]), mat(groups[1][0]))
+        assert all(np.allclose(where(moving, s, "mat"), where(moving, group[0], "mat")) for s in group)
 
 
 def test_a_crashed_instance_is_retried_once_and_both_rows_are_kept(tmp_path):

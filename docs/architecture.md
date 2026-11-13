@@ -1,4 +1,4 @@
-# 调用链：一次 scenario episode 怎么跑
+# 架构：一次 scenario episode 的运行路径
 
 开发文档，画 `main` 上的现状，粒度到函数；设计（要保证什么）在 [design](design.md) 与 [manipulation](manipulation.md)。改了这条链的 PR 同时改这里。
 

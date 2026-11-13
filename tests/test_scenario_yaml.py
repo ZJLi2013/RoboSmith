@@ -3,6 +3,7 @@
 
 import random
 import shutil
+from functools import cache
 from pathlib import Path
 
 import jsonschema
@@ -22,8 +23,14 @@ TABLE_Z = 0.775
 DIE_HALF = 0.025
 
 
+@cache
 def _package(name: str):
     return load_scenario(SCENARIOS / f"{name}.yaml", seed=0)
+
+
+@cache
+def _visual_bounds(asset: str):
+    return derive.visual_bounds(AssetLibrary(ASSETS).get(asset).urdf_path)
 
 
 def _placed(pkg) -> dict:
@@ -31,9 +38,7 @@ def _placed(pkg) -> dict:
 
 
 def _bounds(pkg) -> dict:
-    library = AssetLibrary(ASSETS)
-    return {o.name_override: derive.visual_bounds(library.get(o.asset_query).urdf_path)
-            for o in pkg.scene.objects}
+    return {o.name_override: _visual_bounds(o.asset_query) for o in pkg.scene.objects}
 
 
 def _box_leaf(pkg) -> dict:

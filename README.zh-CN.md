@@ -91,7 +91,7 @@ task                 certified  success  failures
 
 ## 文档
 
-[Quick start](docs/quick-start.md) · [设计](docs/design.md) · [评测](docs/evaluation.md) · [调用链](docs/call-chain.md) ·
+[Quick start](docs/quick-start.md) · [设计](docs/design.md) · [评测](docs/evaluation.md) · [架构](docs/architecture.md) ·
 [编写 scenario](scenarios/README.md) · [验收](docs/acceptance.md)
 
 v0.1.0（2026-10-20）是合成数据管线；跑 scenario 仍会写 LeRobot 数据集。改动经 pull request 合入：
