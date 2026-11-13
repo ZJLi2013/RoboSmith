@@ -100,6 +100,17 @@ python scripts/eval/run_exam.py --scenario scenarios/acceptance/f0_open.yaml --s
 自己的日志）。网关变量与 agent planner 读的是同一组；LLM 端点要订阅头与 `api-version` 时，`run_exam.py` 在传给 agent 的 httpx
 transport 里补上，不改 agent 代码。接别的 Inspect Robots 策略，换掉 `run_exam.py` 里构造的 policy 即可。
 
+## 业界做法：让 LLM 出题
+
+[Liber-0](https://www.liberai.com/blog/liber0/)（LiberAI，2026-11）用一句 prompt 让 GPT-6 出了 60 道桌面题：抓放、短的非抓放操作、
+多步非抓放操作各 20 道，要求用常见物品、完成状态容易观察（[prompt 与输出](https://www.liberai.com/blog/liber0/gpt-conversation.html)）。
+题目与他们的内部 benchmark 分开，用来测没为这些题采过示教的零样本能力：真机每题 10 次，报成功率（抓放 63.5%、短操作 34.0%、
+多步 10.5%）；GPT-6 Astra 直接当策略在同一套题上是 8.3% / 5.0% / 1.7%。
+
+这种出题方式的好处是题目不由被测方的开发者挑。它没有回答两件事：题目在这台机器人上是否可解，以及成功由什么判定（看起来是人看录像）。
+RoboSmith 补的正是这两件：LLM 写出的题编译成场景 YAML 加被测方看不到的成功树，先由 RoboSmith 证明可解，不可解或描述含糊的题打回；
+判卷读仿真，可离线复判。出题用的模型、prompt 与原始输出应随场景保存，让考卷本身可复现。这条路还没做。
+
 ## 还没做
 
 - **里程碑**：写在场景 YAML 的 `task.milestones`，按顺序，每项一个 `name` 加一个成功树叶子，另加 `held`（与持物同一判据）：
@@ -118,5 +129,6 @@ transport 里补上，不改 agent 代码。接别的 Inspect Robots 策略，�
   失败而跳过任务判定的运行也写终态。
 - **多族报告**：按场景族汇总 `Verdict`，并列出同一批实例的 certify 结果。
 - **更多接口**：流式动作模式与相机（给 VLA）、技能 / API 工具赛道。
+- **LLM 出题**：见上一节；同时需要按 push、press、开合这类非抓放原语扩题型，现在只能考抓放这一档。
 
 不做：不对外部动作做执行门预检；一题只有一个被搬动的物体；不归因到责任方（never / lost 只描述失败过程）；不做真机结论。
