@@ -2,79 +2,78 @@
 
 [English](README.md) | 中文
 
-**在真实场景的仿真孪生里，评测 agentic 机器人与 VLA；运行在 AMD ROCm 上。**
+**在你自己场景的仿真孪生里测试 agentic 机器人与 VLA；运行在 AMD ROCm 上。**
 
-v0.1.0（2026-10-20）是合成数据管线；此后的主线是评测。跑 scenario 仍会写 LeRobot 数据集。
+标准 benchmark 用的是精选场景。RoboSmith 要回答：agent 或 VLA 进了*你的*场景，还能不能完成任务。做法是把场景变成可交互的孪生，
+在上面写任务，先用 RoboSmith 自带的操作证明每道任务可解，再让被测方去跑，报告它在哪里失败。
 
-## Goal
+| 杯子放到垫子上 | 方块放到垫子上 | 越过两道矮墙（开发期未见过的布局） |
+|---|---|---|
+| [![杯子放到垫子上](videos/mug_on_mat_seed0.gif)](videos/mug_on_mat_seed0.mp4) | [![方块放到垫子上](videos/block_on_mat_seed0.gif)](videos/block_on_mat_seed0.mp4) | [![骰子越过两道矮墙](videos/f5_clutter_seed100.gif)](videos/f5_clutter_seed100.mp4) |
 
-标准 benchmark 用的是精选场景。RoboSmith 要回答：agent 或 VLA 进了*你的*场景，还能不能完成任务。
+## 现在能做什么
 
-1. **世界：** 一段真实场景的视频变成 Genesis 里可交互的孪生：物体能静止，可移动物体是能抓的资产。
-2. **任务：** agent 在这个场景上写任务，由 RoboSmith 自带的基本 agentic 操作证明每道可解。
-3. **评测：** 被测方通过一个不绑定任何框架的接口执行。判定读仿真状态，成功判定树对被测方隐藏；每个失败给出从未达成或达成后丢失的里程碑。
+| | |
+|---|---|
+| **资产** | agent 用 Blender 程序生成物体（含铰接件）；独立的 LLM 评审在仿真里取证后才准入。准入资产按 hash 发布到 Hugging Face。 |
+| **场景与任务** | 一个 YAML 文件：物体、空间关系，以及机器人看不到的成功判定。求解器按 seed 摆放物体。 |
+| **证明任务可解** | Franka 抓放：动作在关节空间规划，执行前对照场景检查，执行时逐物理步监测有无违规接触。 |
+| **真实视频孪生** | 进行中：在仿真视频上跑过，真实视频还没有。 |
+| **评测你的 agent 或 VLA** | 计划中：不绑定框架的接口、按里程碑「从未达成 / 得而复失」归因失败、报告。 |
 
-结果是孪生里测得的；没做过孪生与真机对照，不代表真机表现。不在范围内：精选 benchmark 套件、策略训练、sim2real 研究。
+单卡 MI300X 上证明可解的任务，每项 10 个 seed。*certified* = 任务成立，且没有任何物理步发生违规接触。
 
-**MVP：** 一个真实桌面场景、3–5 道任务、一个被测方、一份报告：
+| 场景 | 物体 | certified |
+|---|---|---|
+| 空桌面 | 骰子 · 杯子 · 方块 | 10/10 · 10/10 · 9/10 |
+| 物体贴着矮墙 | 骰子 | 10/10 |
+| 物体与垫子之间有 20 cm 高墙 | 骰子 | 10/10 |
+| 两道矮墙（开发期全程封存） | 骰子 | 10/10 |
+
+这些结论只对表中的场景与 seed 成立（[适用边界](docs/acceptance.md#certified-的适用边界)）。还做不到：放到货架上、约 0.2 kg
+以上的物体、由 agent 而不是固定规则选抓法，以及够 VLA 用的渲染（MI300X 上是软件渲染）。
+
+## 怎么工作
+
+![RoboSmith 流程](docs/images/pipeline-zh.svg)
+
+agent 生成的资产库供 YAML 场景取用；求解器在 Genesis 里摆出场景；机器人执行场景的步骤，每个动作执行前先过同一道安全检查；
+每一步和整个任务都用同一组谓词读仿真状态判定，状态整份保存，任何一次运行都能离线复判。
+
+## 上手
+
+没有 GPU 也能装包、跑测试：
+
+```shell
+python -m pip install -e ".[dev]"
+python -m robotsmith.assets.fetch   # 资产网格不在 git 里，按 hash 下载
+python -m pytest tests -q
+```
+
+在装好 ROCm 与 Docker 的 AMD GPU 节点上，[Quick start](docs/quick-start.md) 带你构建镜像、证明一个实例、录出上面的杯子视频。
+
+## 路线图
+
+目标是一个真实桌面场景、几道任务、一个被测方、一份报告：
 
 ```text
-RoboSmith eval  scene: <你的桌面>（视频 → 孪生，几何残差中位数 x cm）  evaluatee: <agentic 基线>
+RoboSmith eval  scene: <你的桌面>  evaluatee: <agentic 基线>
 task                 certified  success  failures
 把杯子放到托盘上      10/10      6/10     never: grasped ×3 · lost: on ×1
 把笔放进笔筒          10/10      2/10     never: grasped ×5 · never: inside ×3
 ```
 
-## 现状
+1. **agentic 操作：** agent 在 episode 内选择并修正抓法与放法，安全检查、规划器与试抓是它的工具。
+2. **更多原语：** press、push、rotate、转动门。
+3. **真实场景：** 手机绕桌拍一段视频，变成孪生。
+4. **评测层：** 接口、失败归因、报告。
 
-RoboSmith 自带的操作是六动作组合：每个 pick / place 步骤执行一种固定组合，自由段由关节空间 RRT-Connect 规划，每个执行点在物理执行前
-过同一道执行门，不可行就带原因零步拒绝（[设计](docs/manipulation.md)）。公开验收场景族上，`main`、playground seed 0–9、单卡 MI300X：
+结果在孪生里测得，不代表真机表现。不在范围内：精选 benchmark 套件、策略训练、sim2real 研究。
 
-| 场景族 | 约束 | certified |
-|---|---|---|
-| F0 空桌面 | — | 10/10 |
-| F1 贴墙抓取 | 物体一侧有比它高 1 cm 的矮墙 | 10/10 |
-| F2 越障搬运 | 物体与放置垫之间有 20 cm 高墙 | 10/10 |
+## 文档
 
-certified = 任务成立，且逐物理步监测的实际执行零违规接触。开发期全程封存的留出族在冻结实现上读了一次：test seed 100–109，
-F5 10/10 certified（[验收](docs/acceptance.md)、[结果](docs/manipulation.md#结果)）。[`scenarios/`](scenarios/) 里的其他
-scenario 能在这条链路上加载，但在它上面没有读数。certified 只对表中的场景族、seed 与预算成立，不证明其他场景可解或负例一般不可解（[适用边界](docs/acceptance.md#certified-的适用边界)）。
+[Quick start](docs/quick-start.md) · [设计](docs/design.md) · [调用链](docs/call-chain.md) ·
+[编写 scenario](scenarios/README.md) · [验收](docs/acceptance.md)
 
-每个场景族在当前链路上录了一个 episode（点图看 mp4）。录制不做逐步接触监测，不是 certified 读数，表里的数字来自 `certify`。
-F2 没放录像：这个机位下 20 cm 高墙挡住了 die 和抓取。
-
-| F0 空桌面 · playground seed 0 | F1 贴墙抓取 · playground seed 0 | F5 双矮墙（留出族） · test seed 100 |
-|---|---|---|
-| [![F0 空桌面，playground seed 0](videos/f0_open_seed0.gif)](videos/f0_open_seed0.mp4) | [![F1 贴墙抓取，playground seed 0](videos/f1_wall_gap_seed0.gif)](videos/f1_wall_gap_seed0.mp4) | [![F5 双矮墙，test seed 100](videos/f5_clutter_seed100.gif)](videos/f5_clutter_seed100.mp4) |
-
-MVP 还要做的，按顺序：
-
-1. **基本 agentic 操作。** agent 写步骤表，现有技能执行，每步判定；计划层失败交回 agent，物理层失败走修复环。不做跨 episode
-   记忆（需要时用 RPent 这类外部框架）。pick / place 已改为过执行门的六动作组合，没有碰撞盲段，冻结后的留出读数
-   F5 10/10；还差规则物体在杂乱桌面上抓得稳。
-2. **原语覆盖**常见室内桌面任务约八成：press、push、rotate、转动关节开合。
-3. **真实场景：** 真实视频重建成能静止的孪生，开口、把手由 agent 标注、仿真验证。
-4. **评测层：** 任务包、接口、never / lost 归因、报告。
-
-## 现在怎么工作
-
-![RoboSmith 流程](docs/images/pipeline-zh.svg)
-
-- **资产：** 由 agent 生成（默认写 Blender 脚本），LLM 评审在仿真里取证后准入，按哈希发布到 Hugging Face。
-- **Scenario：** YAML，写物体、关系、对执行方隐藏的成功判定树，以及 playground / test 两段 seed。
-- **操作：** pick / place 是六个 meta action（`sample`、`move_to`、`move_linear`、`gripper`、`attach`、`detach`）的组合，
-  顺序固定，步骤只选物体、放置目标与抬升；自由段由关节空间 RRT-Connect 规划，整条轨迹逐点过执行门，过了才执行。抓法与放法由固定规则给出，
-  pick 用几何候选在仿真里试抓，episode 里没有 agent 修正（agent 修复环只在离线资产准入里）；抽屉开合沿用拖拽、不过门。
-- **验证：** 每一步和整个任务用同一组谓词读仿真状态判定，可离线复判。
-
-主要限制：单台 Franka、一张桌子；手指位置控制（约 0.2 kg 以上会滑脱）；MI300X 上是软件渲染，还不适合评测 VLA；一个进程一个场景。
-细节见 [`docs/design.md`](docs/design.md)（含文档地图）。
-
-MVP 之后：房间尺度场景与移动操作、外观保真度与 VLA、外部 agent 框架适配器、有真机时做一次孪生与真机对照、其他具身。
-
-## 上手
-
-[Quick start](docs/quick-start.md) · [设计](docs/design.md) · [调用链](docs/call-chain.md) · [编写 scenario](scenarios/README.md) ·
-[技术博客](https://andyluo7.github.io/rocm/amd/mi300x/robotics/embodiedai/sdg/2026/07/01/robosmith-rocm-native-synthetic-data-pipeline/)（写于数据管线时期）
-
-改动经 pull request 合入：[CONTRIBUTING.md](CONTRIBUTING.md)、[AI_POLICY.md](AI_POLICY.md)、[SECURITY.md](SECURITY.md)。License：Apache-2.0。
+v0.1.0（2026-10-20）是合成数据管线；跑 scenario 仍会写 LeRobot 数据集。改动经 pull request 合入：
+[CONTRIBUTING.md](CONTRIBUTING.md)、[AI_POLICY.md](AI_POLICY.md)、[SECURITY.md](SECURITY.md)。License：Apache-2.0。
