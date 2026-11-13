@@ -19,7 +19,7 @@
 | **场景与任务** | 一个 YAML 文件：物体、空间关系，以及机器人看不到的成功判定。求解器按 seed 摆放物体。 |
 | **证明任务可解** | Franka 抓放：动作在关节空间规划，执行前对照场景检查，执行时逐物理步监测有无违规接触。 |
 | **真实视频孪生** | 进行中：在仿真视频上跑过，真实视频还没有。 |
-| **评测你的 agent 或 VLA** | 最小版本已有：外部策略经 Inspect Robots 的接口接入，按物理判卷，日志可离线复判；一个外部 LLM agent 在空桌面 seed 0 上 certified（[已测结果](docs/call-chain.md#已测结果)）。还没有：按里程碑归因失败、多场景报告、VLA。 |
+| **评测你的 agent 或 VLA** | 最小版本已有：外部策略经 Inspect Robots 的接口接入，按物理判卷，日志可离线复判；一个外部 LLM agent 在空桌面 seed 0 上 certified（[已测结果](docs/evaluation.md#已测结果)）。还没有：按里程碑归因失败、多场景报告、VLA。 |
 
 单卡 MI300X 上证明可解的任务，每项 10 个 seed。*certified* = 任务成立，且没有任何物理步发生违规接触。
 
@@ -72,7 +72,7 @@ task                 certified  success  failures
 
 ## 文档
 
-[Quick start](docs/quick-start.md) · [设计](docs/design.md) · [调用链](docs/call-chain.md) ·
+[Quick start](docs/quick-start.md) · [设计](docs/design.md) · [评测](docs/evaluation.md) · [调用链](docs/call-chain.md) ·
 [编写 scenario](scenarios/README.md) · [验收](docs/acceptance.md)
 
 v0.1.0（2026-10-20）是合成数据管线；跑 scenario 仍会写 LeRobot 数据集。改动经 pull request 合入：

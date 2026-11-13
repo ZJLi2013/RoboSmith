@@ -20,7 +20,7 @@ then run the system under test and report where it fails.
 | **Scenes and tasks** | One YAML file: objects, spatial relations, and a success test the robot never sees. A solver places the objects for each seed. |
 | **Proving a task solvable** | A Franka picks and places: motions are planned in joint space, checked against the scene before they run, and every physics step is monitored for illegal contact. |
 | **Real-video twins** | In progress: run on simulator footage, not yet on a real video. |
-| **Evaluating your agent or VLA** | A minimal version: an external policy joins through Inspect Robots' interface, is judged from the physics, and its log re-judges offline; one external LLM agent certified on the empty-desk seed 0 ([measured result](docs/call-chain.md#已测结果)). Not yet: failures attributed to milestones, multi-scene reports, VLAs. |
+| **Evaluating your agent or VLA** | A minimal version: an external policy joins through Inspect Robots' interface, is judged from the physics, and its log re-judges offline; one external LLM agent certified on the empty-desk seed 0 ([measured result](docs/evaluation.md#已测结果)). Not yet: failures attributed to milestones, multi-scene reports, VLAs. |
 
 Tasks proved solvable on one MI300X, ten seeds each. *Certified* means the task holds and no physics step made an
 illegal contact.
@@ -79,7 +79,7 @@ sim-to-real research.
 
 ## Docs
 
-[Quick start](docs/quick-start.md) · [Design](docs/design.md) · [Call chain](docs/call-chain.md) ·
+[Quick start](docs/quick-start.md) · [Design](docs/design.md) · [Evaluation](docs/evaluation.md) · [Call chain](docs/call-chain.md) ·
 [Writing scenarios](scenarios/README.md) · [Acceptance](docs/acceptance.md)
 
 v0.1.0 (2026-10-20) was a synthetic-data pipeline; scenario runs still record a LeRobot dataset. Changes land through
