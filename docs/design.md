@@ -9,6 +9,7 @@
 |---|---|---|
 | 本文 | 目标、原则、三块各自要保证什么、做到哪 | 所有人 |
 | [manipulation](manipulation.md) | 操作层的设计：六动作组合、执行门契约、规划器、结果与限制 | 改操作层或要判断「任务可解」证明力的人 |
+| [evaluation](evaluation.md) | 评测考场：考生看到什么、怎么判分、判卷日志、已测结果与限制、怎么接入 | 接入被测方或读评测结果的人 |
 | [call-chain](call-chain.md) | 一次 episode 在代码里怎么走，粒度到函数与签名 | 开发者；改了这条链的 PR 同时改它 |
 | [acceptance](acceptance.md) | 验收场景族、plan 文件格式、certified 口径与读数 | 跑或改验收的人 |
 | [quick-start](quick-start.md) | 从一台 GPU 节点到跑出一个 episode | 新用户 |
@@ -29,7 +30,7 @@
 |---|---|---|
 | 场景 | 一个场景成立 = 几何一致、物体静止、可动物体能被抓起；每次实例化都自动检查 | 资产与场景求解已有；世界检查未实现 |
 | 操作 | 一个动作能执行 = 执行前已在仿真几何里验证可行；所有动作经同一道门 | 规则化的抓放管线已实现：六动作组合、执行门、关节空间规划器；F0–F2 dev 与留出族 F5 test seed 100–109 均 10/10 certified；货架两场景 0 certified；抓放决策还不是 agentic |
-| 评测 | 被测方经不绑框架的接口接入；报告给出 never / lost 归因 | 只有判定；接口、归因与报告未实现 |
+| 评测 | 被测方经不绑框架的接口接入；报告给出 never / lost 归因 | 最小考场已实现：Inspect Robots `Embodiment` 接口、物理判卷与可离线复判的判卷日志、单实例报告行；外部 `agent` 在 F0 seed 0 上 certified（[已测结果](evaluation.md#已测结果)）；里程碑与 never / lost 归因、多族报告、VLA 未实现 |
 
 顺序：先做评测考场（机器人层接口与物理层判卷不依赖新的操作能力），再扩操作覆盖的题型，最后真实视频导入。资产生产只有 agent 写的 Blender 程序与
 AHa-3D 快照导入。数据生成时代留下的录制还在：scenario 运行时每个控制步写 LeRobot 数据集（见评测一节的问题）。
@@ -103,11 +104,15 @@ put the cup on the tray       10/10      6/10     never: grasped ×3 · lost: on
 现在有什么：判定的谓词读仿真状态，任务与每一步共用，判定所用的状态整份保存、可离线复判，失败列出没成立的条件；两种角色：
 证明可解（看得到成功树）与基线被测方（看不到）。
 
+最小考场（[evaluation](evaluation.md)）：外部策略经 Inspect Robots 的 `Embodiment` 协议接入，RoboSmith 每个物理步按
+`gate.certified` 判接触、结束时判成功树，判卷日志每次尝试一份、可离线复判；Inspect Robots 的 `agent` 原样在 F0 seed 0 上跑通并
+certified（[已测结果](evaluation.md#已测结果)）。
+
 问题：
 
-- 没有被测方接口：只能跑 RoboSmith 自己的技能。
-- 运行时绑着数据录制（每个控制步写数据集），输出状态还叫「数据生成成功 / 失败」。
-- 只有「哪些条件没成立」，没有 never / lost 归因，没有报告。
+- 考场只有末端绝对目标一种动作模式、无图像观测，物体位置作特权信息给出；没有流式 VLA 模式。
+- RoboSmith 自己的 scenario 运行时仍绑着数据录制（每个控制步写数据集），输出状态还叫「数据生成成功 / 失败」。
+- 里程碑与 never / lost 归因未实现，报告只有每实例一行，没有多族汇总。
 - 渲染在 MI300X 上是 CPU 光栅：Genesis 物理在 GPU，渲染经光栅器落到 Mesa llvmpipe，约 28 s / episode
   （320 px 比 640 px 快 2–4×），没有光追，还不适合 VLA。Instinct（CDNA）没有光追硬件，
   [HIP RT](https://github.com/GPUOpen-LibrariesAndSDKs/HIPRT) 在其上只能软件遍历；Genesis 光追器未在 MI300X 上试过。

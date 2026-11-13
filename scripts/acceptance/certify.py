@@ -242,7 +242,7 @@ def main() -> None:
     groups = scene_groups(packages)
     built = {}
 
-    def one(seed):
+    def one(seed, attempt):
         group = next(g for g in groups if seed in g)
         if built.get("group") is not group:
             if built:

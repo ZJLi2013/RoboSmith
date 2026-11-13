@@ -418,3 +418,149 @@ pick 的手指闭合段允许手指碰目标（`grip`），其后的直线抬升
 
 `GraspPlan` 的 `retreat_pos` / `retreat_quat` 只有 `plan_place` 填（放下后退回的位姿，`place_actions` 读）；pick 候选不带它们，
 抬升由 pick 步骤的 `lift` 给（缺省世界 +Z 0.10 m）。
+
+## 评测考场
+
+外部策略经 Inspect Robots 的 `Embodiment` 协议进 RoboSmith 的场景；要保证什么、考生看到什么、怎么判分、已测结果与限制见
+[evaluation](evaluation.md)。这里只画代码路径：`robotsmith/eval/` 与 `scripts/eval/run_exam.py`。
+
+接触许可在代码里：`judge.exam_context` 从成功树取 target（唯一被搬动的物体）与 rest（`env` 加叶子的 `parent`），`judge.held`
+判两个不同手指连杆碰 target，`judge.violations` 每步合成 `Span("exam", 0, 1, holding=held, allow="rest" if held else "grip")`
+后对每对接触调 `gate.certified`。在线的 `ExamMonitor` 与离线的 `eval.judge.judge` 调同一组函数。
+
+### 对象
+
+```mermaid
+classDiagram
+    class Embodiment {
+        <<interface>>
+        info
+        +reset(scene, seed)
+        +step(action)
+        +close()
+    }
+    class LLMAgentPolicy {
+        +act(observation)
+    }
+    class RoboSmithEmbodiment {
+        info
+        +reset(scene, seed)
+        +step(action)
+        +close(ended)
+    }
+    class ExamMonitor {
+        violating
+    }
+    class JudgeLog {
+        +header(seed, attempt, scenario, success, target, rest)
+        +physics(k, contacts, held)
+        +control(step, action, world)
+        +final(ended, success, state)
+    }
+    class Verdict {
+        ended
+        success
+        certified
+        violating_steps
+        env_error
+    }
+    class SimEnv
+    class Scenario
+    LLMAgentPolicy ..> Embodiment : inspect_robots eval 驱动
+    Embodiment <|.. RoboSmithEmbodiment
+    RoboSmithEmbodiment --> Scenario : load_scenario(agent_plan=True)
+    RoboSmithEmbodiment *-- SimEnv : reset 时建
+    RoboSmithEmbodiment *-- JudgeLog
+    RoboSmithEmbodiment *-- ExamMonitor
+    ExamMonitor --> SimEnv : 唯一的 on_step 读者
+    ExamMonitor --> JudgeLog : physics
+    JudgeLog ..> Verdict : eval.judge.judge
+```
+
+| 概念 | owner | 复用 |
+|---|---|---|
+| 机器人层接口与观测 | `RoboSmithEmbodiment`（`eval/embodiment.py`） | `load.load_scenario`、`SimEnv.build`、`runner.reset_scene`、`SimEnv.solve_ik`、`GripperSpec` |
+| 逐物理步监测 | `ExamMonitor`（同上） | `SimEnv.on_step`、`SimEnv.contacts_now`、`gate.certified` |
+| 判卷日志 | `JudgeLog`（`eval/log.py`） | 与 LeRobot 录制分开、不可关；考场不调 `recorder.record_episode` |
+| 终态判定 | `RoboSmithEmbodiment.close` | `runner.evaluate_scenario_task`（静置 0.5 s 后判成功树），判过的状态写进 `final` |
+| 判卷与复判 | `eval.judge.judge`（`eval/judge.py`） | 纯函数，日志进、`Verdict` 出；`predicates.evaluate_success` |
+| 运行与尝试 | `scripts/eval/run_exam.py` | `batch.run_batch` 给 attempt 编号，`batch.supervise` 做进程外超时（每次尝试 1800 s） |
+
+`EpisodeRun`、`ExecutionGate.verify` 与技能不在考场路径上；它们照旧做出题人。
+
+### 一次外部 episode：agent 走 `move_to` 到判卷
+
+```mermaid
+sequenceDiagram
+    participant R as run_exam
+    participant P as LLMAgentPolicy
+    participant B as RoboSmithEmbodiment
+    participant E as SimEnv
+    participant M as ExamMonitor
+    participant L as JudgeLog
+
+    R->>B: 构造（scenario、seed、run_batch 给的 attempt、日志路径）
+    R->>P: inspect_robots eval(task, policy, embodiment, before_scoring)
+    P->>B: reset(scene, seed)
+    B->>E: build → reset_scene
+    B->>L: header（seed、attempt、成功树、target、rest、sha256）
+    B->>M: 挂到 on_step
+    B-->>P: Observation（eef_state、object_pos.*，无图像）
+    loop 直到 done / give_up / 步数上限
+        P->>P: LLM 调用 → move_to → 插值成 ActionChunk
+        loop chunk 里每个 Action
+            P->>B: step(action)
+            B->>E: solve_ik → 关节目标 → step × 3
+            E->>M: on_step（每个物理步）
+            M->>L: physics（接触对、held）
+            B->>L: control（动作、collect_world_state）
+            B-->>P: StepResult（观测）
+        end
+    end
+    P-->>R: 返回；before_scoring 记下结束原因
+    R->>B: close(ended)
+    B->>E: evaluate_scenario_task（静置 0.5 s，静置的物理步也进 physics）
+    B->>L: final（ended、success、判过的世界状态）
+    R->>R: eval.judge.judge(日志) → Verdict，写进 instances.jsonl 的这一行
+```
+
+### 模块契约
+
+#### 日志布局与生命周期
+
+- 一次运行一个目录（`--out`）：`run.json`（场景、seed、RoboSmith commit、被测方身份：策略名、两个包的版本与 Inspect Robots
+  的 commit、模型、effort、调用与时长上限、特权观测）；`instances.jsonl`（每次尝试一行，带 `verdict`）；`report.txt`。
+- 每次尝试一个目录 `trials/<seed>/attempt-<n>/`：`judge.jsonl` 与被测方自己的日志 `inspect/`（eval log、transcript、
+  wire capture）。attempt 编号由 `batch.run_batch` 给出，与 `instances.jsonl` 里同一 attempt 的行对应；重试不追加、不覆盖。
+  `JudgeLog` 以独占方式新建文件，路径已存在就报错。
+- `judge.jsonl` 每行一个 JSON，写完即 flush：第一行 `header`，之后 `physics`（每个物理步，含终态静置）与 `control`
+  （每个控制步）交错，最后一行 `final`。进程中途死掉时已写的行仍可读。
+- 运行结束后日志不再改写；复判只读不写。运行目录不进 git。
+
+#### 读写方
+
+- 写：`RoboSmithEmbodiment`（`header`、`control`、`final`）与它创建的 `ExamMonitor`（`physics`），同一进程同一线程。
+- 读：`eval.judge.judge`，在线由 `run_exam.py` 在 `close` 之后调，离线用 `python -m robotsmith.eval.rejudge <judge.jsonl>...`；
+  它只 import 判卷所需的纯 Python 模块，不启动 Genesis、torch、Inspect Robots 或 LLM。被测方读不到判卷日志。
+- `Verdict`：seed、attempt、ended、success、certified（成功且零违规步）、physics_steps、violating_steps、first_violation、
+  env_error。`instances.jsonl` 另记 `ExamMonitor` 在线数出的违规步与被测方的 LLM 请求数（数 wire capture 的行）。
+
+#### 不变量
+
+| 不变量 | 测试 |
+|---|---|
+| 三个接触样例按 `gate.certified` 判：合指与正常松手合法，持物擦墙违规 | test_eval_judge.py::test_contact_samples_closing_scraping_a_wall_and_releasing |
+| 被测方写的字段（动作、note）改成任何值，`Verdict` 不变 | test_eval_judge.py::test_evaluatee_fields_do_not_change_the_verdict |
+| 四种正常结束（done、give_up、horizon、policy_error）都写 `final`，成败只看判过的状态 | test_eval_judge.py::test_endings_all_write_a_final_and_are_judged_by_the_physics |
+| 缺 `final` 判 `env_error`，不算被测方失败 | test_eval_judge.py::test_a_missing_final_is_an_environment_error |
+| 同 seed 两次尝试各自一个日志、各自判卷；`run_batch` 把 attempt 交给写入方 | test_eval_judge.py::test_attempts_keep_separate_logs、test_run_batch_names_the_attempt_it_runs |
+| 离线入口与 `judge` 给出同一 `Verdict` | test_eval_judge.py::test_rejudge_prints_the_same_verdict |
+| embodiment 过 Inspect Robots 的 conformance kit，被测方的工具里没有判卷入口 | test_eval_embodiment.py |
+
+#### 结束路径
+
+- `done` / `give_up`：agent 的终止工具；`horizon`：Inspect Robots 的步数上限（`--max-seconds` 仿真秒）；`policy_error`：
+  试验出错（如 LLM 调用在 agent 自己的重试后仍失败），或 `before_scoring` 没被调到。四种都由 `close` 静置、判成功树、写 `final`。
+- 仿真报错或进程被 `supervise` 超时杀掉：日志缺 `final`，`Verdict.env_error` 为 `no final line`，`run_batch` 重试一次，新尝试
+  写新目录。
+- 被测方调 `done` 不等于成功。

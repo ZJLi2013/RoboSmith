@@ -13,8 +13,9 @@ INSTANCE_TIMEOUT_S = 600
 
 
 def run_batch(seeds, one, fh, prior=(), failed=None, show=None, running: Path | None = None) -> list[dict]:
-    """``one(seed)`` for each seed, its row appended to ``fh`` as it finishes. An instance that raises is retried
-    once; both attempts stay in ``fh`` and the last one is the instance's reading. ``prior`` are the rows of an
+    """``one(seed, attempt)`` for each seed, its row appended to ``fh`` as it finishes. An instance that raises is
+    retried once; both attempts stay in ``fh`` and the last one is the instance's reading. The attempt number is
+    the one the row carries, so anything an attempt writes can name it. ``prior`` are the rows of an
     earlier run of the batch: a seed they settle is not run again. ``running`` names the attempt in progress for
     ``supervise``: written before it starts, removed once its row is. ``failed`` is the verdict an error row
     carries; ``show`` the keys printed per row (all when None)."""
@@ -38,7 +39,7 @@ def run_batch(seeds, one, fh, prior=(), failed=None, show=None, running: Path | 
                 _while_read(os.replace, tmp, running)
             t0 = time.perf_counter()
             try:
-                row = one(seed)
+                row = one(seed, attempt)
             except Exception:  # noqa: BLE001 -- an instance's crash is a reading, the batch goes on
                 row = {"outcome": "error", **failed, "why": traceback.format_exc()}
             row = {"seed": seed, "attempt": attempt, **row, "seconds": round(time.perf_counter() - t0, 1)}
