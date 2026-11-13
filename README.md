@@ -46,7 +46,9 @@ acceptance families, `main`, playground seeds 0–9, one MI300X:
 Certified = the task holds and the executed motion, monitored at every physics step, makes no illegal contact. On the
 held-out family F5, sealed throughout development and read once on the frozen implementation: test seeds 100–109,
 F5 10/10 certified ([acceptance](docs/acceptance.md), [results](docs/manipulation.md#结果)). The other scenarios in
-[`scenarios/`](scenarios/) load on this chain but have no readings on it.
+[`scenarios/`](scenarios/) load on this chain but have no readings on it. Certified holds only for the families,
+seeds and budgets listed; it does not show that other scenes are solvable or that a negative is unsolvable in general
+([scope](docs/acceptance.md#certified-的适用边界)).
 
 One recorded episode per family on the current chain (click for the mp4). A recording runs without the per-step contact
 monitor, so it is not a certified reading; the numbers in the table come from `certify`. F2 has no clip: from this

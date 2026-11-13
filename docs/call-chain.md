@@ -180,10 +180,10 @@ flowchart LR
 动作列表的顺序在 `meta_actions` 里固定为一种，步骤能换的是物体、放置目标与 pick 抬升的方向和距离；五个验收族的
 `steps` 相同。plan 文件与 agent 回复都经 `load.steps_to_skills` 直接解析成 `Skill`。
 
-### 一个场景的数据表示：两份并存，目标是一份
+### 一个场景的数据表示
 
-现状：一个场景在一个 seed 下的全部运行时输入是一个 `scenario.load.Scenario`，由 `load_scenario(path, *, seed, agent_plan=False)`
-一次建成；场景、place 目标、任务、成功树与步骤各只有运行时一份。
+一个场景在一个 seed 下的全部运行时输入是一个 `scenario.load.Scenario`，由 `load_scenario(path, *, seed, agent_plan=False)`
+一次建成；每个概念只有一种类型、一个 owner。
 
 ```mermaid
 classDiagram
@@ -207,107 +207,28 @@ classDiagram
     TaskSpec *-- Skill : skills（plan 模式为 plan 文件的步骤，agent 模式为空）
 ```
 
+| 概念 | 类型 | 建它的 |
+|---|---|---|
+| 场景（物体、桌子、相机） | `scenes.config.SceneConfig` / `ObjectPlacement` | `load_scenario`（关系求解后的坐标）；单资产试抓入口 `asset_pick_validation._make_scene` |
+| place 目标 | `Scenario.target_frames: dict[str, FrameRef]` | `load.place_target_frame` / `all_place_target_frames` |
+| 任务与成功树 | `tasks.task_spec.TaskSpec` / `SuccessNode` | `load_scenario`（成功树由 `scenario.predicates` 的 builder 产出） |
+| 一步 | `skills.base.Skill` | `load.steps_to_skills`（plan 文件与 agent 回复共用） |
+| 步骤的完成条件 | `TaskSpec.step_bindings` | `adapters.to_step_bindings`（plan，按成功树）；`adapters.bindings_from_steps`（agent，按步骤与当前持物） |
+| 加载期检查 | `load.ValidationError` | `load.check_object_ids`、`load.check_task`，JSON Schema，`steps_to_skills` 的步骤检查 |
+
 - 运行时读 `Scenario`：`SimEnv.build(scene)`、`EpisodeRun(task, target_frames=...)`、`resolve_static_target_positions(env, target_frames)`、
   `evaluate_scenario_task(task)`、recorder 的 `task_spec.to_dict()`。planner 与 `run_generated_scenario.py` 从 `scene.objects` 读
   `name_override` / `asset_query` / `yaw_deg`。
 - 每次 `load_scenario` 都从文件重建全部对象，两次调用（同模式或一 plan 一 agent）不共享场景、任务、技能参数或目标帧；建成后没有写者，
   certify 改起点写的是 `env.placed_map`。plan 文件在两种模式下都读并检查（坏的 plan 文件在 agent 模式也报错），只在 plan 模式用：
-  任务填上它的技能与按成功树求出的 `step_bindings`；agent 模式任务不预填，目标帧换成全部 place 目标。
-- 加载期检查：物体 id 不能重复（`load.check_object_ids`，抛 `ValidationError: duplicate object names: [...]`）；成功树的名字检查
-  （`load.check_task`）要求叶子参数里的 `object` / `objects` / `parent` / `reference` 是场景物体、目标或 `table`，否则抛
-  `ValidationError: success predicate references unknown names: [...]`。
+  任务填上它的技能与 `step_bindings`；agent 模式任务不预填，目标帧换成全部 place 目标。
+- 加载失败抛 jsonschema `ValidationError`、`load.ValidationError`（物体 id 重复：`duplicate object names: [...]`；成功树叶子参数里的
+  `object` / `objects` / `parent` / `reference` 不是场景物体、目标或 `table`：`success predicate references unknown names: [...]`）、
+  `SolveError`（关系求解失败，或 plan 的 place 与成功树矛盾）、`PlanInvalid`（步骤与持物顺序）、`AssetNotAdmitted`。
 - YAML 场景的物体都是 `fixed_position`，place 目标都是带锚点的 `FrameRef`；判定与诊断用的静态目标点只有
-  `resolve_static_target_positions` 按 `target_frames` 对活世界求出的那些。按 region 随机摆放只有 `rollout/asset_pick_validation.py`
-  一处，它直接建带 `position_range` 的 `SceneConfig`，每次 reset 重新采样位置。
-- `ObjectPlacement.count` 在 YAML 场景恒为 1，但 `scenes/backend.py` 按它摆放多份，`tests/test_scenes.py` 用到 5 与 20，所以保留。
-
-#### 已删除的无读者结构
-
-两种表示里只写不读、或生产代码不调用的结构已删除，运行时没有读者因此改变：
-
-- 运行时任务：`TaskSpec.contact_objects` 与写它的 `adapters.derive_contact_objects`，`TaskSpec.episode_length` / `dart_sigma`。
-  `TaskSpec.to_dict()`（录制数据集里的任务元数据）因此少这三个键；`from_dict` 读旧文件时忽略它们。
-- 运行时场景：`SceneConfig.description` / `robot`。
-- 作者侧场景：`RegionSpec.min_distance` / `keep_out_radius`、`ObjectSpec.pose`，连同 `scene_api.region` / `obj` 的同名参数和
-  `validators` 里对它们的检查。
-- 不被调用的 builder：`intents.close_`、`predicates.negate`、`scene_api.on_articulated` / `on_articulated_opening`。
-- `adapters.resolved_target_positions`：YAML 场景的 place 目标都带锚点，它恒为空字典；`certify.py` 与 `run_generated_scenario.py`
-  不再把它并入静态目标点，只用 `resolve_static_target_positions`。
-
-等价范围：14 个 YAML 场景 × seed 0–4 × {plan 文件, agent} 的加载结果（场景配置、`task.to_dict()`、`step_bindings`、`target_frames`、
-agent 的物体列表与请求文本）除上面删掉的键外逐字段相同；F0 playground seed 0–4 的 certify 结果逐实例相同。
-按 region 随机摆放的 `rollout/asset_pick_validation.py` 路径不在这两项检查里；它调用 `scene_api.region` / `obj` 时不传被删的参数，也不读被删的字段。
-
-#### 任务与成功树合并为运行时一份
-
-作者侧的 `scenario.specs.TaskSpec`、`TaskSuccessCfg` / `AllOf` / `AnyOf` / `Not`，转译它们的 `to_legacy_task_spec` / `_lower_success`，
-`validators.validate_task` / `success_refs` 与 `scenario/task_api.py` 已删除；`predicates` 的 builder 与 `load` 直接产出 `SuccessNode`。
-`ScenarioRuntimePackage` 不再有 `scenario_task`，`to_legacy_skills` 与 `validate_skill_intent_sequence` 改收场景。
-
-等价范围：上面的 140 份加载结果逐字段相同；另外 `asset_pick_validation._make_task` 对 `die_01` / `mug_02` / `block_01` 的 `to_dict()`，
-any / all-not / 嵌套 all / not-any 四种成功树在两种加载模式下的 `to_dict()` 与 `step_bindings`，not 下嵌未知对象时的报错文本，
-以及同一 candidate 先 plan 后 agent、先 agent 后 plan 两次物化的结果，都与改动前相同。
-
-#### 场景与目标帧合并为运行时一份
-
-作者侧的 `SceneSpec` / `LayoutSpec` / `RegionSpec` / `ObjectSpec` / `TargetPositionSpec`、转译它们的 `to_legacy_scene_config` /
-`adapters.target_frames`、`scenario/scene_api.py` 与 `validators.validate_scene` 已删除；`FrameRef` 保留。`load_scenario` 返回
-`(SceneConfig, target_frames, TaskSpec, intents)`，`ScenarioRuntimePackage` 不再有 `scenario_scene`，改持 `target_frames`；
-`check_task`、`to_legacy_skills` 与 `validate_skill_intent_sequence` 改收场景与目标名。`validate_scene` 的检查里 YAML 路径缺的只有
-物体 id 不重复，移进 `load_scenario`，由 `tests/test_scenario_yaml.py` 钉住；其余由 JSON Schema 或构造方式保证。
-
-等价范围：14 个 YAML 场景 × seed 0–4 × {plan 文件, agent} 的加载结果逐字段相同（不删任何字段）；`asset_pick_validation._make_scene`
-对 `die_01` / `mug_02` / `block_01` 的场景配置逐字段相同；同一 candidate 两种顺序物化，先得结果与 candidate 都不变；F0 playground
-seed 0–4 的 certify 结果逐实例相同。
-
-#### 步骤合并为运行时一份
-
-`SkillIntentSpec` / `SkillIntentSequenceSpec`、`scenario/intents.py` 的 builder、`to_legacy_skills` 与
-`validators.validate_skill_intent_sequence` 已删除；`steps_to_intents` 改名 `steps_to_skills`，直接返回 `list[Skill]` 与目标帧。
-`validate_skill_intent_sequence` 的检查在 plan 文件与 agent 两条路径上都已由 `steps_to_skills` 先做（schema、未知物体与目标、
-持物顺序），所以删除它不改变任何输入的结果；`asset_pick_validation._make_task` 直接建 `Skill`。`ScenarioRuntimePackage` 不再有
-`scenario_intents`（没有读者），candidate 的 `intents` 改为 `skills`。`to_step_bindings`（plan，按成功树）与 `bindings_from_steps`
-（agent，按步骤与当前持物）改收 `list[Skill]`，算法不变。
-
-等价范围：140 份加载结果逐字段相同；10 组固定步骤输入（pick / place / open / close、显式抬升、带物续跑、放到物体上、未知物体与
-目标、连续 pick、空手 place、schema 错误）的技能字段、目标帧、两种绑定规则（含 on / any / not / 嵌套 all 四种成功树）、agent 回复
-路径与异常类型、消息和 cause 都与改动前相同；`_make_task` 对三个资产的任务相同；同一 candidate 两种顺序物化，先得结果与
-candidate 都不变，两次 plan 物化不共享技能或参数；F0 playground seed 0–4 的 certify 结果逐实例相同。
-
-#### 合并为一个 Scenario
-
-`ScenarioCandidate`、`ScenarioRuntimePackage`、`load_candidate`、`materialize_candidate` 与 `scenario_runtime/loader.py`、
-`materialize.py` 已删除，`legacy_scene` / `legacy_task` 改名 `scene` / `task`。`load_scenario` 直接返回 `Scenario`：plan 模式在加载里
-填技能并求 `to_step_bindings`，agent 模式换上全部 place 目标；`relation_params` 与 `CONTACT_TOL_M` 移到 `scenario/adapters.py`，
-使 `load` 单向依赖它；`scenario/validators.py` 并入 `load`（`ValidationError`、`check_object_ids`、`check_task`）。
-
-等价范围：140 份加载结果逐字段相同；schema 错误、重复物体 id、成功树未知名字、无效步骤、plan 文件多余键、place 与成功树矛盾
-六类坏输入在两种模式下的异常类型、消息与 cause 相同（矛盾只在 plan 模式报 `SolveError`，agent 模式照常加载）；先 plan 后 agent、
-先 agent 后 plan、两次 plan 三种顺序下，先得结果不变、不共享可变对象，一次失败的加载也不改变先前结果；F0 playground seed 0–4 的 certify 结果逐实例相同。
-
-目标与各概念的 owner：
-
-| 概念 | owner | 删除 |
-|---|---|---|
-| 一个场景在一个 seed 下的全部运行时输入 | `scenario.load.Scenario` | 已完成 |
-| 场景（物体、桌子、相机） | `scenes.config.SceneConfig` | 已完成 |
-| place 目标 | `Scenario.target_frames: dict[str, FrameRef]` | 已完成 |
-| 成功判定树 | `tasks.task_spec.SuccessNode` | 已完成 |
-| 任务 | `tasks.task_spec.TaskSpec` | 已完成 |
-| 一步 | `skills.base.Skill` | 已完成 |
-| 加载期检查 | `scenario.load` | 已完成：`validators` 并入 `load`，作者侧校验删除 |
-
-`Scenario` 的契约：
-
-- `load_scenario(path, *, seed, agent_plan=False)` 是唯一构造者，一次建成，`SimEnv.build` 之前就绪，之后没有写者。
-  certify 改起点写的是 `env.placed_map`，不碰它。加载失败照旧抛 jsonschema `ValidationError`、`SolveError`、`PlanInvalid`、
-  `AssetNotAdmitted`。
-- 字段：`source_path`；`scene: SceneConfig`；`task: TaskSpec`（plan 文件路径下 `skills` 与 `step_bindings` 已填，`agent_plan=True` 时为空）；
-  `target_frames`（`agent_plan=True` 时含全部 place 目标）。
-- 迁移不改的行为：certify 的 init / stopped / 任务判定分支与 `certified` 的汇总留在 `certify.run_instance`；任务判定照旧传
-  `window=run.window`，不传时 `evaluate_scenario_task` 会再 settle 一次。
-- 等价依据：同一 `(path, seed, agent_plan)` 下新旧两边的场景配置、`task.to_dict()`、`step_bindings`、`target_frames` 与 agent 收到的
-  物体列表和请求文本逐字段相同；动到运行时的一步再加 F0 playground main 与分支逐实例 certify 结果相同。
+  `resolve_static_target_positions` 按 `target_frames` 对活世界求出的那些。按 region 随机摆放只有单资产试抓入口一处，它直接建带
+  `position_range` 的 `SceneConfig`，每次 reset 重新采样位置。
+- `ObjectPlacement.count` 在 YAML 场景恒为 1，但 `scenes/backend.py` 按它摆放多份（`tests/test_scenes.py` 用到 5 与 20）。
 
 ## 一个技能：候选、整条轨迹、过门
 
