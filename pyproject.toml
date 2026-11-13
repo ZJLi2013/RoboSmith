@@ -24,3 +24,6 @@ eval = [
     "inspect-robots @ git+https://github.com/robocurve/inspect-robots@772019598e42ccc7921a043dee3a2ea2692020ea",
     "inspect-robots-agent @ git+https://github.com/robocurve/inspect-robots@772019598e42ccc7921a043dee3a2ea2692020ea#subdirectory=plugins/inspect-robots-agent",
 ]
+
+[tool.hatch.metadata]
+allow-direct-references = true
