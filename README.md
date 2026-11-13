@@ -77,6 +77,14 @@ put the pen into the holder   10/10      2/10     never: grasped ×5 · never: i
 Results are measured in a twin, not on a real robot. Out of scope: curated benchmark suites, policy training,
 sim-to-real research.
 
+## Acknowledgments
+
+The evaluation layer's interface and its first evaluatee come from
+[Inspect Robots](https://github.com/robocurve/inspect-robots) (robocurve, MIT): RoboSmith implements its `Embodiment`
+protocol to turn a scenario into an exam, and runs its `agent` policy unchanged as the first external evaluatee.
+RoboSmith judges from the simulation itself and does not use Inspect Robots' scoring. The version used is pinned at
+`7720195`; see [Evaluation](docs/evaluation.md#inspect-robots-在-robosmith-里的位置).
+
 ## Docs
 
 [Quick start](docs/quick-start.md) · [Design](docs/design.md) · [Evaluation](docs/evaluation.md) · [Call chain](docs/call-chain.md) ·

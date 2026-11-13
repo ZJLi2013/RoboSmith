@@ -18,6 +18,20 @@ Inspect Robots 的 `Embodiment` 协议同时接 VLA、code-as-policy 与 LLM age
 各自已有的适配层。选它作第一个被测方，是因为同类开源 agent（ORA、CaPtain、uni-robot-agent、RPent、ASPIRE、RoboRSI）都靠 RGB
 加 SAM3 或 VLM 看图感知，无图像观测下要换掉感知模块，等于改策略本身；这个 `agent` 不看图也能跑。
 
+## Inspect Robots 在 RoboSmith 里的位置
+
+[Inspect Robots](https://github.com/robocurve/inspect-robots)（robocurve，MIT）是一个机器人策略评测框架：一个 benchmark 接任意
+策略与任意真机或仿真。RoboSmith 只用它的两样东西：
+
+| 用 | 不用 |
+|---|---|
+| `Embodiment` 协议，当考场的机器人层接口；RoboSmith 只实现考场一侧（`robotsmith/eval/embodiment.py`） | 它的评分与 benchmark：成败与违规全由 RoboSmith 读仿真判，它的 scorer 只挂一个计步数的占位 |
+| `agent` 插件，当第一个被测方，原样安装、不打补丁 | 它的日志不进判卷，只作被测方自己的记录留在 `inspect/` 下 |
+
+它是可选依赖（`pip install -e ".[eval]"`），核心包与 certify 都不依赖它。它还是 alpha、API 会变，所以版本钉在 `7720195`
+（2026-11-04，`v1.0.0` 之后 5 个提交），升级要显式换版本。适配只在 `robotsmith/eval/embodiment.py` 一个文件里，换框架的影响面也
+在这里。
+
 ## 考生看到什么、能做什么
 
 - **任务**：一句指令，F0 是 `Put the die on the mat.`。成功判定（骰子落在垫子顶面多大范围内、容差多少）只在场景 YAML 里，考生看不到。

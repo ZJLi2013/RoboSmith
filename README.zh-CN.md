@@ -70,6 +70,12 @@ task                 certified  success  failures
 
 结果在孪生里测得，不代表真机表现。不在范围内：精选 benchmark 套件、策略训练、sim2real 研究。
 
+## 致谢
+
+评测层的接口与第一个被测方来自 [Inspect Robots](https://github.com/robocurve/inspect-robots)（robocurve，MIT）：RoboSmith
+实现它的 `Embodiment` 协议，把场景变成考场；它的 `agent` 策略原样作为第一个外部被测方。判卷由 RoboSmith 读仿真完成，不用它的
+评分。使用的版本钉在 `7720195`，见[评测](docs/evaluation.md#inspect-robots-在-robosmith-里的位置)。
+
 ## 文档
 
 [Quick start](docs/quick-start.md) · [设计](docs/design.md) · [评测](docs/evaluation.md) · [调用链](docs/call-chain.md) ·
