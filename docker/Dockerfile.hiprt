@@ -1,0 +1,78 @@
+# RoboSmith ROCm runtime for GPU rendering with hipRT_render — Genesis 1.4.6.
+#
+# hipRT_render is not public, so it is not in this image: mount a checkout and
+# run scripts/setup/hiprt.sh once (docker/README.md). Without it the image still
+# renders through Genesis' own camera under Xvfb, like the other two images.
+#
+# Measured on MI325X (gfx942). The entrypoint is copied in rather than written
+# with a heredoc, so the image also builds without BuildKit.
+#
+# Build from the repository root:
+#   docker build -f docker/Dockerfile.hiprt -t robotsmith:hiprt-rocm7.2.4-genesis1.4.6 .
+ARG BASE_IMAGE=rocm/pytorch:rocm7.2.4_ubuntu24.04_py3.12_pytorch_release_2.9.1
+FROM ${BASE_IMAGE}
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DISPLAY=:99
+ENV ROBOSMITH_HEADLESS=xvfb
+ENV PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    build-essential \
+    ca-certificates \
+    cmake \
+    ffmpeg \
+    git \
+    libgl1 \
+    libgl1-mesa-dri \
+    libglib2.0-0 \
+    libglx-mesa0 \
+    libgomp1 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
+    mesa-utils \
+    ninja-build \
+    pkg-config \
+    rsync \
+    wget \
+    xauth \
+    xvfb \
+    && rm -rf /var/lib/apt/lists/*
+
+# Genesis 1.4.6 reads shared_memory_per_multiprocessor from the device
+# properties, which ROCm torch exposes from 2.11 on.
+RUN python -m pip install --index-url https://download.pytorch.org/whl/rocm7.2 \
+      torch==2.11.0 torchvision==0.26.0 torchaudio==2.11.0
+
+# Every later pip install is held to this ROCm torch; an unpinned dependency
+# would otherwise replace it with a CUDA wheel from PyPI.
+RUN python -c "import importlib.metadata as m; [print(f'{d.name}=={d.version}') for d in m.distributions() if d.name in ('torch', 'torchvision', 'torchaudio')]" \
+      > /etc/robosmith-torch.txt \
+    && cat /etc/robosmith-torch.txt
+ENV PIP_CONSTRAINT=/etc/robosmith-torch.txt
+
+RUN python -m pip install --upgrade pip wheel \
+    && python -m pip install "genesis-world==1.4.6"
+
+WORKDIR /workspace/robotsmith
+
+COPY pyproject.toml ./
+COPY robotsmith ./robotsmith
+COPY scripts ./scripts
+COPY tests ./tests
+
+# Without the [genesis] extra, so the Genesis pinned above stays.
+RUN python -m pip install -e ".[dev]" \
+    && python -m pip install \
+      addict einops h5py hydra-core imageio lerobot meshcat "networkx>=3.0" \
+      omegaconf "pyglet>=1.5,!=2.1.8" PyOpenGL==3.1.5 scipy scikit-learn \
+      tensorboard tensorboardx timm webdataset yapf==0.40.1 \
+      yourdfpy==0.0.56
+
+COPY docker/robotsmith-headless.sh /usr/local/bin/robotsmith-headless
+RUN chmod +x /usr/local/bin/robotsmith-headless
+
+ENTRYPOINT ["robotsmith-headless"]
+CMD ["bash"]
