@@ -41,4 +41,10 @@ The env file keeps the HIPRT source tree on the path because hiprtc reads its ke
 compiled bridge in `.torch_ext/`, so only the first `bind()` in a checkout spends about two minutes compiling.
 
 With the env file sourced, a Genesis scene renders through `instinct_render.genesis.HiprtRenderer(...).bind(scene)`.
-Without hipRT_render the image still renders through Genesis' own camera.
+One frame of a scenario's overview camera, with its time per frame:
+
+```bash
+python scripts/acceptance/render_frame.py --scenario scenarios/acceptance/f0_open.yaml --seed 0 --renderer hiprt --out f0.png
+```
+
+`--renderer genesis` uses Genesis' own camera instead, which needs no hipRT_render.
