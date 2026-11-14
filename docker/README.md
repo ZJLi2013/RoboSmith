@@ -8,7 +8,9 @@ One image per GPU architecture, plus one for GPU rendering through hipRT_render.
 | MI350 (gfx950) | `[genesis]` extra, unpinned | Genesis camera (CPU raster under Xvfb) | `docker build -f docker/Dockerfile.gfx950 -t robotsmith:rocm-headless .` |
 | hipRT (gfx942) | 1.4.6 | Genesis camera, or hipRT_render on the GPU | `docker build -f docker/Dockerfile.hiprt -t robotsmith:hiprt-rocm7.2.4-genesis1.4.6 .` |
 
-The first two images are the default: certify was measured on them, and they need nothing that is not public.
+The first two images are the default: certify was measured on them, and they need nothing that is not public. On the
+hipRT image, F0 playground seeds 0–9 certify instance by instance as on the gfx942 image (10/10 each, measured on MI325X);
+the other families are not compared yet.
 
 [`docs/quick-start.md`](../docs/quick-start.md) covers the first run.
 
