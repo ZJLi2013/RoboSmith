@@ -21,7 +21,8 @@ Headless rendering policy:
 
 ## GPU rendering with hipRT_render (gfx942)
 
-`Dockerfile.hiprt` is ROCm 7.2.4, Python 3.12, torch 2.9.1 and Genesis 1.4.6 with Quadrants 1.4.0. hipRT_render is
+`Dockerfile.hiprt` is ROCm 7.2.4, Python 3.12, torch 2.11 and Genesis 1.4.6 with Quadrants 1.4.0 (Genesis 1.4.6 needs
+torch 2.11 on ROCm: earlier builds lack a device property its rigid solver reads). hipRT_render is
 not public yet, so it is not in the image: mount a checkout and build HIPRT into it once.
 
 ```bash

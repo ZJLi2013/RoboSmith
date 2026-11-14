@@ -41,8 +41,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xvfb \
     && rm -rf /var/lib/apt/lists/*
 
-# Every later pip install is held to the base image's ROCm torch; an unpinned
-# dependency would otherwise replace it with a CUDA wheel from PyPI.
+# Genesis 1.4.6 reads shared_memory_per_multiprocessor from the device
+# properties, which ROCm torch exposes from 2.11 on.
+RUN python -m pip install --index-url https://download.pytorch.org/whl/rocm7.2 \
+      torch==2.11.0 torchvision==0.26.0 torchaudio==2.11.0
+
+# Every later pip install is held to this ROCm torch; an unpinned dependency
+# would otherwise replace it with a CUDA wheel from PyPI.
 RUN python -c "import importlib.metadata as m; [print(f'{d.name}=={d.version}') for d in m.distributions() if d.name in ('torch', 'torchvision', 'torchaudio')]" \
       > /etc/robosmith-torch.txt \
     && cat /etc/robosmith-torch.txt
