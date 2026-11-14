@@ -1,11 +1,14 @@
 # RoboSmith Docker
 
-One image per GPU architecture. Build from the repository root:
+One image per GPU architecture, plus one for GPU rendering through hipRT_render. Build from the repository root:
 
-| GPU | Command |
-|---|---|
-| MI300 (gfx942) | `docker build -f docker/Dockerfile.gfx942 -t robotsmith:gfx942-rocm6.4.3-genesis0.4.5 .` |
-| MI350 (gfx950) | `docker build -f docker/Dockerfile.gfx950 -t robotsmith:rocm-headless .` |
+| Image | Genesis | Renders with | Command |
+|---|---|---|---|
+| MI300 (gfx942) | 0.4.5 | Genesis camera (CPU raster under Xvfb) | `docker build -f docker/Dockerfile.gfx942 -t robotsmith:gfx942-rocm6.4.3-genesis0.4.5 .` |
+| MI350 (gfx950) | `[genesis]` extra, unpinned | Genesis camera (CPU raster under Xvfb) | `docker build -f docker/Dockerfile.gfx950 -t robotsmith:rocm-headless .` |
+| hipRT (gfx942) | 1.4.6 | Genesis camera, or hipRT_render on the GPU | `docker build -f docker/Dockerfile.hiprt -t robotsmith:hiprt-rocm7.2.4-genesis1.4.6 .` |
+
+The first two images are the default: certify was measured on them, and they need nothing that is not public.
 
 [`docs/quick-start.md`](../docs/quick-start.md) covers the first run.
 
@@ -13,31 +16,28 @@ Headless rendering policy:
 
 - Use `Xvfb`/GLX for Genesis camera rendering; the entrypoint starts Xvfb.
 - Do not set `PYOPENGL_PLATFORM=egl`.
-- The gfx942 image keeps `HSA_OVERRIDE_GFX_VERSION=9.4.2` set; the gfx950 image unsets it.
+- The gfx942 image keeps `HSA_OVERRIDE_GFX_VERSION=9.4.2` set; the gfx950 and hipRT images unset it.
 - Asset build files are not in git; run `python -m robotsmith.assets.fetch` before mounting the repository.
 
-## Genesis 1.4 and hipRT on gfx942 (not yet the default)
+## GPU rendering with hipRT_render (gfx942)
 
-Genesis 1.4.6 with Quadrants 1.4.0 builds and steps the F0 acceptance scene on MI300X without code changes, and
-hipRT_render's Genesis front end renders its up camera (640×480, direct lighting) in about 8 ms. Certify has not yet
-been compared instance by instance against Genesis 0.4.5, so the images above stay the default.
-
-The environment is a venv on top of a ROCm 7.2.4 image with Python 3.12 and torch 2.11 in `/opt/venv` (measured on
-`zhengjli/hiprt-robotwin:rocm724-t3`, a locally built hipRT_render image):
+`Dockerfile.hiprt` is ROCm 7.2.4, Python 3.12, torch 2.9.1 and Genesis 1.4.6 with Quadrants 1.4.0. hipRT_render is
+not public yet, so it is not in the image: mount a checkout and build HIPRT into it once.
 
 ```bash
-docker run -d --name robotsmith-g14 --device /dev/kfd --device /dev/dri --group-add video --ipc host --shm-size 32g \
-  --security-opt seccomp=unconfined -v /data:/data zhengjli/hiprt-robotwin:rocm724-t3
-python -m venv /data/robosmith/venv
-echo /opt/venv/lib/python3.12/site-packages > /data/robosmith/venv/lib/python3.12/site-packages/_opt_venv.pth
-/data/robosmith/venv/bin/pip install genesis-world==1.4.6 jsonschema imageio
-/data/robosmith/venv/bin/pip install --no-deps -e /data/robosmith/RoboSmith
+docker run -it --rm --device /dev/kfd --device /dev/dri --group-add video --ipc host --shm-size 32g \
+  --security-opt seccomp=unconfined -v "$PWD":/workspace/robotsmith -v /path/to/hipRT_render:/opt/hipRT_render \
+  robotsmith:hiprt-rocm7.2.4-genesis1.4.6
+
+bash scripts/setup/hiprt.sh /opt/hipRT_render   # first run builds HIPRT from source; later runs reuse it
+source /opt/hipRT_render/robosmith-hiprt.env
 ```
 
-- `/opt/venv` is itself a venv, so `--system-site-packages` does not see its torch; the `.pth` line does. Installing
-  torch from PyPI instead would replace the ROCm build.
-- hipRT_render needs both `third_party/hiprt_install` and the HIPRT source tree `third_party/HIPRT` (HIPRT `e3c01fc`
-  with the repository's patches): hiprtc reads the BVH kernel sources at run time, and without them `bind()` fails
-  with `hiprtBuildGeometries: hiprtError=2`.
-- The first `bind()` compiles the bridge and the kernel (about 60 s); set `TORCH_EXTENSIONS_DIR` to a persistent
-  directory to keep the build.
+`hiprt.sh` writes only the checkout's `third_party/`, `.torch_ext/` and `robosmith-hiprt.env`, so give each container
+its own checkout. It clones HIPRT at `e3c01fc`, applies hipRT_render's patches and builds it; it reuses the build while
+the HIPRT commit, the patches and the ROCm version are unchanged, and refuses a `third_party/HIPRT` at another commit.
+The env file keeps the HIPRT source tree on the path because hiprtc reads its kernel sources at run time, and keeps the
+compiled bridge in `.torch_ext/`, so only the first `bind()` in a checkout spends about a minute compiling.
+
+With the env file sourced, a Genesis scene renders through `instinct_render.genesis.HiprtRenderer(...).bind(scene)`.
+Without hipRT_render the image still renders through Genesis' own camera.
