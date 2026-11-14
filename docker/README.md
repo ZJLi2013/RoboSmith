@@ -38,7 +38,7 @@ source /opt/hipRT_render/robosmith-hiprt.env
 its own checkout. It clones HIPRT at `e3c01fc`, applies hipRT_render's patches and builds it; it reuses the build while
 the HIPRT commit, the patches and the ROCm version are unchanged, and refuses a `third_party/HIPRT` at another commit.
 The env file keeps the HIPRT source tree on the path because hiprtc reads its kernel sources at run time, and keeps the
-compiled bridge in `.torch_ext/`, so only the first `bind()` in a checkout spends about a minute compiling.
+compiled bridge in `.torch_ext/`, so only the first `bind()` in a checkout spends about two minutes compiling.
 
 With the env file sourced, a Genesis scene renders through `instinct_render.genesis.HiprtRenderer(...).bind(scene)`.
 Without hipRT_render the image still renders through Genesis' own camera.

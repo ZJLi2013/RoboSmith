@@ -32,7 +32,8 @@ Build from the repository root (`cd $HOME/RoboSmith`) with the image for your GP
 | MI350 (gfx950) | `docker build -f docker/Dockerfile.gfx950 -t robotsmith:rocm-headless .` |
 
 gfx942 uses its own older stack (ROCm 6.4.3, Genesis 0.4.5), the one its certify results were measured on; Genesis 1.4
-runs there too but is not yet compared ([docker/README.md](../docker/README.md#genesis-14-and-hiprt-on-gfx942-not-yet-the-default)).
+runs there too, with GPU rendering through hipRT_render, but its certify is not yet compared
+([docker/README.md](../docker/README.md#gpu-rendering-with-hiprt_render-gfx942)).
 The commands below use the gfx942 tag; on MI350 use `robotsmith:rocm-headless`.
 
 ## 3. Certify one acceptance instance
