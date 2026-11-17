@@ -109,7 +109,7 @@ pick 已走过物理步之后组合即提交：place 被拒时 `EpisodeRun` 记 
 ### 抓取候选与诊断请求
 
 `GeometricGraspPlanner.candidates(world_points, category, com=None)`（`grasp/geometric.py`）按闭合宽度从窄到宽，对每个
-开口放得下的水平轴给顶抓，再给侧抓。`plan()` 把资产点云平移到惯性原点后传入 `com=object_pos`（Genesis 报告的位置就是质心）；
+开口放得下的水平轴给顶抓，再给侧抓。`plan()` 把资产点云放到 Genesis 报告的位姿（基座 link 原点），质心取该位姿加旋转后的 URDF 惯性原点，传入 `com`；
 不传时用有向包围盒中心与中高。
 
 - 顶抓的高度：TCP 先在质心高度，再在指垫能整体放进物体的最浅处，两档都夹在
@@ -375,7 +375,7 @@ playground 读到 1 GPU·h 截止，完成的 9 个实例全部 `search_exhauste
   该候选不过），抬升、下放、退回与拖拽 `keep`（路径照样送门）。
 - `SimEnv.posed(qpos, objects)` 是不步进的摆放事务。Genesis 的 `scene.reset(scene.get_state())` 会丢掉上次 step 之后的
   `set_pos` / `set_dofs_position`，所以事务里每次查询的快照还原之后都重放摆放；事务期间指纹带事务序号，里面签发的凭证在事务外不当前。
-- `SimEnv` 的三个查询已在 Genesis 0.4.5（MI300X、F1 场景）上实测，测试在 `tests/test_sim_queries_gpu.py`：
+- `SimEnv` 的三个查询已在 Genesis 0.4.5（MI300X）与 1.4.6（MI325X）的 F1 场景上实测，测试在 `tests/test_sim_queries_gpu.py`：
   - `set_dofs_position` 摆好构型后，`rigid_solver.detect_collision()` 直接反映新构型；交替查询相交 / 分离构型不沿用上一次结果。
     持物按 `set_pos` / `set_quat` 摆到手位姿 · T 后同样即时生效。
   - 快照事务 `scene.get_state()` / `scene.reset(state)` 还原后指纹不变，查询抛异常时也还原。

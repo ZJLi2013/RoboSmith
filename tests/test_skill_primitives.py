@@ -600,3 +600,16 @@ class TestDragHandleMotion:
         assert ex.last_motion_trace["action"] == "open"
         # The hand ends translated by +0.30 in x then lifted (retreat height).
         assert traj[-1][0] == pytest.approx(0.55 + 0.30, abs=1e-6)
+
+
+def test_held_place_z_measures_from_the_bottom_of_an_object_whose_link_origin_is_its_bottom(tmp_path):
+    from robotsmith.skills.rule_policy import _held_place_z
+
+    urdf = tmp_path / "model.urdf"
+    urdf.write_text('<robot name="b"><link name="base"><inertial><origin xyz="0 0 0.012"/><mass value="0.05"/>'
+                    "</inertial></link></robot>", encoding="utf-8")
+    ctx = SimpleNamespace(skill=SimpleNamespace(target="block"), obj_pos=np.array([0.5, 0.1, 0.775]),
+                          scene_state={"object_heights": {"block": 0.024},
+                                       "assets": {"block": SimpleNamespace(urdf_path=urdf)}})
+    plan = SimpleNamespace(grasp_pos=np.array([0.5, 0.1, 0.89]))
+    assert _held_place_z(ctx, plan) == pytest.approx(0.89 - 0.775)

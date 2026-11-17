@@ -17,7 +17,7 @@ dependencies = [
 
 [project.optional-dependencies]
 sim = ["torch>=2.0"]
-genesis = ["genesis-world>=0.2"]
+genesis = ["genesis-world==1.4.6"]
 lerobot = ["lerobot"]
 dev = ["pytest>=8.0"]
 eval = [

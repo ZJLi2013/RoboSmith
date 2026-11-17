@@ -94,9 +94,9 @@ def _bottle_urdf(tmp_path, inertial_rpy="0 0 0"):
     return type("A", (), {"urdf_path": urdf, "root_dir": urdf.parent})()
 
 
-def test_geometric_plan_places_the_urdf_relative_to_the_inertial_origin_genesis_reports(tmp_path):
+def test_geometric_plan_places_the_urdf_at_the_link_origin_genesis_reports_and_grasps_at_the_com(tmp_path):
     yaw90 = np.array([np.cos(np.pi / 4), 0, 0, np.sin(np.pi / 4)])
-    plans = GeometricGraspPlanner().plan(np.array([0.5, 0.1, 0.875]), yaw90, asset=_bottle_urdf(tmp_path))
+    plans = GeometricGraspPlanner().plan(np.array([0.5, 0.1, 0.775]), yaw90, asset=_bottle_urdf(tmp_path))
     assert sorted({round(p.metadata["closing_width"], 4) for p in plans}) == [0.03, 0.06]
     top = plans[0].metadata["tip_pos"]
     assert top[:2] == pytest.approx([0.5, 0.1])

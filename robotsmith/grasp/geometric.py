@@ -65,11 +65,12 @@ class GeometricGraspPlanner(GraspPlanner):
 
     def plan(self, object_pos, object_quat=None, *, category="block", asset: Any = None) -> list[GraspPlan]:
         rot = np.eye(3) if object_quat is None else quat_wxyz_to_matrix(np.asarray(object_quat, dtype=np.float64))
-        local = derive.visual_points(asset.urdf_path) - derive.inertial_origin(asset.urdf_path)
-        world = local @ rot.T + np.asarray(object_pos, dtype=np.float64)
+        pos = np.asarray(object_pos, dtype=np.float64)
+        world = derive.visual_points(asset.urdf_path) @ rot.T + pos
+        com = pos + rot @ derive.inertial_origin(asset.urdf_path)
         written = [self._plan("annotation", *annotations.to_world(c, object_pos, object_quat), 0.0, category)
                    for c in annotations.current_grasps(asset.root_dir)]
-        plans = written + self.candidates(world, category, com=object_pos)
+        plans = written + self.candidates(world, category, com=com)
         for k, p in enumerate(plans):
             p.metadata["candidate_index"] = k
         self.last_plans = plans

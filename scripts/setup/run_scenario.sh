@@ -12,7 +12,7 @@ set -eu
 
 NAME="${NAME:-mug_on_mat}"
 SCENARIO="${SCENARIO:-scenarios/pick_place_mug_on_mat.yaml}"
-IMAGE="${IMAGE:-robotsmith:gfx942-rocm6.4.3-genesis0.4.5}"
+IMAGE="${IMAGE:-robotsmith:hiprt-rocm7.2.4-genesis1.4.6}"
 SEED="${SEED:-0}"
 EPISODES="${EPISODES:-1}"
 REPO="${REPO:-$(cd "$(dirname "$0")/../.." && pwd)}"

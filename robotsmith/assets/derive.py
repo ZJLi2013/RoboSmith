@@ -54,7 +54,8 @@ def link_transforms(urdf_path: Path) -> dict[str, np.ndarray]:
 
 
 def inertial_origin(urdf_path: Path) -> np.ndarray:
-    """Root link's inertial origin in the asset frame; Genesis reports a free object's position here."""
+    """Root link's inertial origin in the asset frame. Genesis 1.4 reports a free object's position at the root link
+    origin, so the centre of mass is that position plus this offset rotated by the object's orientation."""
     root = ET.parse(urdf_path).getroot()
     children = {j.find("child").get("link") for j in root.findall("joint")}
     base = next(link for link in root.findall("link") if link.get("name", "") not in children)
