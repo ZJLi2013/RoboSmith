@@ -11,6 +11,8 @@ from dataclasses import replace
 
 import numpy as np
 
+from robotsmith.assets import derive
+from robotsmith.assets.geometry import rotate_vec_wxyz
 from robotsmith.execution.gate import ExecutionFailed, MotionRejected, Refused, VerifiedMotion
 from robotsmith.grasp.planner import GraspPlan
 from robotsmith.grasp.transforms import pose_matrix
@@ -115,7 +117,15 @@ def _held_place_z(ctx: SkillContext, plan: GraspPlan) -> float:
     # surface* (object bottom = center − half-height), NOT above the table. A
     # later place re-adds this to the destination marker's world z so the object
     # bottom lands on that surface — correct for table→table AND shelf→shelf.
-    # For a tabletop pick this equals the old (grasp_z − table_z).
-    obj_h = float(ctx.scene_state.get("object_heights", {}).get(ctx.skill.target, 0.0) or 0.0)
-    support_z = float(ctx.obj_pos[2]) - obj_h / 2.0
+    # For a tabletop pick this equals the old (grasp_z − table_z). The reported
+    # pose is the base link origin; the center is offset from it by the URDF
+    # inertial origin.
+    target = ctx.skill.target
+    obj_h = float(ctx.scene_state.get("object_heights", {}).get(target, 0.0) or 0.0)
+    center_z = float(ctx.obj_pos[2])
+    asset = ctx.scene_state.get("assets", {}).get(target)
+    if asset is not None:
+        quat = ctx.scene_state.get("object_quats", {}).get(target, [1.0, 0.0, 0.0, 0.0])
+        center_z += float(rotate_vec_wxyz(quat, derive.inertial_origin(asset.urdf_path))[2])
+    support_z = center_z - obj_h / 2.0
     return max(float(plan.grasp_pos[2]) - support_z, 0.0)
