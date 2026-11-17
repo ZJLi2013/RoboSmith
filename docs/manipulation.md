@@ -109,7 +109,7 @@ pick 已走过物理步之后组合即提交：place 被拒时 `EpisodeRun` 记 
 ### 抓取候选与诊断请求
 
 `GeometricGraspPlanner.candidates(world_points, category, com=None)`（`grasp/geometric.py`）按闭合宽度从窄到宽，对每个
-开口放得下的水平轴给顶抓，再给侧抓。`plan()` 把资产点云平移到惯性原点后传入 `com=object_pos`（Genesis 报告的位置就是质心）；
+开口放得下的水平轴给顶抓，再给侧抓。`plan()` 把资产点云放到 Genesis 报告的位姿（基座 link 原点），质心取该位姿加旋转后的 URDF 惯性原点，传入 `com`；
 不传时用有向包围盒中心与中高。
 
 - 顶抓的高度：TCP 先在质心高度，再在指垫能整体放进物体的最浅处，两档都夹在

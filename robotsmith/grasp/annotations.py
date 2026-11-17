@@ -1,7 +1,7 @@
 """Grasps written back to an asset after a repair lifted it in simulation.
 
 ``asset.json`` stores them as the ``grasp_candidates`` annotation, in the object frame the simulator reports
-(the base link's inertial origin). They are used only while a passing ``trial_grasp`` check is current for
+(the base link origin). They are used only while a passing ``trial_grasp`` check is current for
 the asset's revision, build files and embodiment; a rebuild or another robot drops them.
 """
 
@@ -57,7 +57,7 @@ def write_grasp(asset_dir: Path, candidate: dict, object_pos, object_quat, *, li
     """Record ``candidate`` (world frame, as passed to the trial) and the trial that lifted it."""
     data = store.read_asset(asset_dir)
     local = to_local(candidate["tip_xyz"], candidate["approach"], candidate["finger_axis"], object_pos, object_quat)
-    value = {"frame": "object pose reported by the simulator (base link inertial origin), metres",
+    value = {"frame": "object pose reported by the simulator (base link origin), metres",
              "embodiment": embodiment, "asset_revision": data["revision"], "build_hash": data["build"]["hash"],
              "candidates": [{**local, "ik_seed": candidate.get("ik_seed")}]}
     store.set_annotation(asset_dir, ANNOTATION, value, by=by, note=f"repair verified by trial: {run}")

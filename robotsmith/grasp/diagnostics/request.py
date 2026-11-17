@@ -104,7 +104,7 @@ def evidence(*, urdf_path: Path, category: str, pos, quat, aabb, table_z: float,
 
     T = np.eye(4)
     T[:3, :3] = quat_wxyz_to_matrix(np.asarray(quat, dtype=np.float64))
-    T[:3, 3] = np.asarray(pos, dtype=np.float64) - T[:3, :3] @ derive.inertial_origin(urdf_path)
+    T[:3, 3] = np.asarray(pos, dtype=np.float64)
     world = derive.visual_mesh(urdf_path).apply_transform(T)
     mass = float(ET.parse(urdf_path).getroot().find(".//inertial/mass").get("value"))
     by_idx = {p.metadata.get("candidate_index"): p for p in plans}
