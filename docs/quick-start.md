@@ -28,19 +28,19 @@ Build from the repository root (`cd $HOME/RoboSmith`) with the image for your GP
 
 | GPU | Build |
 |---|---|
-| MI300 (gfx942) | `docker build -f docker/Dockerfile.gfx942 -t robotsmith:gfx942-rocm6.4.3-genesis0.4.5 .` |
+| MI300 (gfx942) | `docker build -f docker/Dockerfile.hiprt -t robotsmith:hiprt-rocm7.2.4-genesis1.4.6 .` |
 | MI350 (gfx950) | `docker build -f docker/Dockerfile.gfx950 -t robotsmith:rocm-headless .` |
 
-gfx942 uses its own older stack (ROCm 6.4.3, Genesis 0.4.5), the one its certify results were measured on; Genesis 1.4
-runs there too, with GPU rendering through hipRT_render, and certifies F0 playground 0–9 as 0.4.5 does; the other
-families are not compared yet ([docker/README.md](../docker/README.md#gpu-rendering-with-hiprt_render-gfx942)).
-The commands below use the gfx942 tag; on MI350 use `robotsmith:rocm-headless`.
+Both run Genesis 1.4.6; the gfx942 image renders with Genesis' camera unless a hipRT_render checkout is mounted
+([docker/README.md](../docker/README.md#gpu-rendering-with-hiprt_render-gfx942), which also has the retired Genesis
+0.4.5 image and how results differ from it). The commands below use the gfx942 tag; on MI350 use
+`robotsmith:rocm-headless`.
 
 ## 3. Certify one acceptance instance
 
 ```bash
 docker run --rm --device=/dev/kfd --device=/dev/dri --group-add video \
-  -v $HOME/RoboSmith:/workspace/robotsmith robotsmith:gfx942-rocm6.4.3-genesis0.4.5 \
+  -v $HOME/RoboSmith:/workspace/robotsmith robotsmith:hiprt-rocm7.2.4-genesis1.4.6 \
   bash -lc 'cd /workspace/robotsmith && python -m robotsmith.assets.fetch && \
             python scripts/acceptance/certify.py --scenario scenarios/acceptance/f0_open.yaml --split playground \
               --limit 1 --out output/f0'
@@ -82,7 +82,7 @@ To render a layout without rolling out:
 
 ```bash
 docker run --rm --device=/dev/kfd --device=/dev/dri --group-add video \
-  -v $HOME/RoboSmith:/workspace/robotsmith robotsmith:gfx942-rocm6.4.3-genesis0.4.5 \
+  -v $HOME/RoboSmith:/workspace/robotsmith robotsmith:hiprt-rocm7.2.4-genesis1.4.6 \
   bash -lc 'cd /workspace/robotsmith && python scripts/datagen/snapshot_scenario.py --scenario scenarios/pick_place_mug_on_mat.yaml'
 ```
 

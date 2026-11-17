@@ -4,13 +4,24 @@ One image per GPU architecture, plus one for GPU rendering through hipRT_render.
 
 | Image | Genesis | Renders with | Command |
 |---|---|---|---|
-| MI300 (gfx942) | 0.4.5 | Genesis camera (CPU raster under Xvfb) | `docker build -f docker/Dockerfile.gfx942 -t robotsmith:gfx942-rocm6.4.3-genesis0.4.5 .` |
-| MI350 (gfx950) | `[genesis]` extra, unpinned | Genesis camera (CPU raster under Xvfb) | `docker build -f docker/Dockerfile.gfx950 -t robotsmith:rocm-headless .` |
-| hipRT (gfx942) | 1.4.6 | Genesis camera, or hipRT_render on the GPU | `docker build -f docker/Dockerfile.hiprt -t robotsmith:hiprt-rocm7.2.4-genesis1.4.6 .` |
+| MI300 (gfx942), default | 1.4.6 | Genesis camera, or hipRT_render on the GPU | `docker build -f docker/Dockerfile.hiprt -t robotsmith:hiprt-rocm7.2.4-genesis1.4.6 .` |
+| MI350 (gfx950) | 1.4.6 (`[genesis]` extra) | Genesis camera (CPU raster under Xvfb) | `docker build -f docker/Dockerfile.gfx950 -t robotsmith:rocm-headless .` |
+| MI300 (gfx942), retired | 0.4.5 | Genesis camera (CPU raster under Xvfb) | `docker build -f docker/Dockerfile.gfx942 -t robotsmith:gfx942-rocm6.4.3-genesis0.4.5 .` |
 
-The first two images are the default: certify was measured on them, and they need nothing that is not public. On the
-hipRT image, F0 playground seeds 0–9 certify instance by instance as on the gfx942 image (10/10 each, measured on MI325X);
-the other families are not compared yet.
+The hipRT image needs nothing that is not public; without a hipRT_render checkout it renders with Genesis' camera.
+The 0.4.5 image is kept only to reproduce earlier results and is no longer maintained: Genesis 1.4 reports an
+object's pose at its base link origin where 0.4.5 reported its URDF inertial origin, and the code now reads the 1.4
+convention, so on 0.4.5 grasp and place heights are off by the inertial offset of any asset whose inertial origin
+is not at its link origin (12 mm for `block_01`).
+
+Per instance against the 0.4.5 image (MI325X; F0 block and mug, F1, F2 playground 0–9, F5 test 100–109):
+
+| Family | Same result | Differs |
+|---|---|---|
+| F0 die, F0 mug, F5 | 10/10 each | — |
+| F2 | 9/10 | seed 8 fails on both, `execution_failed` on 0.4.5, `task_failed` on 1.4.6 |
+| F1 | 9/10 | seed 3 certifies on 0.4.5, `task_failed` on 1.4.6 |
+| F0 block | 4/10 certified on 1.4.6, 9/10 on 0.4.5 | the block slips in the fingers on the way to the mat and touches it while held |
 
 [`docs/quick-start.md`](../docs/quick-start.md) covers the first run.
 
@@ -18,7 +29,7 @@ Headless rendering policy:
 
 - Use `Xvfb`/GLX for Genesis camera rendering; the entrypoint starts Xvfb.
 - Do not set `PYOPENGL_PLATFORM=egl`.
-- The gfx942 image keeps `HSA_OVERRIDE_GFX_VERSION=9.4.2` set; the gfx950 and hipRT images unset it.
+- The retired 0.4.5 image keeps `HSA_OVERRIDE_GFX_VERSION=9.4.2` set; the hipRT and gfx950 images unset it.
 - Asset build files are not in git; run `python -m robotsmith.assets.fetch` before mounting the repository.
 
 ## GPU rendering with hipRT_render (gfx942)
