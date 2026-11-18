@@ -11,7 +11,7 @@ from robotsmith.sim.franka import (
     ACTION_NAMES, STATE_NAMES,
     to_numpy, get_ee_state, compute_ee_delta,
 )
-from robotsmith.sim.sim_env import SimEnv, render_cam
+from robotsmith.sim.sim_env import SimEnv
 from robotsmith.tasks.task_spec import TaskSpec
 
 
@@ -120,11 +120,8 @@ def record_episode(
         ).astype(np.float32)
         ee_state = get_ee_state(env.end_effector, finger_vals)
 
-        images = {}
-        if "up" in camera_names:
-            images["observation.images.up"] = render_cam(env.cam_up)
-        if "wrist" in camera_names:
-            images["observation.images.wrist"] = render_cam(env.cam_wrist)
+        images = {f"observation.images.{name}": env.render(name)
+                  for name in ("up", "wrist") if name in camera_names}
 
         gripper_cmd = float(target_qpos[7])
         env.franka.control_dofs_position(target_qpos, env.motors_dof)

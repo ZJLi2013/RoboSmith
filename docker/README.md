@@ -67,7 +67,16 @@ the HIPRT commit, the patches and the ROCm version are unchanged, and refuses a 
 The env file keeps the HIPRT source tree on the path because hiprtc reads its kernel sources at run time, and keeps the
 compiled bridge in `.torch_ext/`, so only the first `bind()` in a checkout spends about two minutes compiling.
 
-With the env file sourced, a Genesis scene renders through `instinct_render.genesis.HiprtRenderer(...).bind(scene)`.
+The env file also exports `ROBOSMITH_RENDERER=hiprt`, and with it `SimEnv.render` draws both cameras (overview `up`
+and the hand-mounted `wrist`) through `instinct_render.genesis.HiprtRenderer` at the poses Genesis' cameras have.
+Unset, it uses Genesis' own cameras; set to `hiprt` without a working hipRT_render, rendering raises instead of
+falling back. A recorded scenario run reports the backend and the milliseconds per frame of each camera in
+`scenario_run_summary.json`; `HIPRT` mounts a checkout set up as above into `run_scenario.sh`'s container:
+
+```bash
+HIPRT=/path/to/hipRT_render bash scripts/setup/run_scenario.sh
+```
+
 One frame of a scenario's overview camera, with its time per frame:
 
 ```bash

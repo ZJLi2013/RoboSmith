@@ -87,14 +87,17 @@ def ensure_display():
         logger.debug("[display] Xvfb started (PID=%s)", proc.pid)
 
 
-def render_cam(cam) -> np.ndarray:
-    """Render an RGB image from a Genesis camera."""
-    rgb, _, _, _ = cam.render(rgb=True, depth=False,
-                              segmentation=False, normal=False)
-    arr = rgb.cpu().numpy() if hasattr(rgb, "cpu") else np.array(rgb)
-    if arr.ndim == 4:
-        arr = arr[0]
-    return arr.astype(np.uint8)
+CAMERA_RESOLUTION = (640, 480)
+CAMERA_FOV_DEG = {"up": 45.0, "wrist": 65.0}
+RENDERERS = ("genesis", "hiprt")
+
+
+def renderer_from_env() -> str:
+    """The backend ``ROBOSMITH_RENDERER`` names; Genesis' own cameras when unset."""
+    name = os.environ.get("ROBOSMITH_RENDERER") or "genesis"
+    if name not in RENDERERS:
+        raise ValueError(f"ROBOSMITH_RENDERER={name!r}; expected one of {RENDERERS}")
+    return name
 
 
 @dataclass
@@ -111,6 +114,11 @@ class SimEnv:
 
     cam_up: object = None
     cam_wrist: object = None
+    wrist_offset_T: object = None
+    """Wrist camera pose in the hand link frame; Genesis' attached camera and the hipRT wrist view both read it."""
+    renderer: str = "genesis"
+    render_stats: dict[str, list] = field(default_factory=dict)
+    """camera name -> [frames, seconds] spent in ``render``."""
     end_effector: object = None
     motors_dof: list[int] = field(default_factory=list)
     arm_dof: list[int] = field(default_factory=list)
@@ -132,6 +140,7 @@ class SimEnv:
     _writes: int = 0
     _posings: int = 0
     _posed: tuple | None = None
+    _hiprt: dict = field(default_factory=dict)
 
     # ---- Factory ----
 
@@ -153,6 +162,7 @@ class SimEnv:
         from robotsmith.scenes.backend import ProgrammaticSceneBackend
         from robotsmith.scenes.genesis_loader import load_resolved_scene
 
+        renderer = renderer_from_env()
         if gs_module is None:
             import genesis as gs_module  # noqa: N811
         gs = gs_module
@@ -196,16 +206,16 @@ class SimEnv:
         # Overview camera: single source of truth is the scenario's
         # SceneConfig.camera_position / camera_target. No env overrides.
         cam_up = handle.scene.add_camera(
-            res=(640, 480),
+            res=CAMERA_RESOLUTION,
             pos=tuple(scene_config.camera_position),
             lookat=tuple(scene_config.camera_target),
-            fov=45, GUI=False,
+            fov=CAMERA_FOV_DEG["up"], GUI=False,
         )
         cam_wrist = handle.scene.add_camera(
-            res=(640, 480),
+            res=CAMERA_RESOLUTION,
             pos=(0.05, 0.0, -0.08),
             lookat=(0.0, 0.0, 0.10),
-            fov=65, GUI=False,
+            fov=CAMERA_FOV_DEG["wrist"], GUI=False,
         )
 
         handle.scene.build()
@@ -252,6 +262,8 @@ class SimEnv:
             object_quats=object_quats,
             cam_up=cam_up,
             cam_wrist=cam_wrist,
+            wrist_offset_T=wrist_offset_T,
+            renderer=renderer,
             end_effector=end_effector,
             motors_dof=motors_dof,
             arm_dof=arm_dof,
@@ -297,6 +309,55 @@ class SimEnv:
         self._writes += 1
         if self.on_step is not None:
             self.on_step(self)
+
+    # ---- Cameras: read the scene, never write it ----
+
+    def render(self, name: str) -> np.ndarray:
+        """RGB ``uint8`` (480, 640, 3) of camera ``up`` or ``wrist`` at the last stepped state, through the backend
+        ``ROBOSMITH_RENDERER`` chose at build. A failing hipRT backend raises; it never falls back to Genesis."""
+        started = time.perf_counter()
+        rgb = self._render_hiprt(name) if self.renderer == "hiprt" else self._render_genesis(name)
+        stats = self.render_stats.setdefault(name, [0, 0.0])
+        stats[0] += 1
+        stats[1] += time.perf_counter() - started
+        return rgb
+
+    def render_reading(self) -> dict:
+        """The backend and, per camera rendered at least once, its frame count and mean milliseconds per frame."""
+        return {"renderer": self.renderer,
+                "cameras": {name: {"frames": n, "ms_per_frame": round(s * 1000.0 / n, 2)}
+                            for name, (n, s) in self.render_stats.items() if n}}
+
+    def _render_genesis(self, name: str) -> np.ndarray:
+        cam = {"up": self.cam_up, "wrist": self.cam_wrist}[name]
+        rgb, _, _, _ = cam.render(rgb=True, depth=False, segmentation=False, normal=False)
+        arr = rgb.cpu().numpy() if hasattr(rgb, "cpu") else np.array(rgb)
+        if arr.ndim == 4:
+            arr = arr[0]
+        return arr.astype(np.uint8)
+
+    def _camera_view(self, name: str) -> tuple:
+        """``(eye, lookat, up)`` of camera ``name`` in the world, as Genesis places it."""
+        if name == "up":
+            return tuple(self.scene_config.camera_position), tuple(self.scene_config.camera_target), (0.0, 0.0, 1.0)
+        # Genesis camera frames look along -z with +y up (``pos_lookat_up_to_T``).
+        offset = self.wrist_offset_T
+        offset = offset.cpu().numpy() if hasattr(offset, "cpu") else np.asarray(offset)
+        t = pose_matrix(*self._hand()) @ offset.astype(np.float64).reshape(4, 4)
+        eye = t[:3, 3]
+        return tuple(eye), tuple(eye - t[:3, 2]), tuple(t[:3, 1])
+
+    def _render_hiprt(self, name: str) -> np.ndarray:
+        view = self._camera_view(name)
+        renderer = self._hiprt.get(name)
+        if renderer is None:
+            from instinct_render.genesis import HiprtRenderer
+
+            renderer = HiprtRenderer(*view, fovy_deg=CAMERA_FOV_DEG[name], resolution=CAMERA_RESOLUTION,
+                                     path_samples=1).bind(self.scene)
+            self._hiprt[name] = renderer
+        image = renderer.render_views([view])[0]
+        return (image.detach().float().cpu().numpy() * 255.0).round().clip(0, 255).astype(np.uint8)
 
     def contacts_now(self) -> list[tuple[tuple[str, str], ...]]:
         """Contacts the last physics step resolved that involve the arm or a named entity:

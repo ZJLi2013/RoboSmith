@@ -7,6 +7,9 @@ set -eu
 # Only the IMAGE tag differs per GPU arch. Defaults target MI300 / gfx942; for MI350 (gfx950) swap the image:
 #   NAME=block SCENARIO=scenarios/pick_place_block_on_mat.yaml IMAGE=robotsmith:rocm-headless bash scripts/setup/run_scenario.sh
 #
+# HIPRT=<hipRT_render checkout, set up by scripts/setup/hiprt.sh at /opt/hipRT_render> renders the cameras through
+# hipRT instead of Genesis' camera.
+#
 # `--smoke` is the only implemented rollout path in run_generated_scenario.py
 # (it still runs the full episode + video + LeRobot dataset; the name is legacy).
 
@@ -17,6 +20,12 @@ SEED="${SEED:-0}"
 EPISODES="${EPISODES:-1}"
 REPO="${REPO:-$(cd "$(dirname "$0")/../.." && pwd)}"
 HF_CACHE="${HF_CACHE:-$HOME/.cache/huggingface}"
+HIPRT_MOUNT=()
+HIPRT_ENV=""
+if [[ -n "${HIPRT:-}" ]]; then
+  HIPRT_MOUNT=(-v "$HIPRT":/opt/hipRT_render)
+  HIPRT_ENV="source /opt/hipRT_render/robosmith-hiprt.env && "
+fi
 
 docker rm -f "$NAME" >/dev/null 2>&1 || true
 
@@ -27,7 +36,8 @@ docker run -d --name "$NAME" \
   -e PYTHONPATH=/workspace/robotsmith \
   -v "$REPO":/workspace/robotsmith \
   -v "$HF_CACHE":/root/.cache/huggingface \
+  "${HIPRT_MOUNT[@]}" \
   "$IMAGE" \
-  bash -lc "cd /workspace/robotsmith && python -m robotsmith.assets.fetch && python scripts/datagen/run_generated_scenario.py --scenario $SCENARIO --output-dir output/$NAME --n-episodes $EPISODES --seed $SEED --smoke"
+  bash -lc "${HIPRT_ENV}cd /workspace/robotsmith && python -m robotsmith.assets.fetch && python scripts/datagen/run_generated_scenario.py --scenario $SCENARIO --output-dir output/$NAME --n-episodes $EPISODES --seed $SEED --smoke"
 
 echo "STARTED $NAME"

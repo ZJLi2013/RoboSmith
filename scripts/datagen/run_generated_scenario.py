@@ -167,12 +167,16 @@ def run_scenario_smoke(
         config.fps,
     )
 
+    import genesis
+
     final_joint_positions = (
         env.get_joint_positions() if hasattr(env, "get_joint_positions") else {}
     )
     summary = {
         "scenario": package.task.name,
         "source_path": str(package.source_path),
+        "genesis_version": genesis.__version__,
+        **env.render_reading(),
         "status": "datagen_success"
         if all(ep["success"] for ep in episodes)
         else "datagen_failed",
