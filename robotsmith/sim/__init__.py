@@ -20,13 +20,13 @@ __all__ = [
     "JOINT_NAMES", "N_DOFS", "HOME_QPOS",
     "ACTION_NAMES", "STATE_NAMES",
     "to_numpy", "get_ee_state", "compute_ee_delta",
-    "SimEnv", "ensure_display", "render_cam",
+    "SimEnv", "ensure_display",
     "create_dataset", "record_episode", "save_summary",
 ]
 
 
 def __getattr__(name: str):
-    if name in {"SimEnv", "ensure_display", "render_cam"}:
+    if name in {"SimEnv", "ensure_display"}:
         from importlib import import_module
         sim_env = import_module("robotsmith.sim.sim_env")
         return getattr(sim_env, name)

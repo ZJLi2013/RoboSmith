@@ -66,7 +66,7 @@ COPY tests ./tests
 # Without the [genesis] extra, so the Genesis pinned above stays.
 RUN python -m pip install -e ".[dev]" \
     && python -m pip install \
-      addict einops h5py hydra-core imageio lerobot meshcat "networkx>=3.0" \
+      addict einops h5py hydra-core imageio "lerobot[dataset]" meshcat "networkx>=3.0" \
       omegaconf "pyglet>=1.5,!=2.1.8" PyOpenGL==3.1.5 scipy scikit-learn \
       tensorboard tensorboardx timm webdataset yapf==0.40.1 \
       yourdfpy==0.0.56

@@ -53,6 +53,7 @@ export PYTHONPATH="$ROOT\${PYTHONPATH:+:\$PYTHONPATH}"
 export TORCH_EXTENSIONS_DIR="$ROOT/.torch_ext"
 export HIPRT_PATH="$SRC"
 export HIPRT_PREFIX="$PREFIX"
+export ROBOSMITH_RENDERER=hiprt
 EOF
 
 bash -c "source '$ENV_FILE' && python3 -c 'import instinct_render.genesis'"

@@ -102,3 +102,4 @@ def test_env_file_makes_the_checkout_importable_in_a_new_shell(tmp_path):
     module, extensions = probe.stdout.split()
     assert Path(module).parent == root / "instinct_render"
     assert Path(extensions) == root / ".torch_ext"
+    assert "export ROBOSMITH_RENDERER=hiprt\n" in (root / "robosmith-hiprt.env").read_text()
