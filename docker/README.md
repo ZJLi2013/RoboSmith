@@ -5,7 +5,7 @@ One image per GPU architecture, plus one for GPU rendering through hipRT_render.
 | Image | Genesis | Renders with | Command |
 |---|---|---|---|
 | MI300 (gfx942), default | 1.4.6 | Genesis camera, or hipRT_render on the GPU | `docker build -f docker/Dockerfile.hiprt -t robotsmith:hiprt-rocm7.2.4-genesis1.4.6 .` |
-| MI350 (gfx950) | 1.4.6 (`[genesis]` extra) | Genesis camera (CPU raster under Xvfb) | `docker build -f docker/Dockerfile.gfx950 -t robotsmith:rocm-headless .` |
+| MI350 (gfx950) | 1.4.6 (`[genesis]` extra), not yet run on gfx950 | Genesis camera (CPU raster under Xvfb) | `docker build -f docker/Dockerfile.gfx950 -t robotsmith:rocm-headless .` |
 | MI300 (gfx942), retired | 0.4.5 | Genesis camera (CPU raster under Xvfb) | `docker build -f docker/Dockerfile.gfx942 -t robotsmith:gfx942-rocm6.4.3-genesis0.4.5 .` |
 
 The hipRT image needs nothing that is not public; without a hipRT_render checkout it renders with Genesis' camera.
