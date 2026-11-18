@@ -68,7 +68,9 @@ The env file keeps the HIPRT source tree on the path because hiprtc reads its ke
 compiled bridge in `.torch_ext/`, so only the first `bind()` in a checkout spends about two minutes compiling.
 
 The env file also exports `ROBOSMITH_RENDERER=hiprt`, and with it `SimEnv.render` draws both cameras (overview `up`
-and the hand-mounted `wrist`) through `instinct_render.genesis.HiprtRenderer` at the poses Genesis' cameras have.
+and the hand-mounted `wrist`) through `instinct_render.genesis.HiprtRenderer` at the poses and the 0.1 m near plane
+Genesis' cameras have; this needs a hipRT_render whose `HiprtRenderer` takes `znear` (without it the hand housing
+fills the wrist view).
 Unset, it uses Genesis' own cameras; set to `hiprt` without a working hipRT_render, rendering raises instead of
 falling back. A recorded scenario run reports the backend and the milliseconds per frame of each camera in
 `scenario_run_summary.json`; `HIPRT` mounts a checkout set up as above into `run_scenario.sh`'s container:

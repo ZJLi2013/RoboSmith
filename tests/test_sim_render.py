@@ -44,8 +44,8 @@ def fake_hiprt(monkeypatch):
     made = []
 
     class HiprtRenderer:
-        def __init__(self, eye, lookat, up, fovy_deg, resolution, path_samples):
-            self.fovy_deg, self.views = fovy_deg, []
+        def __init__(self, eye, lookat, up, fovy_deg, resolution, path_samples, znear):
+            self.fovy_deg, self.znear, self.views = fovy_deg, znear, []
             made.append(self)
 
         def bind(self, scene):
@@ -88,7 +88,7 @@ def test_hiprt_wrist_view_is_the_hand_pose_times_the_one_offset(fake_hiprt):
     env.render("wrist")
     env.render("wrist")
 
-    assert len(fake_hiprt) == 1 and fake_hiprt[0].fovy_deg == 65.0
+    assert len(fake_hiprt) == 1 and fake_hiprt[0].fovy_deg == 65.0 and fake_hiprt[0].znear == 0.1
     eye, lookat, up = (np.asarray(v) for v in fake_hiprt[0].views[-1])
     # Offset x (+0.05 along hand x) is world +y; the camera looks along minus the offset's z column, world +z here.
     np.testing.assert_allclose(eye, HAND_POS + [0.0, 0.05, -0.08], atol=1e-9)

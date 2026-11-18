@@ -89,6 +89,8 @@ def ensure_display():
 
 CAMERA_RESOLUTION = (640, 480)
 CAMERA_FOV_DEG = {"up": 45.0, "wrist": 65.0}
+# The wrist camera sits behind the hand; the near plane cuts the hand housing out of its view.
+CAMERA_NEAR_M = 0.1
 RENDERERS = ("genesis", "hiprt")
 
 
@@ -209,13 +211,13 @@ class SimEnv:
             res=CAMERA_RESOLUTION,
             pos=tuple(scene_config.camera_position),
             lookat=tuple(scene_config.camera_target),
-            fov=CAMERA_FOV_DEG["up"], GUI=False,
+            fov=CAMERA_FOV_DEG["up"], near=CAMERA_NEAR_M, GUI=False,
         )
         cam_wrist = handle.scene.add_camera(
             res=CAMERA_RESOLUTION,
             pos=(0.05, 0.0, -0.08),
             lookat=(0.0, 0.0, 0.10),
-            fov=CAMERA_FOV_DEG["wrist"], GUI=False,
+            fov=CAMERA_FOV_DEG["wrist"], near=CAMERA_NEAR_M, GUI=False,
         )
 
         handle.scene.build()
@@ -354,7 +356,7 @@ class SimEnv:
             from instinct_render.genesis import HiprtRenderer
 
             renderer = HiprtRenderer(*view, fovy_deg=CAMERA_FOV_DEG[name], resolution=CAMERA_RESOLUTION,
-                                     path_samples=1).bind(self.scene)
+                                     path_samples=1, znear=CAMERA_NEAR_M).bind(self.scene)
             self._hiprt[name] = renderer
         image = renderer.render_views([view])[0]
         return (image.detach().float().cpu().numpy() * 255.0).round().clip(0, 255).astype(np.uint8)
