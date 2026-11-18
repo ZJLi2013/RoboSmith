@@ -486,7 +486,7 @@ classDiagram
 | 判卷与复判 | `eval.judge.judge`（`eval/judge.py`） | 纯函数，日志进、`Verdict` 出；`predicates.evaluate_success` |
 | 运行与尝试 | `scripts/eval/run_exam.py` | `batch.run_batch` 给 attempt 编号，`batch.supervise` 做进程外超时（每次尝试 1800 s） |
 
-`EpisodeRun`、`ExecutionGate.verify` 与技能不在考场路径上；它们照旧做出题人。
+`EpisodeRun`、`ExecutionGate.verify` 与技能不在考场路径上；它们属于自带管线。
 
 ### 一次外部 episode：agent 走 `move_to` 到判卷
 
