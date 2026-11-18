@@ -23,6 +23,20 @@ Per instance against the 0.4.5 image (MI325X; F0 block and mug, F1, F2 playgroun
 | F1 | 9/10 | seed 3 certifies on 0.4.5, `task_failed` on 1.4.6 |
 | F0 block | 4/10 certified on 1.4.6, 9/10 on 0.4.5 | the block slips in the fingers on the way to the mat and touches it while held |
 
+Every instance that differs, with the fields that differ among `certified`, `success`, `outcome`, `stopped` and
+`first_violation`:
+
+| Family | Seed | 0.4.5 | 1.4.6 | Differs in |
+|---|---|---|---|---|
+| F0 block | 0 | certified | violation | `certified`, `outcome`, `first_violation` |
+| F0 block | 1 | certified | violation | `certified`, `outcome`, `first_violation` |
+| F0 block | 2 | certified | violation | `certified`, `success`, `outcome`, `first_violation` |
+| F0 block | 3 | certified | violation | `certified`, `outcome`, `first_violation` |
+| F0 block | 6 | violation | violation | `success`, `first_violation` |
+| F0 block | 8 | certified | violation | `certified`, `success`, `outcome`, `first_violation` |
+| F1 | 3 | certified | task_failed | `certified`, `success`, `outcome` |
+| F2 | 8 | execution_failed | task_failed | `outcome`, `stopped` |
+
 [`docs/quick-start.md`](../docs/quick-start.md) covers the first run.
 
 Headless rendering policy:
